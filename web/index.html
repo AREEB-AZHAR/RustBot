@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#101513" />
+    <meta
+      name="description"
+      content="RustBot is a local, self-learning chatbot. Ask a question, teach a missed answer, and shape its knowledge one memory at a time."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="RustBot — Ask. Teach. Repeat." />
+    <meta
+      property="og:description"
+      content="A local, self-learning chatbot that gets smarter one answer at a time."
+    />
+    <meta property="og:url" content="__ORIGIN__/" />
+    <meta property="og:image" content="__ORIGIN__/og.png" />
+    <meta property="og:image:width" content="1734" />
+    <meta property="og:image:height" content="907" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="RustBot — Ask. Teach. Repeat." />
+    <meta
+      name="twitter:description"
+      content="A local, self-learning chatbot that gets smarter one answer at a time."
+    />
+    <meta name="twitter:image" content="__ORIGIN__/og.png" />
+    <title>RustBot — Knowledge Forge</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#composer-input">Skip to message composer</a>
+    <div class="ambient ambient-one" aria-hidden="true"></div>
+    <div class="ambient ambient-two" aria-hidden="true"></div>
+
+    <div class="app-shell">
+      <aside class="left-rail" aria-label="RustBot workspace">
+        <div class="brand-lockup">
+          <div class="brand-mark" aria-hidden="true">
+            <span class="brand-spark"></span>
+            <span>R</span>
+          </div>
+          <div class="brand-copy">
+            <strong>RustBot</strong>
+            <span>Knowledge Forge</span>
+          </div>
+        </div>
+
+        <button class="new-chat-button" id="new-chat-button" type="button">
+          <span aria-hidden="true">＋</span>
+          <span class="rail-label">New conversation</span>
+        </button>
+
+        <nav class="workspace-nav" aria-label="Workspace sections">
+          <button class="nav-item is-active" type="button" data-nav="chat" aria-current="page">
+            <span class="nav-icon" aria-hidden="true">◌</span>
+            <span class="rail-label">Conversation</span>
+          </button>
+          <button class="nav-item" type="button" data-nav="market">
+            <span class="nav-icon" aria-hidden="true">⌁</span>
+            <span class="rail-label">Market Lab</span>
+            <span class="nav-beta">Beta</span>
+          </button>
+          <button class="nav-item" type="button" data-nav="teach">
+            <span class="nav-icon" aria-hidden="true">⌁</span>
+            <span class="rail-label">Teach RustBot</span>
+          </button>
+          <button class="nav-item" type="button" data-nav="knowledge">
+            <span class="nav-icon" aria-hidden="true">▦</span>
+            <span class="rail-label">Knowledge</span>
+            <span class="nav-count" id="rail-memory-count">0</span>
+          </button>
+        </nav>
+
+        <div class="rail-prompts">
+          <p class="rail-eyebrow">Try asking</p>
+          <button type="button" class="rail-prompt" data-prompt="What can you do?">
+            What can you do?
+          </button>
+          <button type="button" class="rail-prompt" data-prompt="Tell me about Rust">
+            Tell me about Rust
+          </button>
+          <button type="button" class="rail-prompt" data-prompt="How are you?">
+            How are you?
+          </button>
+        </div>
+
+        <div class="local-note">
+          <span class="status-beacon" aria-hidden="true"></span>
+          <div class="rail-label">
+            <strong>Local &amp; private</strong>
+            <span>Memories stay in knowledge.json</span>
+          </div>
+        </div>
+      </aside>
+
+      <main class="chat-panel" aria-labelledby="conversation-title">
+        <header class="chat-header">
+          <div>
+            <p class="header-eyebrow" id="workspace-eyebrow">Active workspace</p>
+            <h1 id="conversation-title">Fresh conversation</h1>
+          </div>
+          <div class="header-actions">
+            <button
+              class="icon-button workspace-toggle"
+              id="workspace-toggle"
+              type="button"
+              aria-label="Open Market Lab"
+              title="Open Market Lab"
+            >
+              <span aria-hidden="true">⌁</span>
+            </button>
+            <div class="ready-pill" id="ready-pill" role="status">
+              <span class="status-beacon" aria-hidden="true"></span>
+              <span id="ready-label">Connecting…</span>
+            </div>
+            <button
+              class="icon-button knowledge-toggle"
+              id="knowledge-toggle"
+              type="button"
+              aria-controls="knowledge-panel"
+              aria-expanded="true"
+              aria-label="Close knowledge panel"
+              title="Close knowledge panel"
+            >
+              <span aria-hidden="true">▦</span>
+            </button>
+          </div>
+        </header>
+
+        <section
+          class="conversation"
+          id="conversation"
+          role="log"
+          aria-live="polite"
+          aria-relevant="additions"
+          aria-label="Conversation with RustBot"
+        >
+          <div class="welcome-state" id="welcome-state">
+            <div class="forge-emblem" aria-hidden="true">
+              <span class="forge-ring"></span>
+              <span class="forge-core">R</span>
+              <span class="forge-spark spark-one"></span>
+              <span class="forge-spark spark-two"></span>
+            </div>
+            <p class="welcome-eyebrow"><span></span> Local · Self-learning</p>
+            <h2>Ask. Teach. Repeat.</h2>
+            <p class="welcome-copy">
+              A small local bot that gets smarter one answer at a time. If RustBot draws a blank,
+              turn the moment into a new memory.
+            </p>
+            <div class="starter-grid" aria-label="Suggested messages">
+              <button type="button" class="starter-card" data-prompt="What can you do?">
+                <span class="starter-number">01</span>
+                <span>
+                  <strong>Meet RustBot</strong>
+                  <small>What can you do?</small>
+                </span>
+                <span class="starter-arrow" aria-hidden="true">↗</span>
+              </button>
+              <button type="button" class="starter-card" data-prompt="Tell me about Rust">
+                <span class="starter-number">02</span>
+                <span>
+                  <strong>Talk shop</strong>
+                  <small>Tell me about Rust</small>
+                </span>
+                <span class="starter-arrow" aria-hidden="true">↗</span>
+              </button>
+              <button type="button" class="starter-card" data-prompt="How do I teach you?">
+                <span class="starter-number">03</span>
+                <span>
+                  <strong>Shape a memory</strong>
+                  <small>How do I teach you?</small>
+                </span>
+                <span class="starter-arrow" aria-hidden="true">↗</span>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section class="market-lab" id="market-lab" aria-labelledby="market-lab-title" hidden>
+          <div class="market-hero">
+            <div>
+              <p class="market-kicker"><span></span> Browser-local quantitative research</p>
+              <h2 id="market-lab-title">Train a baseline. Test it honestly.</h2>
+              <p>
+                Fetch historical candles from a public provider and RustBot will train a compact
+                numerical classifier, preserve the newest data for testing, and show whether the
+                signal survives costs.
+              </p>
+            </div>
+            <div class="research-badge">
+              <span aria-hidden="true">◇</span>
+              <div><strong>Research only</strong><small>No live orders or guarantees</small></div>
+            </div>
+          </div>
+
+          <div class="market-grid">
+            <form class="market-setup-card" id="market-form">
+              <div class="market-card-heading">
+                <div>
+                  <p class="header-eyebrow">01 · Live data</p>
+                  <h3>Prepare the experiment</h3>
+                </div>
+                <span class="local-chip">Public API</span>
+              </div>
+
+              <div class="market-fields">
+                <label>
+                  <span>Data provider</span>
+                  <select id="market-provider" name="provider">
+                    <option value="binance" selected>Binance Spot</option>
+                    <option value="coingecko">CoinGecko</option>
+                    <option value="kraken">Kraken</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Market symbol</span>
+                  <input id="market-symbol" name="symbol" value="BTCUSDT" maxlength="24" autocomplete="off" />
+                </label>
+                <label>
+                  <span>Candle interval</span>
+                  <select id="market-timeframe" name="timeframe">
+                    <option value="15m">15 minutes</option>
+                    <option value="1h" selected>1 hour</option>
+                    <option value="4h">4 hours</option>
+                    <option value="1d">1 day</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Training window</span>
+                  <select id="market-lookback" name="lookback">
+                    <option value="500">500 candles</option>
+                    <option value="750" selected>750 candles</option>
+                    <option value="1000">1,000 candles</option>
+                  </select>
+                </label>
+              </div>
+
+              <div class="api-source-note">
+                <div class="dataset-mark" aria-hidden="true">↻</div>
+                <div>
+                  <strong id="dataset-title">Binance public candlesticks</strong>
+                  <p id="dataset-copy">No exchange key is required for public market data.</p>
+                </div>
+                <span id="dataset-status">Ready to fetch</span>
+              </div>
+
+              <div class="feature-strip" aria-label="Model features">
+                <span>Returns</span><span>Momentum</span><span>Trend</span><span>Volatility</span><span>Volume</span>
+              </div>
+
+              <p class="market-form-error" id="market-form-error" role="alert"></p>
+              <button class="market-train-button" id="market-train-button" type="submit">
+                <span>Fetch, train &amp; walk-forward test</span><span aria-hidden="true">→</span>
+              </button>
+              <p class="market-privacy">Public candles are proxied by RustBot; model calculations stay in this browser tab.</p>
+            </form>
+
+            <section class="market-results" id="market-results" aria-live="polite">
+              <div class="market-empty" id="market-empty">
+                <div class="empty-orbit" aria-hidden="true"><span>⌁</span></div>
+                <p class="header-eyebrow">02 · Evidence</p>
+                <h3>Your test results will appear here</h3>
+                <p>
+                  Choose a provider and fetch public historical candles. RustBot never treats
+                  training accuracy as proof of future performance.
+                </p>
+                <ol class="experiment-steps">
+                  <li><span>1</span>Oldest 70% trains the model</li>
+                  <li><span>2</span>Next 15% selects a trade threshold</li>
+                  <li><span>3</span>Newest 15% stays unseen until scoring</li>
+                </ol>
+              </div>
+
+              <div class="market-report" id="market-report" hidden>
+                <div class="report-heading">
+                  <div>
+                    <p class="header-eyebrow">Out-of-sample snapshot</p>
+                    <h3><span id="report-symbol">BTC-USD</span> · <span id="report-timeframe">1h</span></h3>
+                  </div>
+                  <span class="signal-pill neutral" id="market-signal">Neutral</span>
+                </div>
+
+                <div class="probability-card">
+                  <div>
+                    <span>Next-bar up probability</span>
+                    <strong id="up-probability">—</strong>
+                  </div>
+                  <div class="probability-track" aria-hidden="true"><span id="probability-fill"></span></div>
+                  <p id="signal-explanation">Waiting for a trained model.</p>
+                </div>
+
+                <div class="metric-grid">
+                  <article><span>Test accuracy</span><strong id="test-accuracy">—</strong><small>directional</small></article>
+                  <article><span>Net test return</span><strong id="strategy-return">—</strong><small>after costs</small></article>
+                  <article><span>Max drawdown</span><strong id="max-drawdown">—</strong><small>test window</small></article>
+                  <article><span>Test candles</span><strong id="test-samples">—</strong><small>untouched split</small></article>
+                </div>
+
+                <div class="chart-card">
+                  <div><strong>Price history</strong><span id="split-legend">Train 70% · Validate 15% · Test 15%</span></div>
+                  <canvas id="price-chart" height="150" aria-label="Historical close-price chart"></canvas>
+                </div>
+
+                <div class="model-note" id="model-note">
+                  <span aria-hidden="true">!</span>
+                  <p><strong>Baseline, not a promise.</strong> Judge this model by repeated forward paper tests across different market regimes.</p>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <section class="tradingview-card" aria-labelledby="tradingview-title">
+            <div class="tradingview-heading">
+              <div>
+                <p class="header-eyebrow">03 · Visual confirmation</p>
+                <h3 id="tradingview-title">TradingView market chart</h3>
+              </div>
+              <a id="tradingview-link" href="https://www.tradingview.com/symbols/BTCUSDT/" target="_blank" rel="noopener noreferrer">Open on TradingView ↗</a>
+            </div>
+            <div class="tradingview-widget" id="tradingview-widget" aria-label="Interactive TradingView chart"></div>
+            <p class="tradingview-attribution">Charts supplied by TradingView. Exchange data used for model testing is identified above.</p>
+          </section>
+        </section>
+
+        <div class="composer-region" id="composer-region">
+          <form class="composer" id="composer-form">
+            <button
+              class="composer-tool"
+              id="teach-button"
+              type="button"
+              aria-label="Open teaching form"
+              title="Teach RustBot"
+            >
+              <span aria-hidden="true">⌁</span>
+            </button>
+            <label class="composer-field" for="composer-input">
+              <span class="visually-hidden">Message RustBot</span>
+              <textarea
+                id="composer-input"
+                name="message"
+                rows="1"
+                maxlength="500"
+                placeholder="Ask RustBot anything…"
+                autocomplete="off"
+                required
+              ></textarea>
+              <span class="composer-hint">Enter to send · Shift + Enter for a new line</span>
+            </label>
+            <button class="send-button" id="send-button" type="submit" aria-label="Send message">
+              <span aria-hidden="true">↑</span>
+            </button>
+          </form>
+          <p class="composer-note">
+            RustBot matches local memories, so important answers should always be reviewed.
+          </p>
+        </div>
+      </main>
+
+      <aside class="knowledge-panel" id="knowledge-panel" aria-labelledby="knowledge-title">
+        <header class="knowledge-header">
+          <div>
+            <p class="header-eyebrow">Live memory</p>
+            <h2 id="knowledge-title">What RustBot knows</h2>
+          </div>
+          <button
+            class="icon-button panel-close"
+            id="knowledge-close"
+            type="button"
+            aria-label="Close knowledge panel"
+          >
+            <span aria-hidden="true">×</span>
+          </button>
+        </header>
+
+        <div class="knowledge-summary">
+          <div>
+            <strong id="memory-count">0</strong>
+            <span>memories</span>
+          </div>
+          <span class="summary-divider" aria-hidden="true"></span>
+          <p>Each card connects a phrase to a response.</p>
+        </div>
+
+        <button class="add-memory-button" id="add-memory-button" type="button" aria-expanded="false">
+          <span aria-hidden="true">＋</span>
+          Forge a new memory
+        </button>
+
+        <form class="add-memory-form" id="add-memory-form" hidden>
+          <div class="form-heading">
+            <div>
+              <p class="header-eyebrow">Manual lesson</p>
+              <h3>Teach a response</h3>
+            </div>
+            <button class="quiet-icon-button" type="button" id="cancel-add-memory" aria-label="Close form">×</button>
+          </div>
+          <label>
+            <span>When someone says…</span>
+            <input id="memory-prompt" name="prompt" maxlength="500" placeholder="e.g. Tell me a joke" required />
+          </label>
+          <label>
+            <span>RustBot should reply…</span>
+            <textarea
+              id="memory-response"
+              name="response"
+              rows="3"
+              maxlength="2000"
+              placeholder="Write the answer RustBot should remember"
+              required
+            ></textarea>
+          </label>
+          <p class="form-error" id="memory-form-error" role="alert"></p>
+          <button class="primary-button" type="submit">Save to the forge</button>
+        </form>
+
+        <label class="memory-search" for="memory-search-input">
+          <span aria-hidden="true">⌕</span>
+          <span class="visually-hidden">Search memories</span>
+          <input id="memory-search-input" type="search" placeholder="Search memories" autocomplete="off" />
+          <kbd>/</kbd>
+        </label>
+
+        <div class="memory-list" id="memory-list" aria-live="polite">
+          <div class="memory-skeleton" aria-label="Loading memories">
+            <span></span><span></span><span></span>
+          </div>
+        </div>
+
+        <footer class="knowledge-footer">
+          <span aria-hidden="true">◆</span>
+          <p><strong>Built in Rust.</strong> Learned by you.</p>
+        </footer>
+      </aside>
+    </div>
+
+    <button class="panel-overlay" id="panel-overlay" type="button" aria-label="Close knowledge panel"></button>
+
+    <dialog class="forget-dialog" id="forget-dialog" aria-labelledby="forget-title">
+      <form method="dialog">
+        <div class="dialog-mark" aria-hidden="true">×</div>
+        <p class="header-eyebrow">Forget memory</p>
+        <h2 id="forget-title">Remove this from the forge?</h2>
+        <p class="dialog-copy" id="forget-copy"></p>
+        <div class="dialog-actions">
+          <button class="secondary-button" value="cancel">Keep it</button>
+          <button class="danger-button" id="confirm-forget" value="confirm">Forget memory</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true" hidden>
+      <span id="toast-message"></span>
+      <button id="toast-action" type="button" hidden></button>
+      <button class="toast-close" id="toast-close" type="button" aria-label="Dismiss notification">×</button>
+    </div>
+
+    <div class="visually-hidden" id="app-announcer" aria-live="assertive"></div>
+  </body>
+</html>
