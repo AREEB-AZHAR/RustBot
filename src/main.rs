@@ -1,4 +1,6 @@
 mod knowledge;
+mod market_structure;
+mod news_sentiment;
 mod server;
 
 use knowledge::KnowledgeStore;

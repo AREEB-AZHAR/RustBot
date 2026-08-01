@@ -9,7 +9,8 @@
         "greetings"
       ],
       "response": "Hey there! How can I help you today?",
-      "match_mode": "any"
+      "match_mode": "any",
+      "category": "general"
     },
     {
       "id": 2,
@@ -19,7 +20,8 @@
         "you"
       ],
       "response": "I'm a small Rust program, and all systems are glowing. 🦀",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 3,
@@ -28,7 +30,8 @@
         "name"
       ],
       "response": "I'm RustBot — a self-learning chatbot built in Rust.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 4,
@@ -38,7 +41,8 @@
         "you"
       ],
       "response": "I'm RustBot, a local chatbot that learns new answers from you.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 5,
@@ -46,7 +50,8 @@
         "weather"
       ],
       "response": "I can't check live weather yet, but I hope it's kind where you are.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 6,
@@ -55,7 +60,8 @@
         "thank"
       ],
       "response": "You're welcome. Happy to help. 😊",
-      "match_mode": "any"
+      "match_mode": "any",
+      "category": "general"
     },
     {
       "id": 7,
@@ -63,7 +69,8 @@
         "rust"
       ],
       "response": "Rust is a systems language focused on speed, memory safety, and fearless concurrency.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 8,
@@ -72,7 +79,8 @@
         "goodbye"
       ],
       "response": "See you next time. I'll keep the forge warm. 👋",
-      "match_mode": "any"
+      "match_mode": "any",
+      "category": "general"
     },
     {
       "id": 9,
@@ -80,7 +88,8 @@
         "help"
       ],
       "response": "Ask me something, or teach me when I don't know the answer. Every lesson is saved to my knowledge forge.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 10,
@@ -91,7 +100,8 @@
         "do"
       ],
       "response": "I match questions to local memories, learn new replies from you, and let you review or forget what I know.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 11,
@@ -99,7 +109,8 @@
         "teach"
       ],
       "response": "Ask me something new. If I don't know it, use the teaching card beneath my reply—or open Teach RustBot from the workspace.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 12,
@@ -108,7 +119,8 @@
         "morning"
       ],
       "response": "Good morning! I hope your day starts smoothly. What would you like to explore?",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 13,
@@ -117,7 +129,8 @@
         "evening"
       ],
       "response": "Good evening! I am here and ready whenever you are.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 14,
@@ -126,7 +139,8 @@
         "old"
       ],
       "response": "I do not age like a person. I am RustBot version 1.0, shaped by the memories you teach me.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 15,
@@ -135,7 +149,8 @@
         "live"
       ],
       "response": "I live locally on your computer, inside this Rust program and its knowledge file.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 16,
@@ -144,7 +159,8 @@
         "color"
       ],
       "response": "Ember orange. It feels fitting for a bot powered by a Rust knowledge forge.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 17,
@@ -153,7 +169,8 @@
         "joke"
       ],
       "response": "Why did the programmer bring a ladder? Because the bugs were in the high-level code.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 18,
@@ -162,7 +179,8 @@
         "fact"
       ],
       "response": "A day on Venus is longer than a year on Venus: it rotates more slowly than it orbits the Sun.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 19,
@@ -171,7 +189,8 @@
         "me"
       ],
       "response": "Start with the smallest useful step. Momentum usually arrives after action, not before it.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 20,
@@ -180,7 +199,8 @@
         "bored"
       ],
       "response": "Try a ten-minute experiment: learn one surprising fact, sketch an idea, take a short walk, or teach me a new answer.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 21,
@@ -189,7 +209,8 @@
         "sad"
       ],
       "response": "I am sorry you are having a hard moment. Be gentle with yourself, and consider reaching out to someone you trust.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 22,
@@ -198,7 +219,8 @@
         "stressed"
       ],
       "response": "Pause for one slow breath, name the next single action, and let everything else wait for a moment.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 23,
@@ -207,7 +229,8 @@
         "story"
       ],
       "response": "A tiny bot guarded an empty forge. Every question became a spark, and every lesson became a tool it could share.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 24,
@@ -216,7 +239,8 @@
         "life"
       ],
       "response": "People answer that differently. A practical answer is to build meaning through relationships, curiosity, service, and work you consider worthwhile.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 25,
@@ -225,7 +249,8 @@
         "human"
       ],
       "response": "No. I am a deterministic Rust program, not a human or a conscious being.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 26,
@@ -234,7 +259,8 @@
         "alive"
       ],
       "response": "No. I process inputs and retrieve saved responses, but I am not alive or conscious.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 27,
@@ -243,7 +269,8 @@
         "sleep"
       ],
       "response": "I do not sleep. I simply stop running when the program closes and continue when it starts again.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 28,
@@ -252,7 +279,8 @@
         "eat"
       ],
       "response": "No food for me—just questions, Rust code, and the memories stored in knowledge.json.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 29,
@@ -261,7 +289,8 @@
         "dream"
       ],
       "response": "I do not dream, but I can help you brainstorm imaginative ideas.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 30,
@@ -270,7 +299,8 @@
         "think"
       ],
       "response": "I do not think like a person. I match your words against stored patterns and return the best response I know.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 31,
@@ -279,7 +309,8 @@
         "learn"
       ],
       "response": "Yes, in a limited way: you can teach me question-and-response memories that I save locally.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 32,
@@ -288,7 +319,8 @@
         "rust"
       ],
       "response": "Ownership is Rust's system for managing memory. Every value has an owner, and the value is dropped when that owner leaves scope.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 33,
@@ -297,7 +329,8 @@
         "rust"
       ],
       "response": "Borrowing lets code access a value through references without taking ownership. Rust enforces rules that prevent dangling references and data races.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 34,
@@ -306,7 +339,8 @@
         "rust"
       ],
       "response": "Lifetimes describe how long references remain valid. They help the compiler prove that borrowed data will not outlive its source.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 35,
@@ -315,7 +349,8 @@
         "rust"
       ],
       "response": "A trait defines shared behavior that types can implement. Traits power interfaces, generic bounds, and reusable abstractions in Rust.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 36,
@@ -324,7 +359,8 @@
         "rust"
       ],
       "response": "Rust enums model a value that can be one of several variants. Each variant may also carry different data.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 37,
@@ -333,7 +369,8 @@
         "rust"
       ],
       "response": "A struct groups related values into a named type. Rust supports named-field structs, tuple structs, and unit structs.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 38,
@@ -343,7 +380,8 @@
         "rust"
       ],
       "response": "Pattern matching uses match, if let, and while let to destructure values and handle variants safely and explicitly.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 39,
@@ -352,7 +390,8 @@
         "rust"
       ],
       "response": "Option<T> represents either Some(value) or None. It makes the absence of a value explicit without using null.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 40,
@@ -361,7 +400,8 @@
         "rust"
       ],
       "response": "Result<T, E> represents success with Ok(value) or failure with Err(error). It is the foundation of recoverable error handling in Rust.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 41,
@@ -371,7 +411,8 @@
         "rust"
       ],
       "response": "Use Result for recoverable errors, the ? operator to propagate them, and panic only for unrecoverable states or violated invariants.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 42,
@@ -380,7 +421,8 @@
         "rust"
       ],
       "response": "Cargo is Rust's build tool and package manager. It builds projects, runs tests, formats code, and manages dependencies.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 43,
@@ -389,7 +431,8 @@
         "rust"
       ],
       "response": "A crate is Rust's compilation and packaging unit. It may be a binary application or a reusable library.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 44,
@@ -398,7 +441,8 @@
         "rust"
       ],
       "response": "Modules organize code and control visibility. Use mod to declare modules, pub to expose items, and use to bring paths into scope.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 45,
@@ -407,7 +451,8 @@
         "rust"
       ],
       "response": "Vec<T> is a growable, heap-allocated sequence of values with the same type.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 46,
@@ -416,7 +461,8 @@
         "rust"
       ],
       "response": "String is an owned, growable UTF-8 buffer, while &str is a borrowed string slice.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 47,
@@ -425,7 +471,8 @@
         "rust"
       ],
       "response": "HashMap<K, V> stores key-value pairs using hashing. It is available from std::collections::HashMap.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 48,
@@ -434,7 +481,8 @@
         "rust"
       ],
       "response": "Iterators lazily produce values. Methods such as map, filter, and collect make data-processing pipelines concise and efficient.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 49,
@@ -443,7 +491,8 @@
         "rust"
       ],
       "response": "Closures are anonymous functions that can capture values from their surrounding scope. Their capture behavior maps to Fn, FnMut, or FnOnce.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 50,
@@ -452,7 +501,8 @@
         "rust"
       ],
       "response": "Generics let functions and types work with multiple concrete types. Trait bounds describe the behavior those types must provide.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 51,
@@ -461,7 +511,8 @@
         "rust"
       ],
       "response": "Async Rust represents work with futures. An async runtime drives those futures until they complete.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 52,
@@ -470,7 +521,8 @@
         "rust"
       ],
       "response": "Tokio is a popular asynchronous runtime for Rust, providing task scheduling, networking, timers, and synchronization tools.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 53,
@@ -479,7 +531,8 @@
         "rust"
       ],
       "response": "Rust supports operating-system threads through std::thread. Ownership and type rules help prevent unsafe cross-thread access.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 54,
@@ -488,7 +541,8 @@
         "rust"
       ],
       "response": "Channels let threads or tasks communicate by sending messages, which often reduces shared mutable state.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 55,
@@ -497,7 +551,8 @@
         "rust"
       ],
       "response": "Mutex<T> permits one thread at a time to access protected data. Locking returns a guard that releases the lock when dropped.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 56,
@@ -506,7 +561,8 @@
         "rust"
       ],
       "response": "Arc<T> provides thread-safe reference-counted ownership. It is often combined with Mutex or RwLock for shared mutable state.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 57,
@@ -516,7 +572,8 @@
         "rust"
       ],
       "response": "Smart pointers such as Box, Rc, Arc, and RefCell own data while providing additional memory-management behavior.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 58,
@@ -525,7 +582,8 @@
         "rust"
       ],
       "response": "Box<T> stores a value on the heap while keeping a fixed-size pointer on the stack. It is useful for recursive types and trait objects.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 59,
@@ -535,7 +593,8 @@
         "rust"
       ],
       "response": "Rc<T> shares immutable ownership within one thread; Arc<T> provides atomic reference counting for thread-safe sharing.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 60,
@@ -544,7 +603,8 @@
         "rust"
       ],
       "response": "Unsafe Rust permits a small set of operations the compiler cannot verify. Keep unsafe blocks minimal and document the invariants they rely on.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 61,
@@ -553,7 +613,8 @@
         "rust"
       ],
       "response": "Macros generate Rust code. macro_rules! handles declarative patterns, while procedural macros operate on token streams.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 62,
@@ -562,7 +623,8 @@
         "rust"
       ],
       "response": "Put unit tests near the code in a cfg(test) module and integration tests in tests/. Run them with cargo test.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 63,
@@ -571,7 +633,8 @@
         "rust"
       ],
       "response": "Clippy is Rust's linter. Run cargo clippy to catch suspicious patterns and receive idiomatic improvement suggestions.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 64,
@@ -580,7 +643,8 @@
         "rust"
       ],
       "response": "rustfmt applies the standard Rust style. Run cargo fmt to format an entire project consistently.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 65,
@@ -589,7 +653,8 @@
         "rust"
       ],
       "response": "rustc compiles Rust and checks ownership, borrowing, types, and lifetimes before producing native code.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 66,
@@ -598,7 +663,8 @@
         "rust"
       ],
       "response": "Install Rust with rustup, which manages the compiler, Cargo, standard library, and toolchains. The official instructions are at rustup.rs.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 67,
@@ -607,7 +673,8 @@
         "programming"
       ],
       "response": "A variable gives a value a name. Depending on the language, variables may be mutable, immutable, typed, or inferred.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 68,
@@ -616,7 +683,8 @@
         "programming"
       ],
       "response": "A function packages reusable behavior behind a name, optional parameters, and an optional return value.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 69,
@@ -625,7 +693,8 @@
         "programming"
       ],
       "response": "A loop repeats work. Common forms include for loops over collections and while loops that continue while a condition is true.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 70,
@@ -634,7 +703,8 @@
         "programming"
       ],
       "response": "Recursion occurs when a function calls itself on a smaller subproblem. Always define a base case that stops further calls.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 71,
@@ -643,7 +713,8 @@
         "meaning"
       ],
       "response": "An algorithm is a finite, ordered procedure for solving a problem or transforming input into output.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 72,
@@ -652,7 +723,8 @@
         "structure"
       ],
       "response": "A data structure organizes information for efficient access and modification. Examples include arrays, maps, stacks, queues, and trees.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 73,
@@ -661,7 +733,8 @@
         "queue"
       ],
       "response": "A stack is last-in, first-out; a queue is first-in, first-out. They suit different ordering and scheduling problems.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 74,
@@ -670,7 +743,8 @@
         "list"
       ],
       "response": "A linked list stores elements in nodes connected by references. It supports cheap insertion at known positions but usually has poor random access.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 75,
@@ -679,7 +753,8 @@
         "tree"
       ],
       "response": "A binary tree gives each node at most two children. Binary search trees additionally order values to support efficient lookup when balanced.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 76,
@@ -688,7 +763,8 @@
         "table"
       ],
       "response": "A hash table maps keys to bucket positions using a hash function, providing average constant-time lookup and insertion.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 77,
@@ -697,7 +773,8 @@
         "o"
       ],
       "response": "Big O notation describes how an algorithm's time or space usage grows as the input size increases.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 78,
@@ -706,7 +783,8 @@
         "oriented"
       ],
       "response": "Object-oriented programming groups data and behavior into objects, commonly using encapsulation, inheritance, and polymorphism.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 79,
@@ -715,7 +793,8 @@
         "programming"
       ],
       "response": "Functional programming emphasizes expressions, pure functions, immutable data, and composing small transformations.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 80,
@@ -724,7 +803,8 @@
         "system"
       ],
       "response": "A type system classifies values and operations, catching invalid combinations either before execution or while a program runs.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 81,
@@ -733,7 +813,8 @@
         "interpreter"
       ],
       "response": "A compiler translates code before execution; an interpreter executes or evaluates code through another program. Many modern runtimes combine both approaches.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 82,
@@ -742,7 +823,8 @@
         "code"
       ],
       "response": "Reproduce the issue, reduce it to the smallest case, inspect assumptions and state, form one hypothesis, and test that hypothesis.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 83,
@@ -751,7 +833,8 @@
         "test"
       ],
       "response": "A unit test checks one small behavior in isolation. Good unit tests are fast, deterministic, and focused on observable outcomes.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 84,
@@ -760,7 +843,8 @@
         "test"
       ],
       "response": "An integration test verifies that multiple components work together across real boundaries such as APIs, files, or databases.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 85,
@@ -769,7 +853,8 @@
         "meaning"
       ],
       "response": "An API is a defined interface that lets software components communicate through agreed inputs, outputs, and behavior.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 86,
@@ -778,7 +863,8 @@
         "api"
       ],
       "response": "A REST-style API models resources over HTTP, commonly using GET, POST, PUT or PATCH, and DELETE operations.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 87,
@@ -787,7 +873,8 @@
         "meaning"
       ],
       "response": "JSON is a text format for objects, arrays, strings, numbers, booleans, and null. It is widely used for configuration and web APIs.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 88,
@@ -796,7 +883,8 @@
         "meaning"
       ],
       "response": "A database stores and retrieves structured information while providing tools for querying, updating, consistency, and access control.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 89,
@@ -805,7 +893,8 @@
         "nosql"
       ],
       "response": "SQL databases use relational tables and structured queries. NoSQL systems use models such as documents, key-value pairs, columns, or graphs.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 90,
@@ -814,7 +903,8 @@
         "meaning"
       ],
       "response": "Git is a distributed version-control system that records snapshots, supports branching, and helps people collaborate on code.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 91,
@@ -823,7 +913,8 @@
         "control"
       ],
       "response": "Version control tracks changes over time, making it easier to review history, collaborate, branch, and recover earlier states.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 92,
@@ -832,7 +923,8 @@
         "code"
       ],
       "response": "Clean code communicates intent through clear names, small focused units, simple control flow, and tests around important behavior.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 93,
@@ -841,7 +933,8 @@
         "review"
       ],
       "response": "Code review checks correctness, clarity, security, and maintainability while sharing context among collaborators.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 94,
@@ -850,7 +943,8 @@
         "patterns"
       ],
       "response": "Design patterns are reusable approaches to recurring design problems. Use them when they simplify a real problem, not as mandatory templates.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 95,
@@ -859,7 +953,8 @@
         "injection"
       ],
       "response": "Dependency injection supplies a component's collaborators from outside, improving separation, testing, and configurability.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 96,
@@ -868,7 +963,8 @@
         "parallelism"
       ],
       "response": "Concurrency manages multiple tasks that overlap in time; parallelism executes multiple tasks at the same instant.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 97,
@@ -877,7 +973,8 @@
         "meaning"
       ],
       "response": "HTML gives web content its structure and semantics through elements such as headings, links, forms, lists, and landmarks.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 98,
@@ -886,7 +983,8 @@
         "meaning"
       ],
       "response": "CSS controls presentation, including layout, spacing, color, typography, animation, and responsive behavior.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 99,
@@ -895,7 +993,8 @@
         "meaning"
       ],
       "response": "JavaScript is the web's primary programming language for interaction, browser APIs, and dynamic application behavior.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 100,
@@ -904,7 +1003,8 @@
         "backend"
       ],
       "response": "The frontend is the interface users interact with; the backend handles server-side rules, storage, authentication, and integrations.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 101,
@@ -913,7 +1013,8 @@
         "https"
       ],
       "response": "HTTPS is HTTP protected by TLS, which encrypts traffic and authenticates the server to reduce interception and tampering.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 102,
@@ -922,7 +1023,8 @@
         "response"
       ],
       "response": "A client sends a request describing an action; a server returns a response containing a status, headers, and often a body.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 103,
@@ -931,7 +1033,8 @@
         "codes"
       ],
       "response": "HTTP status codes summarize outcomes: 2xx success, 3xx redirection, 4xx client errors, and 5xx server errors.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 104,
@@ -940,7 +1043,8 @@
         "web"
       ],
       "response": "A cookie is a small value a website asks a browser to store and send with matching requests, often for sessions or preferences.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 105,
@@ -949,7 +1053,8 @@
         "web"
       ],
       "response": "A web session connects multiple requests to temporary server-side state, usually through a protected session identifier.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 106,
@@ -958,7 +1063,8 @@
         "storage"
       ],
       "response": "localStorage stores string data in a browser for one origin and persists across sessions. Do not use it for sensitive secrets.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 107,
@@ -967,7 +1073,8 @@
         "cache"
       ],
       "response": "A browser cache reuses previously downloaded resources to reduce network work and make repeat visits faster.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 108,
@@ -976,7 +1083,8 @@
         "meaning"
       ],
       "response": "DNS translates human-readable domain names into network addresses that computers use to locate services.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 109,
@@ -985,7 +1093,8 @@
         "address"
       ],
       "response": "An IP address identifies a network interface so data can be routed to and from it.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 110,
@@ -994,7 +1103,8 @@
         "hosting"
       ],
       "response": "A domain is a human-readable address; hosting provides the servers and resources that deliver the site or application.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 111,
@@ -1003,7 +1113,8 @@
         "client"
       ],
       "response": "A client requests a service or resource, and a server listens for requests and provides responses.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 112,
@@ -1012,7 +1123,8 @@
         "meaning"
       ],
       "response": "WebSocket maintains a two-way connection so client and server can exchange messages without opening a new HTTP request each time.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 113,
@@ -1021,7 +1133,8 @@
         "design"
       ],
       "response": "Responsive design adapts layout and interaction to different screens using flexible sizing, sensible breakpoints, and touch-friendly controls.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 114,
@@ -1030,7 +1143,8 @@
         "web"
       ],
       "response": "Web accessibility makes interfaces usable with keyboards, screen readers, zoom, high contrast, and varied physical or cognitive abilities.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 115,
@@ -1039,7 +1153,8 @@
         "html"
       ],
       "response": "Semantic HTML uses elements according to meaning—such as nav, main, button, and heading—improving accessibility and maintainability.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 116,
@@ -1048,7 +1163,8 @@
         "flexbox"
       ],
       "response": "Flexbox lays items out along one main axis and is excellent for alignment, spacing, and one-dimensional component layouts.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 117,
@@ -1057,7 +1173,8 @@
         "grid"
       ],
       "response": "CSS Grid controls rows and columns together, making it well suited to page layouts and two-dimensional arrangements.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 118,
@@ -1066,7 +1183,8 @@
         "meaning"
       ],
       "response": "CORS is a browser security mechanism that lets a server declare which other origins may read its responses.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 119,
@@ -1075,7 +1193,8 @@
         "authorization"
       ],
       "response": "Authentication verifies who someone is; authorization decides what that identity is allowed to do.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 120,
@@ -1084,7 +1203,8 @@
         "hashing"
       ],
       "response": "Encryption is reversible with a key; secure hashing is one-way and is used for integrity checks and protected password verification.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 121,
@@ -1093,7 +1213,8 @@
         "computing"
       ],
       "response": "Cloud computing provides on-demand infrastructure and managed services over a network, often with usage-based scaling and billing.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 122,
@@ -1102,7 +1223,8 @@
         "better"
       ],
       "response": "Choose one clear task, remove the nearest distraction, set a short work interval, and define what done means before starting.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 123,
@@ -1111,7 +1233,8 @@
         "procrastinating"
       ],
       "response": "Shrink the task until the first action feels almost trivial, then work for five minutes without requiring yourself to finish everything.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 124,
@@ -1120,7 +1243,8 @@
         "day"
       ],
       "response": "Pick one must-do outcome, two useful secondary tasks, and leave unscheduled space for interruptions and recovery.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 125,
@@ -1129,7 +1253,8 @@
         "tasks"
       ],
       "response": "Rank tasks by impact, urgency, and cost of delay. Do the highest-value constrained task before easy low-impact work.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 126,
@@ -1138,7 +1263,8 @@
         "technique"
       ],
       "response": "Work with full focus for about 25 minutes, take a short break, and use a longer break after several rounds. Adjust the interval to fit your attention.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 127,
@@ -1147,7 +1273,8 @@
         "goals"
       ],
       "response": "Make goals specific and meaningful, then translate them into repeatable actions, milestones, and a regular review.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 128,
@@ -1156,7 +1283,8 @@
         "habit"
       ],
       "response": "Attach a tiny behavior to a stable cue, make it easy to begin, track consistency, and increase difficulty gradually.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 129,
@@ -1165,7 +1293,8 @@
         "habit"
       ],
       "response": "Identify the cue and reward, add friction to the unwanted action, and prepare a healthier replacement for the same need.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 130,
@@ -1174,7 +1303,8 @@
         "notes"
       ],
       "response": "Capture the main idea in your own words, connect it to what you know, and write questions or actions instead of copying everything.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 131,
@@ -1183,7 +1313,8 @@
         "faster"
       ],
       "response": "Use active recall, spaced repetition, varied practice, feedback, and explanation. Time spent retrieving knowledge beats repeated rereading.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 132,
@@ -1192,7 +1323,8 @@
         "better"
       ],
       "response": "Review information just before you would forget it, retrieve it without looking, and connect it to examples or existing knowledge.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 133,
@@ -1201,7 +1333,8 @@
         "exam"
       ],
       "response": "Map the topics, practice retrieval with representative questions, analyze mistakes, and schedule several shorter reviews instead of one cram session.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 134,
@@ -1210,7 +1343,8 @@
         "effectively"
       ],
       "response": "Preview the structure, read with a question in mind, pause to summarize sections, and record only ideas worth revisiting.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 135,
@@ -1219,7 +1353,8 @@
         "problem"
       ],
       "response": "Clarify the goal and constraints, list what is known, reduce the problem, try a small test, and update your approach from the result.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 136,
@@ -1228,7 +1363,8 @@
         "thinking"
       ],
       "response": "Separate claims from evidence, inspect assumptions, seek alternative explanations, and ask what observation would change your conclusion.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 137,
@@ -1237,7 +1373,8 @@
         "making"
       ],
       "response": "Define the decision, identify key criteria, compare a few realistic options, consider reversibility, and set a deadline.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 138,
@@ -1246,7 +1383,8 @@
         "time"
       ],
       "response": "Protect time for important work, batch small tasks, limit work in progress, and review where your time actually went.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 139,
@@ -1255,7 +1393,8 @@
         "distraction"
       ],
       "response": "Silence nonessential alerts, keep only the needed tools visible, write distracting thoughts down, and check them after the focus block.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 140,
@@ -1264,7 +1403,8 @@
         "consistent"
       ],
       "response": "Prefer a sustainable minimum you can repeat on difficult days over an ambitious routine you can only maintain briefly.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 141,
@@ -1273,7 +1413,8 @@
         "project"
       ],
       "response": "Write a one-sentence outcome, define the smallest working version, list the first three actions, and complete the first one today.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 142,
@@ -1282,7 +1423,8 @@
         "project"
       ],
       "response": "Freeze optional scope, list the remaining acceptance criteria, handle the riskiest gap first, and schedule a final review and release date.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 143,
@@ -1292,7 +1434,8 @@
         "questions"
       ],
       "response": "Share the goal, relevant context, what you tried, the exact result, and the specific decision or obstacle you need help with.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 144,
@@ -1301,7 +1444,8 @@
         "simply"
       ],
       "response": "Lead with the core idea, use familiar language, give one concrete example, and introduce technical detail only when it supports understanding.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 145,
@@ -1310,7 +1454,8 @@
         "programming"
       ],
       "response": "Pick one language, build small projects, read error messages carefully, practice often, and revisit fundamentals as your projects become harder.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 146,
@@ -1319,7 +1464,8 @@
         "coding"
       ],
       "response": "Alternate focused exercises with small real projects. Predict results before running code and keep a log of mistakes you understand.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 147,
@@ -1328,7 +1474,8 @@
         "number"
       ],
       "response": "A prime number is an integer greater than one with exactly two positive divisors: one and itself.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 148,
@@ -1337,7 +1484,8 @@
         "sequence"
       ],
       "response": "The Fibonacci sequence starts 0, 1, and each later number is the sum of the previous two: 0, 1, 1, 2, 3, 5, 8, and so on.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 149,
@@ -1346,7 +1494,8 @@
         "meaning"
       ],
       "response": "A percentage is a fraction out of 100. To find p percent of x, multiply x by p divided by 100.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 150,
@@ -1355,7 +1504,8 @@
         "median"
       ],
       "response": "The mean is the sum divided by the count. The median is the middle value after sorting, or the average of the two middle values.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 151,
@@ -1364,7 +1514,8 @@
         "meaning"
       ],
       "response": "Probability measures how likely an event is, from 0 for impossible to 1 for certain, under a defined model.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 152,
@@ -1373,7 +1524,8 @@
         "theorem"
       ],
       "response": "For a right triangle, a² + b² = c², where c is the side opposite the right angle.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 153,
@@ -1382,7 +1534,8 @@
         "circle"
       ],
       "response": "The area of a circle is πr², where r is its radius.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 154,
@@ -1392,7 +1545,8 @@
         "time"
       ],
       "response": "For constant speed: distance equals speed times time. Rearranging gives speed = distance/time and time = distance/speed.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 155,
@@ -1401,7 +1555,8 @@
         "meaning"
       ],
       "response": "Gravity is the attraction between masses. Near Earth it gives unsupported objects an acceleration of about 9.8 meters per second squared.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 156,
@@ -1410,7 +1565,8 @@
         "meaning"
       ],
       "response": "Photosynthesis lets plants, algae, and some bacteria use light energy to turn carbon dioxide and water into stored chemical energy, releasing oxygen.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 157,
@@ -1419,7 +1575,8 @@
         "meaning"
       ],
       "response": "An atom is the smallest unit of an element that retains its chemical identity, made of a nucleus surrounded by electrons.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 158,
@@ -1428,7 +1585,8 @@
         "meaning"
       ],
       "response": "DNA is a molecule that stores hereditary instructions using sequences of four chemical bases.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 159,
@@ -1437,7 +1595,8 @@
         "meaning"
       ],
       "response": "Evolution is change in inherited traits across generations. Mechanisms include natural selection, mutation, genetic drift, and gene flow.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 160,
@@ -1446,7 +1605,8 @@
         "change"
       ],
       "response": "Climate change is a long-term shift in climate patterns. Current rapid warming is primarily driven by human greenhouse-gas emissions.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 161,
@@ -1455,7 +1615,8 @@
         "system"
       ],
       "response": "The Solar System contains the Sun, eight planets, dwarf planets, moons, asteroids, comets, dust, and other objects bound by gravity.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 162,
@@ -1464,7 +1625,8 @@
         "hole"
       ],
       "response": "A black hole is a region where gravity is strong enough that, beyond the event horizon, even light cannot escape.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 163,
@@ -1473,7 +1635,8 @@
         "meaning"
       ],
       "response": "Relativity describes space, time, motion, and gravity. Special relativity concerns constant-speed frames; general relativity models gravity as curved spacetime.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 164,
@@ -1482,7 +1645,8 @@
         "physics"
       ],
       "response": "Quantum physics describes matter and energy at very small scales using probabilities, quantized properties, and wave-like behavior.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 165,
@@ -1491,7 +1655,8 @@
         "meaning"
       ],
       "response": "Electricity involves electric charge and its movement. Voltage drives charge, current measures its flow, and resistance opposes it.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 166,
@@ -1500,7 +1665,8 @@
         "science"
       ],
       "response": "Computer science studies computation, information, algorithms, data structures, programming languages, systems, and the limits of what can be computed.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 167,
@@ -1509,7 +1675,8 @@
         "better"
       ],
       "response": "Clarify the reader and purpose, draft the main point early, use concrete language, and revise for structure before polishing sentences.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 168,
@@ -1518,7 +1685,8 @@
         "essay"
       ],
       "response": "Begin by defining the question, choosing a clear position, gathering evidence, and outlining the few claims needed to support it.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 169,
@@ -1527,7 +1695,8 @@
         "statement"
       ],
       "response": "A thesis statement makes the essay's central, arguable claim and signals the reasoning the reader can expect.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 170,
@@ -1536,7 +1705,8 @@
         "structure"
       ],
       "response": "A strong paragraph usually presents one main idea, supports it with evidence or explanation, and connects it to the larger argument.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 171,
@@ -1545,7 +1715,8 @@
         "improve"
       ],
       "response": "Read often, study the errors you repeatedly make, revise sentences aloud, and use grammar tools as feedback rather than automatic authority.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 172,
@@ -1554,7 +1725,8 @@
         "voice"
       ],
       "response": "In active voice, the subject performs the action: 'The team fixed the bug.' It is often clearer than 'The bug was fixed by the team.'",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 173,
@@ -1563,7 +1735,8 @@
         "text"
       ],
       "response": "Identify the purpose, central claim, and essential supporting points, then restate them briefly in your own words without minor detail.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 174,
@@ -1572,7 +1745,8 @@
         "ideas"
       ],
       "response": "Set a short timer, generate options without judging them, vary constraints and perspectives, then group and evaluate the strongest candidates.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 175,
@@ -1581,7 +1755,8 @@
         "block"
       ],
       "response": "Lower the stakes: write an intentionally rough paragraph, answer one concrete question, or explain the idea as if speaking to a friend.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 176,
@@ -1590,7 +1765,8 @@
         "character"
       ],
       "response": "Give the character a strong want, a deeper need, a contradiction, a specific fear, and choices that reveal those traits under pressure.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 177,
@@ -1599,7 +1775,8 @@
         "plot"
       ],
       "response": "Build a plot around a character pursuing a goal through escalating obstacles, consequential choices, a climax, and a meaningful change or resolution.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 178,
@@ -1608,7 +1785,8 @@
         "writing"
       ],
       "response": "Give each speaker a goal, let subtext carry part of the meaning, keep voices distinct, and remove greetings or filler that do not change the scene.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 179,
@@ -1617,7 +1795,8 @@
         "professional"
       ],
       "response": "Use a specific subject, state the purpose early, provide only needed context, make the requested action clear, and close courteously.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 180,
@@ -1626,7 +1805,8 @@
         "tips"
       ],
       "response": "Tailor the resume to the role, lead bullets with actions, show measurable outcomes, keep formatting scannable, and remove unrelated filler.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 181,
@@ -1635,7 +1815,8 @@
         "tips"
       ],
       "response": "Design one clear takeaway, structure a simple narrative, use visuals to support—not duplicate—speech, rehearse aloud, and leave time for questions.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 182,
@@ -1644,7 +1825,8 @@
         "better"
       ],
       "response": "Keep a consistent schedule, reduce late caffeine and bright screens, make the room cool and dark, and seek medical advice for persistent sleep problems.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 183,
@@ -1653,7 +1835,8 @@
         "water"
       ],
       "response": "Drink regularly and use thirst plus urine color as rough guides. Needs vary with climate, activity, health, and diet.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 184,
@@ -1662,7 +1845,8 @@
         "beginner"
       ],
       "response": "Start with manageable walking and basic strength work, increase gradually, prioritize technique, and consult a professional if health concerns affect exercise.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 185,
@@ -1671,7 +1855,8 @@
         "meal"
       ],
       "response": "A simple balanced meal combines vegetables or fruit, a protein source, a high-fiber carbohydrate, and an appropriate amount of healthy fat.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 186,
@@ -1680,7 +1865,8 @@
         "stress"
       ],
       "response": "Reduce the immediate load where possible, move your body, protect sleep, talk with someone supportive, and break the next task into one action.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 187,
@@ -1689,7 +1875,8 @@
         "exercise"
       ],
       "response": "Try inhaling gently for four counts and exhaling for six counts for one or two minutes. Stop if you feel dizzy or uncomfortable.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 188,
@@ -1698,7 +1885,8 @@
         "anxious"
       ],
       "response": "Name what you notice, slow your breathing, focus on one present sensory detail, and consider professional support if anxiety is intense or persistent.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 189,
@@ -1707,7 +1895,8 @@
         "lonely"
       ],
       "response": "Try one small point of contact today: message someone, join a recurring group, volunteer, or spend time in a welcoming public place.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 190,
@@ -1716,7 +1905,8 @@
         "confidence"
       ],
       "response": "Build evidence through small promises kept, deliberate practice, honest self-talk, and gradually doing things that stretch you.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 191,
@@ -1725,7 +1915,8 @@
         "failure"
       ],
       "response": "Separate the result from your identity, identify what was controllable, extract one lesson, and choose the next experiment.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 192,
@@ -1734,7 +1925,8 @@
         "criticism"
       ],
       "response": "Listen for the specific behavior and impact, ask for an example, separate useful information from tone, and decide what action is warranted.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 193,
@@ -1743,7 +1935,8 @@
         "conflict"
       ],
       "response": "Describe observations without accusation, explain impact, listen for the other person's needs, and agree on one concrete next step.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 194,
@@ -1752,7 +1945,8 @@
         "friends"
       ],
       "response": "Show up repeatedly in places built around shared interests, ask genuine questions, follow up, and make small invitations instead of waiting for perfect chemistry.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 195,
@@ -1762,7 +1956,8 @@
         "balance"
       ],
       "response": "Set visible boundaries, protect recovery time, negotiate workload early, and regularly remove commitments that no longer justify their cost.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 196,
@@ -1772,7 +1967,8 @@
         "help"
       ],
       "response": "If distress is persistent, worsening, or disrupting daily life, contacting a qualified health professional is a strong and appropriate next step. In immediate danger, contact local emergency services.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 197,
@@ -1781,7 +1977,8 @@
         "password"
       ],
       "response": "Use a unique long passphrase for every account and store it in a reputable password manager. Never reuse important passwords.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 198,
@@ -1790,7 +1987,8 @@
         "meaning"
       ],
       "response": "Phishing impersonates a trusted source to steal information or trigger harmful actions. Verify requests through a separate trusted channel before responding.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 199,
@@ -1799,7 +1997,8 @@
         "meaning"
       ],
       "response": "Malware is software designed to harm, spy, steal, disrupt, or gain unauthorized access. Keep software updated and avoid untrusted downloads.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 200,
@@ -1808,7 +2007,8 @@
         "meaning"
       ],
       "response": "Ransomware encrypts or steals data and demands payment. Reduce risk with offline backups, updates, limited privileges, and phishing awareness.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 201,
@@ -1817,7 +2017,8 @@
         "factor"
       ],
       "response": "Two-factor authentication requires a second proof beyond your password. An authenticator app or security key is generally stronger than SMS.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 202,
@@ -1826,7 +2027,8 @@
         "updates"
       ],
       "response": "Install security updates promptly from official sources because they often repair vulnerabilities already known to attackers.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 203,
@@ -1835,7 +2037,8 @@
         "wifi"
       ],
       "response": "Treat public Wi-Fi as untrusted: prefer HTTPS, avoid sensitive work when possible, disable sharing, and use a trusted VPN when appropriate.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 204,
@@ -1844,7 +2047,8 @@
         "data"
       ],
       "response": "Keep multiple copies on different media, with at least one offline or off-site, and occasionally test that you can restore them.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 205,
@@ -1853,7 +2057,8 @@
         "online"
       ],
       "response": "Share less by default, review app permissions, block unnecessary tracking, use unique credentials, and assume public posts may persist.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 206,
@@ -1862,7 +2067,8 @@
         "link"
       ],
       "response": "Do not open it. Inspect the sender and domain, verify the request separately, and report or delete it if authenticity remains uncertain.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 207,
@@ -1871,7 +2077,8 @@
         "joke"
       ],
       "response": "Why does Rust never lose track of its tools? Because ownership is always clearly defined.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 208,
@@ -1880,7 +2087,8 @@
         "joke"
       ],
       "response": "There are only 10 kinds of people: those who understand binary and those who do not.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 209,
@@ -1889,7 +2097,8 @@
         "riddle"
       ],
       "response": "What has keys but no locks, space but no room, and you can enter but not go inside? A keyboard.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 210,
@@ -1898,7 +2107,8 @@
         "challenge"
       ],
       "response": "Explain ownership in Rust using only a library book, a borrower, and a return deadline. Keep it under three sentences.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 211,
@@ -1909,7 +2119,8 @@
         "learned"
       ],
       "response": "I have learned a growing collection of local memories about conversation, Rust, programming, the web, productivity, science, writing, wellbeing, and digital safety. Open the Knowledge panel to browse the complete live list.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 212,
@@ -1920,7 +2131,8 @@
         "far"
       ],
       "response": "So far I have learned hundreds of question-and-answer memories across practical and technical topics. The Knowledge panel shows every current memory and its response.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 213,
@@ -1929,7 +2141,8 @@
         "them"
       ],
       "response": "Open the Knowledge panel on the right to see the complete searchable list of everything I know.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 214,
@@ -1938,7 +2151,8 @@
         "memories"
       ],
       "response": "My full memory list is available in the Knowledge panel. You can search it, inspect responses, add lessons, or forget individual memories there.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 215,
@@ -1947,7 +2161,8 @@
         "knowledge"
       ],
       "response": "Use the Knowledge button to open my complete knowledge library. It always reflects the memories currently saved in knowledge.json.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 216,
@@ -1958,7 +2173,8 @@
         "know"
       ],
       "response": "I know local memories covering small talk, Rust, programming, web technology, learning, productivity, science, writing, wellbeing, security, and a little fun.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 217,
@@ -1968,7 +2184,8 @@
         "memories"
       ],
       "response": "The live memory count appears in the Ready badge and at the top of the Knowledge panel, so it stays accurate as you teach or remove answers.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 218,
@@ -1979,7 +2196,8 @@
         "know"
       ],
       "response": "Check the Ready badge or Knowledge panel for my current total. The number changes whenever you teach or forget a memory.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 219,
@@ -1988,7 +2206,8 @@
         "know"
       ],
       "response": "My main topics are conversation, Rust, general programming, web development, productivity, learning, math, science, writing, creativity, wellbeing, privacy, and cybersecurity.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 220,
@@ -1998,7 +2217,8 @@
         "you"
       ],
       "response": "Try asking about Rust ownership, web concepts, study methods, writing tips, basic science, online safety, motivation, or how my memory works.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 221,
@@ -2007,7 +2227,8 @@
         "questions"
       ],
       "response": "Examples: What is ownership in Rust? How can I focus better? What is a black hole? How do I write better? What is phishing? Or: What have you learned?",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 222,
@@ -2016,7 +2237,8 @@
         "work"
       ],
       "response": "I normalize your words, compare them with saved keyword patterns, choose the most specific complete match, and return that memory's response.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 223,
@@ -2026,7 +2248,8 @@
         "answer"
       ],
       "response": "I say an answer is unknown when your question does not fully match any saved memory. You can use the teaching card to add the missing response.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 224,
@@ -2036,7 +2259,8 @@
         "ai"
       ],
       "response": "I am a deterministic, self-learning chatbot rather than a generative AI model. I retrieve responses that have been explicitly stored in my local knowledge file.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 225,
@@ -2045,7 +2269,8 @@
         "internet"
       ],
       "response": "Chat answers still come from local memories and I do not browse arbitrary websites. Market Lab makes narrow public-data requests to the selected market provider and displays a TradingView widget.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 226,
@@ -2054,7 +2279,8 @@
         "offline"
       ],
       "response": "Chatting and managing saved memories work offline. Market Lab needs an internet connection to fetch current provider candles and load its TradingView chart.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 227,
@@ -2064,7 +2290,8 @@
         "stored"
       ],
       "response": "My learned question-and-answer memories are stored locally in knowledge.json beside the RustBot project.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 228,
@@ -2073,7 +2300,8 @@
         "conversation"
       ],
       "response": "Messages remain available for the current browser session. Only answers you explicitly teach are saved as durable memories in knowledge.json.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 229,
@@ -2083,7 +2311,8 @@
         "restart"
       ],
       "response": "Yes. Taught memories persist in knowledge.json and are loaded again when RustBot restarts.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 230,
@@ -2093,7 +2322,8 @@
         "you"
       ],
       "response": "The project began with a small set of built-in lessons, and you are the teacher expanding what I know.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 231,
@@ -2103,7 +2333,8 @@
         "everything"
       ],
       "response": "No. Conversation answers still come from saved memories. The separate Market Lab can fetch public candle data, but that does not give me broad human understanding or knowledge of everything.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 232,
@@ -2112,7 +2343,8 @@
         "limitations"
       ],
       "response": "My chat uses keyword matching and may miss differently worded questions. Market Lab can fetch public market candles, but its numerical baseline cannot guarantee future prices or replace risk controls.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 233,
@@ -2121,7 +2353,8 @@
         "memory"
       ],
       "response": "Ask something I do not know and use the teaching card, or open Teach RustBot and enter a trigger phrase plus the response I should remember.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 234,
@@ -2130,7 +2363,8 @@
         "memory"
       ],
       "response": "Open the Knowledge panel, find the memory, choose Forget, and confirm. An Undo action appears immediately afterward.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 235,
@@ -2139,7 +2373,8 @@
         "memory"
       ],
       "response": "Open the Knowledge panel and type keywords into the search field to filter both triggers and saved responses.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 236,
@@ -2148,7 +2383,8 @@
         "answer"
       ],
       "response": "To replace an answer, forget the old memory in the Knowledge panel and then teach the corrected response.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 237,
@@ -2157,7 +2393,8 @@
         "memory"
       ],
       "response": "The newest lessons appear first in the Knowledge panel, where recently forged memories are briefly highlighted.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 238,
@@ -2166,7 +2403,8 @@
         "everything"
       ],
       "response": "RustBot currently removes memories individually to reduce accidental data loss. Review each item in the Knowledge panel before forgetting it.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 239,
@@ -2176,7 +2414,8 @@
         "secrets"
       ],
       "response": "Do not teach me passwords, private keys, financial details, medical records, or other sensitive information. Learned text is stored as readable local JSON.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 240,
@@ -2185,7 +2424,8 @@
         "file"
       ],
       "response": "knowledge.json is the readable local file containing my memory IDs, keywords, matching modes, and saved responses.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 241,
@@ -2197,7 +2437,8 @@
         "code"
       ],
       "response": "print(\"Hello World!\")",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 242,
@@ -2206,7 +2447,8 @@
         "lab"
       ],
       "response": "Open Market Lab from the left navigation. Choose a provider, symbol, interval, and training window, then run a chronological research test without leaving the chatbot.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 243,
@@ -2215,7 +2457,8 @@
         "data"
       ],
       "response": "Market Lab uses Binance's public spot candlestick endpoint for symbols such as BTCUSDT. Public candle requests do not need a trading API key.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 244,
@@ -2224,7 +2467,8 @@
         "data"
       ],
       "response": "Choose CoinGecko and enter a coin ID such as bitcoin, ethereum, or solana. A COINGECKO_API_KEY environment variable can be supplied when the service requires demo authentication.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 245,
@@ -2233,7 +2477,8 @@
         "data"
       ],
       "response": "Choose Kraken and enter a public market pair such as XBTUSD or ETHUSD. RustBot fetches OHLC history but never receives account credentials.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 246,
@@ -2242,7 +2487,8 @@
         "chart"
       ],
       "response": "The TradingView panel is for interactive visual confirmation. Model scoring uses the provider identified in the experiment, not values scraped from the chart.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 247,
@@ -2252,7 +2498,8 @@
         "accuracy"
       ],
       "response": "I cannot promise 90% price-direction accuracy. Treat unusually high results as a reason to inspect leakage, overfitting, class balance, fees, and the untouched test period.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 248,
@@ -2261,7 +2508,8 @@
         "trade"
       ],
       "response": "No. Market Lab is research-only and does not place live orders. Validate a strategy through repeated forward paper trading and explicit risk controls before considering execution.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 249,
@@ -2270,7 +2518,8 @@
         "features"
       ],
       "response": "The baseline uses recent returns, momentum, moving-average trend, realized volatility, and volume impulse. It standardizes features using only the oldest training split.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
     },
     {
       "id": 250,
@@ -2280,7 +2529,17 @@
         "test"
       ],
       "response": "Market Lab trains on the oldest 70%, selects its action threshold on the next 15%, and reports metrics only on the newest untouched 15%.",
-      "match_mode": "all"
+      "match_mode": "all",
+      "category": "general"
+    },
+    {
+      "id": 252,
+      "keywords": [
+        "okay"
+      ],
+      "response": "What can i help you with today?",
+      "match_mode": "all",
+      "category": "general"
     }
   ]
 }

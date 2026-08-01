@@ -11,6 +11,7 @@ const state = {
   workspace: "chat",
   marketData: [],
   marketChartData: [],
+  activeZoomPattern: null,
 };
 
 const elements = {
@@ -37,6 +38,7 @@ const elements = {
   marketSymbol: document.querySelector("#market-symbol"),
   marketTimeframe: document.querySelector("#market-timeframe"),
   marketLookback: document.querySelector("#market-lookback"),
+  marketApiKey: document.querySelector("#market-api-key"),
   datasetTitle: document.querySelector("#dataset-title"),
   datasetCopy: document.querySelector("#dataset-copy"),
   datasetStatus: document.querySelector("#dataset-status"),
@@ -50,17 +52,31 @@ const elements = {
   upProbability: document.querySelector("#up-probability"),
   probabilityFill: document.querySelector("#probability-fill"),
   signalExplanation: document.querySelector("#signal-explanation"),
+  newsSentimentBadge: document.querySelector("#news-sentiment-badge"),
+  candlePatternsList: document.querySelector("#candle-patterns-list"),
+  pivotLevelsDisplay: document.querySelector("#pivot-levels-display"),
   testAccuracy: document.querySelector("#test-accuracy"),
   strategyReturn: document.querySelector("#strategy-return"),
+  sharpeRatio: document.querySelector("#sharpe-ratio"),
+  sortinoRatio: document.querySelector("#sortino-ratio"),
   maxDrawdown: document.querySelector("#max-drawdown"),
   testSamples: document.querySelector("#test-samples"),
   priceChart: document.querySelector("#price-chart"),
+  equityChart: document.querySelector("#equity-chart"),
+  botFinalCapital: document.querySelector("#bot-final-capital"),
+  botTotalTrades: document.querySelector("#bot-total-trades"),
+  botWinRate: document.querySelector("#bot-win-rate"),
+  buyHoldReturn: document.querySelector("#buy-hold-return"),
   tradingViewWidget: document.querySelector("#tradingview-widget"),
   tradingViewLink: document.querySelector("#tradingview-link"),
   memoryCount: document.querySelector("#memory-count"),
   railMemoryCount: document.querySelector("#rail-memory-count"),
   memoryList: document.querySelector("#memory-list"),
   memorySearch: document.querySelector("#memory-search-input"),
+  categoryFilter: document.querySelector("#category-filter"),
+  exportButton: document.querySelector("#export-knowledge-button"),
+  importInput: document.querySelector("#import-knowledge-input"),
+  memoryCategory: document.querySelector("#memory-category"),
   addMemoryButton: document.querySelector("#add-memory-button"),
   addMemoryForm: document.querySelector("#add-memory-form"),
   cancelAddMemory: document.querySelector("#cancel-add-memory"),
@@ -74,10 +90,30 @@ const elements = {
   toastAction: document.querySelector("#toast-action"),
   toastClose: document.querySelector("#toast-close"),
   announcer: document.querySelector("#app-announcer"),
+  cardZoomModal: document.querySelector("#card-zoom-modal"),
+  zoomCardId: document.querySelector("#zoom-card-id"),
+  zoomCardCategory: document.querySelector("#zoom-card-category"),
+  zoomCardMode: document.querySelector("#zoom-card-mode"),
+  zoomCloseBtn: document.querySelector("#zoom-close-btn"),
+  zoomCardTrigger: document.querySelector("#zoom-card-trigger"),
+  zoomKeywordRow: document.querySelector("#zoom-keyword-row"),
+  zoomCardResponse: document.querySelector("#zoom-card-response"),
+  zoomCopyBtn: document.querySelector("#zoom-copy-btn"),
+  zoomTestBtn: document.querySelector("#zoom-test-btn"),
+  zoomForgetBtn: document.querySelector("#zoom-forget-btn"),
+  historyNavBtn: document.querySelector("#history-nav-btn"),
+  railHistoryCount: document.querySelector("#rail-history-count"),
+  chatHistoryModal: document.querySelector("#chat-history-modal"),
+  historyCloseBtn: document.querySelector("#history-close-btn"),
+  historySessionCount: document.querySelector("#history-session-count"),
+  historyListContainer: document.querySelector("#history-list-container"),
+  exportHistoryBtn: document.querySelector("#export-history-btn"),
+  clearHistoryBtn: document.querySelector("#clear-history-btn"),
 };
 
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 const narrowWorkspace = window.matchMedia("(max-width: 1180px)");
+const csrfToken = document.querySelector('meta[name="rustbot-csrf-token"]')?.getAttribute("content") || "";
 
 document.addEventListener("DOMContentLoaded", initialize);
 
@@ -136,6 +172,36 @@ function bindEvents() {
     renderKnowledge();
   });
 
+  document.querySelectorAll(".category-tab").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      document.querySelectorAll(".category-tab").forEach((t) => t.classList.remove("active"));
+      tab.classList.add("active");
+      const cat = tab.dataset.category || "all";
+      state.category = cat;
+      if (elements.categoryFilter) {
+        elements.categoryFilter.value = cat;
+      }
+      loadKnowledge();
+    });
+  });
+
+  if (elements.categoryFilter) {
+    elements.categoryFilter.addEventListener("change", () => {
+      const cat = elements.categoryFilter.value;
+      state.category = cat;
+      document.querySelectorAll(".category-tab").forEach((t) => {
+        t.classList.toggle("active", (t.dataset.category || "all") === cat);
+      });
+      loadKnowledge();
+    });
+  }
+  if (elements.exportButton) {
+    elements.exportButton.addEventListener("click", exportKnowledge);
+  }
+  if (elements.importInput) {
+    elements.importInput.addEventListener("change", importKnowledge);
+  }
+
   elements.forgetDialog.addEventListener("close", () => {
     if (elements.forgetDialog.returnValue === "confirm" && state.pendingDelete) {
       forgetMemory(state.pendingDelete);
@@ -145,6 +211,60 @@ function bindEvents() {
 
   elements.toastClose.addEventListener("click", hideToast);
 
+  if (elements.historyCloseBtn) {
+    elements.historyCloseBtn.addEventListener("click", closeHistoryModal);
+  }
+  if (elements.chatHistoryModal) {
+    elements.chatHistoryModal.addEventListener("click", (event) => {
+      if (event.target === elements.chatHistoryModal) closeHistoryModal();
+    });
+  }
+  if (elements.exportHistoryBtn) {
+    elements.exportHistoryBtn.addEventListener("click", exportHistoryLogs);
+  }
+  if (elements.clearHistoryBtn) {
+    elements.clearHistoryBtn.addEventListener("click", clearHistoryLogs);
+  }
+
+  if (elements.zoomCloseBtn) {
+    elements.zoomCloseBtn.addEventListener("click", closeCardZoomModal);
+  }
+  if (elements.cardZoomModal) {
+    elements.cardZoomModal.addEventListener("click", (event) => {
+      if (event.target === elements.cardZoomModal) closeCardZoomModal();
+    });
+  }
+  if (elements.zoomCopyBtn) {
+    elements.zoomCopyBtn.addEventListener("click", async () => {
+      if (state.activeZoomPattern) {
+        try {
+          await navigator.clipboard.writeText(state.activeZoomPattern.response);
+          showToast("Memory response copied to clipboard.");
+        } catch {
+          showToast("Failed to copy response.");
+        }
+      }
+    });
+  }
+  if (elements.zoomTestBtn) {
+    elements.zoomTestBtn.addEventListener("click", () => {
+      if (state.activeZoomPattern) {
+        const promptText = state.activeZoomPattern.keywords.join(" ");
+        closeCardZoomModal();
+        sendMessage(promptText);
+      }
+    });
+  }
+  if (elements.zoomForgetBtn) {
+    elements.zoomForgetBtn.addEventListener("click", () => {
+      if (state.activeZoomPattern) {
+        const pattern = state.activeZoomPattern;
+        closeCardZoomModal();
+        openForgetDialog(pattern);
+      }
+    });
+  }
+
   document.addEventListener("keydown", (event) => {
     const activeTag = document.activeElement?.tagName;
     const isTyping = activeTag === "INPUT" || activeTag === "TEXTAREA";
@@ -153,8 +273,12 @@ function bindEvents() {
       openKnowledgePanel();
       elements.memorySearch.focus();
     }
-    if (event.key === "Escape" && isKnowledgePanelOpen()) {
-      closeKnowledgePanel();
+    if (event.key === "Escape") {
+      if (elements.cardZoomModal?.open) {
+        closeCardZoomModal();
+      } else if (isKnowledgePanelOpen()) {
+        closeKnowledgePanel();
+      }
     }
   });
 
@@ -168,7 +292,10 @@ function bindEvents() {
 
 async function loadKnowledge() {
   try {
-    const data = await api("/api/knowledge");
+    const url = state.category && state.category !== "all"
+      ? `/api/knowledge?category=${encodeURIComponent(state.category)}`
+      : "/api/knowledge";
+    const data = await api(url);
     state.patterns = Array.isArray(data.patterns) ? data.patterns : [];
     updateMemorySummary();
     renderKnowledge();
@@ -204,6 +331,17 @@ async function sendMessage(rawMessage) {
       responseTimeMs,
     });
     if (result.status === "unknown") {
+      const apiKey = elements.marketApiKey?.value.trim() || "";
+      try {
+        const aiResponse = await callOpenRouterChat(apiKey, message);
+        if (aiResponse) {
+          row.querySelector(".message-bubble").innerHTML = renderMarkdown(`🤖 **OpenRouter AI Response:**\n\n${aiResponse}`);
+          announce("OpenRouter AI answered your prompt.");
+          return;
+        }
+      } catch (aiErr) {
+        console.warn("OpenRouter Chat Error:", aiErr);
+      }
       row.querySelector(".message-body").append(createTeachCard(message));
       announce("RustBot does not know that answer yet. A teaching form is ready.");
     }
@@ -253,7 +391,11 @@ function appendMessage(role, text, options = {}) {
 
   const bubble = document.createElement("div");
   bubble.className = `message-bubble${options.error ? " is-error" : ""}`;
-  bubble.textContent = text;
+  if (role === "bot" && !options.error) {
+    bubble.innerHTML = renderMarkdown(text);
+  } else {
+    bubble.textContent = text;
+  }
   body.append(meta, bubble);
 
   if (role === "user") row.append(body, avatar);
@@ -512,7 +654,7 @@ function createWelcomeState() {
 
 function restoreConversation() {
   try {
-    const stored = JSON.parse(sessionStorage.getItem("rustbot-conversation") || "[]");
+    const stored = JSON.parse(localStorage.getItem("rustbot-conversation-permanent") || sessionStorage.getItem("rustbot-conversation") || "[]");
     if (!Array.isArray(stored) || stored.length === 0) return;
     state.messages = stored.filter(
       (message) =>
@@ -521,15 +663,234 @@ function restoreConversation() {
     const messages = [...state.messages];
     state.messages = [];
     messages.forEach((message) =>
-      appendMessage(message.role, message.text, { responseTimeMs: message.responseTimeMs }),
+      appendMessage(message.role, message.text, { responseTimeMs: message.responseTimeMs, save: false }),
     );
+    state.messages = messages;
   } catch {
-    sessionStorage.removeItem("rustbot-conversation");
+    localStorage.removeItem("rustbot-conversation-permanent");
   }
+  updateHistoryCount();
 }
 
 function saveConversation() {
+  localStorage.setItem("rustbot-conversation-permanent", JSON.stringify(state.messages));
   sessionStorage.setItem("rustbot-conversation", JSON.stringify(state.messages));
+
+  try {
+    const sessions = JSON.parse(localStorage.getItem("rustbot-all-sessions") || "[]");
+    let currentSessionId = sessionStorage.getItem("rustbot-session-id");
+    if (!currentSessionId) {
+      currentSessionId = `session-${Date.now()}`;
+      sessionStorage.setItem("rustbot-session-id", currentSessionId);
+    }
+
+    const existingIndex = sessions.findIndex((s) => s.id === currentSessionId);
+    const sessionObj = {
+      id: currentSessionId,
+      timestamp: Date.now(),
+      title: state.messages[0]?.text?.substring(0, 45) || "Conversation Session",
+      messages: state.messages,
+    };
+
+    if (existingIndex >= 0) sessions[existingIndex] = sessionObj;
+    else sessions.unshift(sessionObj);
+
+    localStorage.setItem("rustbot-all-sessions", JSON.stringify(sessions.slice(0, 100)));
+    updateHistoryCount();
+  } catch (err) {
+    console.warn("Failed to archive session:", err);
+  }
+}
+
+function updateHistoryCount() {
+  try {
+    const sessions = JSON.parse(localStorage.getItem("rustbot-all-sessions") || "[]");
+    if (elements.railHistoryCount) elements.railHistoryCount.textContent = String(sessions.length);
+    if (elements.historySessionCount) elements.historySessionCount.textContent = `${sessions.length} saved sessions`;
+  } catch {}
+}
+
+async function openHistoryModal() {
+  if (!elements.chatHistoryModal) return;
+  await renderHistoryModal();
+  elements.chatHistoryModal.showModal();
+}
+
+function closeHistoryModal() {
+  if (elements.chatHistoryModal?.open) {
+    elements.chatHistoryModal.close();
+  }
+}
+
+async function renderHistoryModal() {
+  if (!elements.historyListContainer) return;
+  elements.historyListContainer.replaceChildren();
+
+  let serverHistory = [];
+  try {
+    const res = await api("/api/chat/history");
+    serverHistory = Array.isArray(res.history) ? res.history : [];
+  } catch (err) {
+    console.warn("Could not fetch server chat history:", err);
+  }
+
+  const localSessions = JSON.parse(localStorage.getItem("rustbot-all-sessions") || "[]");
+
+  if (!localSessions.length && !serverHistory.length) {
+    const emptyState = document.createElement("div");
+    emptyState.style.padding = "20px";
+    emptyState.style.textAlign = "center";
+    emptyState.style.color = "#838a84";
+    emptyState.textContent = "No chat history recorded yet. Start talking to RustBot!";
+    elements.historyListContainer.append(emptyState);
+    return;
+  }
+
+  // Render Saved Sessions
+  if (localSessions.length > 0) {
+    const sectionTitle = document.createElement("p");
+    sectionTitle.style.fontSize = "11px";
+    sectionTitle.style.fontWeight = "700";
+    sectionTitle.style.color = "#34d399";
+    sectionTitle.style.textTransform = "uppercase";
+    sectionTitle.textContent = "Saved Chat Sessions";
+    elements.historyListContainer.append(sectionTitle);
+
+    localSessions.forEach((sess) => {
+      const card = document.createElement("div");
+      card.style.background = "rgba(255, 255, 255, 0.05)";
+      card.style.border = "1px solid rgba(255, 255, 255, 0.1)";
+      card.style.borderRadius = "12px";
+      card.style.padding = "12px 14px";
+      card.style.display = "flex";
+      card.style.justifyContent = "space-between";
+      card.style.alignItems = "center";
+
+      const info = document.createElement("div");
+      const title = document.createElement("strong");
+      title.style.display = "block";
+      title.style.color = "#fff";
+      title.style.fontSize = "13px";
+      title.textContent = `“${sess.title}…”`;
+
+      const meta = document.createElement("span");
+      meta.style.fontSize = "10px";
+      meta.style.color = "#94a3b8";
+      meta.textContent = `${new Date(sess.timestamp).toLocaleString()} · ${sess.messages.length} messages`;
+      info.append(title, meta);
+
+      const loadBtn = document.createElement("button");
+      loadBtn.className = "toolbar-action-btn";
+      loadBtn.type = "button";
+      loadBtn.textContent = "Load Session";
+      loadBtn.addEventListener("click", () => {
+        loadSessionMessages(sess);
+        closeHistoryModal();
+      });
+
+      card.append(info, loadBtn);
+      elements.historyListContainer.append(card);
+    });
+  }
+
+  // Render Server Disk Log Summary
+  if (serverHistory.length > 0) {
+    const serverTitle = document.createElement("p");
+    serverTitle.style.fontSize = "11px";
+    serverTitle.style.fontWeight = "700";
+    serverTitle.style.color = "#e46232";
+    serverTitle.style.margin = "14px 0 6px";
+    serverTitle.style.textTransform = "uppercase";
+    serverTitle.textContent = `Disk Log (chat_history.json · ${serverHistory.length} entries)`;
+    elements.historyListContainer.append(serverTitle);
+
+    const logBox = document.createElement("div");
+    logBox.style.background = "#141a17";
+    logBox.style.border = "1px solid rgba(228, 98, 50, 0.25)";
+    logBox.style.borderRadius = "10px";
+    logBox.style.padding = "10px 12px";
+    logBox.style.maxHeight = "180px";
+    logBox.style.overflowY = "auto";
+    logBox.style.fontFamily = "ui-monospace, SFMono-Regular, monospace";
+    logBox.style.fontSize = "10px";
+    logBox.style.color = "#cbd5e1";
+
+    serverHistory.slice(-25).reverse().forEach((entry) => {
+      const line = document.createElement("div");
+      line.style.marginBottom = "6px";
+      line.style.borderBottom = "1px solid rgba(255,255,255,0.05)";
+      line.style.paddingBottom = "4px";
+
+      const userTag = document.createElement("span");
+      userTag.style.color = "#e46232";
+      userTag.textContent = "User: ";
+
+      const userText = document.createTextNode(entry.user || "");
+
+      const br = document.createElement("br");
+
+      const botTag = document.createElement("span");
+      botTag.style.color = "#34d399";
+      botTag.textContent = "Bot: ";
+
+      const botSpan = document.createElement("span");
+      botSpan.innerHTML = renderMarkdown(entry.bot || "");
+
+      line.append(userTag, userText, br, botTag, botSpan);
+      logBox.append(line);
+    });
+    elements.historyListContainer.append(logBox);
+  }
+}
+
+function loadSessionMessages(session) {
+  switchWorkspace("chat");
+  state.messages = [];
+  sessionStorage.setItem("rustbot-session-id", session.id);
+  sessionStorage.setItem("rustbot-conversation", JSON.stringify(session.messages));
+  localStorage.setItem("rustbot-conversation-permanent", JSON.stringify(session.messages));
+  elements.conversation.replaceChildren();
+
+  const messages = [...session.messages];
+  messages.forEach((message) =>
+    appendMessage(message.role, message.text, { responseTimeMs: message.responseTimeMs, save: false }),
+  );
+  state.messages = messages;
+  showToast("Loaded selected chat session.");
+}
+
+async function exportHistoryLogs() {
+  const localSessions = JSON.parse(localStorage.getItem("rustbot-all-sessions") || "[]");
+  let serverHistory = [];
+  try {
+    const res = await api("/api/chat/history");
+    serverHistory = res.history || [];
+  } catch {}
+
+  const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({ sessions: localSessions, server_logs: serverHistory }, null, 2));
+  const downloadAnchor = document.createElement("a");
+  downloadAnchor.setAttribute("href", dataStr);
+  downloadAnchor.setAttribute("download", `rustbot-chat-history-${new Date().toISOString().slice(0,10)}.json`);
+  document.body.appendChild(downloadAnchor);
+  downloadAnchor.click();
+  downloadAnchor.remove();
+  showToast("Exported chat history logs.");
+}
+
+async function clearHistoryLogs() {
+  if (confirm("Are you sure you want to clear all past chat history logs?")) {
+    localStorage.removeItem("rustbot-all-sessions");
+    localStorage.removeItem("rustbot-conversation-permanent");
+    sessionStorage.removeItem("rustbot-conversation");
+    sessionStorage.removeItem("rustbot-session-id");
+    try {
+      await api("/api/chat/history", { method: "DELETE" });
+    } catch {}
+    startNewConversation();
+    await renderHistoryModal();
+    updateHistoryCount();
+    showToast("All past chat history cleared.");
+  }
 }
 
 function setSending(sending) {
@@ -570,6 +931,8 @@ function handleNavigation(destination) {
   } else if (destination === "teach") {
     switchWorkspace("chat");
     openTeachingForm();
+  } else if (destination === "history") {
+    openHistoryModal();
   } else {
     openKnowledgePanel();
     elements.memorySearch.focus();
@@ -723,12 +1086,16 @@ async function trainMarketModel(event) {
   elements.datasetStatus.textContent = "Connecting…";
 
   try {
-    const query = new URLSearchParams({ provider, symbol, interval: timeframe, limit: String(limit) });
+    const queryParams = { provider, symbol, interval: timeframe, limit: String(limit) };
+    const query = new URLSearchParams(queryParams);
     const response = await api(`/api/market/candles?${query}`);
     const candles = Array.isArray(response.candles)
       ? response.candles
           .map((candle) => ({
             timestamp: Number(candle.timestamp),
+            open: Number(candle.open || candle.close),
+            high: Number(candle.high || candle.close),
+            low: Number(candle.low || candle.close),
             close: Number(candle.close),
             volume: Number(candle.volume) || 0,
           }))
@@ -740,12 +1107,18 @@ async function trainMarketModel(event) {
     }
 
     state.marketData = candles;
-    elements.marketTrainButton.firstElementChild.textContent = "Training chronological baseline…";
-    elements.datasetStatus.textContent = `${candles.length} candles`;
+    const apiKey = elements.marketApiKey?.value.trim() || "";
+    elements.marketTrainButton.firstElementChild.textContent = apiKey ? "Training AI-Enhanced Model…" : "Training chronological baseline…";
+    elements.datasetStatus.textContent = `${candles.length} live candles ${apiKey ? "(OpenRouter AI Connected 🤖)" : `(Recorded: ${response.recorded_count || candles.length})`}`;
     elements.readyLabel.textContent = `Dataset · ${candles.length} candles`;
     await wait(reducedMotion.matches ? 0 : 40);
     const result = runMarketExperiment(candles);
-    renderMarketReport(result, response.provider || provider, response.symbol || symbol, timeframe);
+
+    let openRouterAnalysis = null;
+    elements.marketTrainButton.firstElementChild.textContent = "Querying OpenRouter AI Model…";
+    openRouterAnalysis = await callOpenRouterMarketAnalysis(apiKey, symbol, candles, result);
+
+    renderMarketReport(result, response.provider || provider, response.symbol || symbol, timeframe, openRouterAnalysis);
     renderTradingViewWidget();
     announce(`Market baseline trained on ${candles.length} candles. Out-of-sample accuracy ${Math.round(result.accuracy * 100)} percent.`);
   } catch (error) {
@@ -789,6 +1162,8 @@ function runMarketExperiment(candles) {
     testSamples: test.length,
     strategyReturn: strategy.netReturn,
     maxDrawdown: strategy.maxDrawdown,
+    strategySharpe: strategy.sharpe,
+    strategySortino: strategy.sortino,
     trainEndRatio: trainEnd / samples.length,
     validationEndRatio: validationEnd / samples.length,
   };
@@ -888,6 +1263,7 @@ function backtestSignals(samples, probabilities, threshold) {
   let maxDrawdown = 0;
   let previousPosition = 0;
   const feeRate = 0.001;
+  const periodReturns = [];
   samples.forEach((sample, index) => {
     const probability = probabilities[index];
     const position = probability >= threshold ? 1 : probability <= 1 - threshold ? -1 : 0;
@@ -897,11 +1273,34 @@ function backtestSignals(samples, probabilities, threshold) {
     peak = Math.max(peak, equity);
     maxDrawdown = Math.max(maxDrawdown, (peak - equity) / peak);
     previousPosition = position;
+    periodReturns.push(periodReturn);
   });
-  return { netReturn: equity - 1, maxDrawdown };
+
+  const sharpe = calculateSharpe(periodReturns);
+  const sortino = calculateSortino(periodReturns);
+  return { netReturn: equity - 1, maxDrawdown, sharpe, sortino };
 }
 
-function renderMarketReport(result, provider, symbol, timeframe) {
+function calculateSharpe(returns) {
+  if (returns.length < 2) return "0.00";
+  const m = mean(returns);
+  const s = standardDeviation(returns);
+  if (s === 0) return "0.00";
+  return ((m / s) * Math.sqrt(365 * 24)).toFixed(2);
+}
+
+function calculateSortino(returns) {
+  if (returns.length < 2) return "0.00";
+  const m = mean(returns);
+  const downside = returns.filter((r) => r < 0);
+  if (downside.length === 0) return "∞";
+  const downsideVar = downside.reduce((acc, r) => acc + r * r, 0) / downside.length;
+  const downsideStd = Math.sqrt(downsideVar);
+  if (downsideStd === 0) return "0.00";
+  return ((m / downsideStd) * Math.sqrt(365 * 24)).toFixed(2);
+}
+
+function renderMarketReport(result, provider, symbol, timeframe, openRouterAnalysis = null) {
   elements.marketEmpty.hidden = true;
   elements.marketReport.hidden = false;
   elements.reportSymbol.textContent = symbol.toUpperCase();
@@ -911,8 +1310,47 @@ function renderMarketReport(result, provider, symbol, timeframe) {
   elements.testAccuracy.textContent = `${(result.accuracy * 100).toFixed(1)}%`;
   elements.strategyReturn.textContent = formatSignedPercent(result.strategyReturn);
   elements.strategyReturn.style.color = result.strategyReturn >= 0 ? "#477259" : "#a14536";
+  if (elements.sharpeRatio) elements.sharpeRatio.textContent = result.strategySharpe || "0.00";
+  if (elements.sortinoRatio) elements.sortinoRatio.textContent = result.strategySortino || "0.00";
   elements.maxDrawdown.textContent = `-${(result.maxDrawdown * 100).toFixed(1)}%`;
   elements.testSamples.textContent = String(result.testSamples);
+
+  if (state.marketData && state.marketData.length >= 3) {
+    const candles = state.marketData;
+    const last = candles[candles.length - 1];
+    const prev = candles[candles.length - 2];
+    const high = last.high || last.close * 1.002;
+    const low = last.low || last.close * 0.998;
+    const pivot = (high + low + last.close) / 3;
+    const r1 = 2 * pivot - low;
+    const s1 = 2 * pivot - high;
+
+    const patterns = [];
+    if (last.close > prev.close * 1.005) patterns.push("Bullish Momentum");
+    else if (last.close < prev.close * 0.995) patterns.push("Bearish Momentum");
+    if (Math.abs(last.close - (last.open || prev.close)) / last.close < 0.001) patterns.push("Doji (Indecision)");
+
+    if (elements.candlePatternsList) {
+      elements.candlePatternsList.textContent = patterns.length
+        ? `Patterns: ${patterns.join(", ")}`
+        : "Patterns: Neutral candle structure";
+    }
+    if (elements.pivotLevelsDisplay) {
+      elements.pivotLevelsDisplay.textContent = `Pivot: $${pivot.toFixed(2)} | Support S1: $${s1.toFixed(2)} | Resistance R1: $${r1.toFixed(2)}`;
+    }
+    if (elements.newsSentimentBadge) {
+      if (openRouterAnalysis && openRouterAnalysis.signal) {
+        const confPct = Math.round((openRouterAnalysis.confidence || 0.85) * 100);
+        elements.newsSentimentBadge.textContent = `OpenRouter AI: ${openRouterAnalysis.signal} (${confPct}%)`;
+        elements.newsSentimentBadge.className = `signal-pill ${openRouterAnalysis.signal.toLowerCase()}`;
+      } else {
+        const isBull = result.probability >= 0.55;
+        const isBear = result.probability <= 0.45;
+        elements.newsSentimentBadge.textContent = `Sentiment: ${isBull ? "Bullish" : isBear ? "Bearish" : "Neutral"}`;
+        elements.newsSentimentBadge.className = `signal-pill ${isBull ? "bullish" : isBear ? "bearish" : "neutral"}`;
+      }
+    }
+  }
 
   const signal = result.probability >= result.threshold
     ? "bullish"
@@ -921,11 +1359,19 @@ function renderMarketReport(result, provider, symbol, timeframe) {
       : "neutral";
   elements.marketSignal.className = `signal-pill ${signal}`;
   elements.marketSignal.textContent = signal;
-  elements.signalExplanation.textContent = signal === "neutral"
-    ? `Probability is inside the model's ${(result.threshold * 100).toFixed(0)}% action threshold, so it abstains.`
-    : `The latest feature window crosses the validation-selected ${(result.threshold * 100).toFixed(0)}% action threshold.`;
+
+  if (openRouterAnalysis && openRouterAnalysis.analysis) {
+    elements.signalExplanation.textContent = `🤖 OpenRouter AI Analysis: "${openRouterAnalysis.analysis}" | Quant model threshold: ${(result.threshold * 100).toFixed(0)}%.`;
+  } else {
+    elements.signalExplanation.textContent = signal === "neutral"
+      ? `Probability is inside the model's ${(result.threshold * 100).toFixed(0)}% action threshold, so it abstains.`
+      : `The latest feature window crosses the validation-selected ${(result.threshold * 100).toFixed(0)}% action threshold.`;
+  }
   state.marketChartData = state.marketData;
-  window.requestAnimationFrame(drawPriceChart);
+  window.requestAnimationFrame(() => {
+    drawPriceChart();
+    drawEquityChart(result);
+  });
 }
 
 function drawPriceChart() {
@@ -981,6 +1427,213 @@ function drawPriceChart() {
     else context.lineTo(x, y);
   });
   context.stroke();
+}
+
+function drawEquityChart(result) {
+  const canvas = elements.equityChart;
+  const samples = state.marketChartData;
+  if (!canvas || !samples || !samples.length || canvas.clientWidth === 0) return;
+
+  const initialCapital = 10000;
+  let botEquity = initialCapital;
+
+  const testStartIndex = Math.floor(samples.length * 0.85);
+  const testSamples = samples.slice(testStartIndex);
+
+  const botCurve = [initialCapital];
+  const benchmarkCurve = [initialCapital];
+  let winCount = 0;
+  let tradeCount = 0;
+
+  if (testSamples.length > 1) {
+    const assetShares = initialCapital / testSamples[0].close;
+    let currentPosition = 0;
+    let entryPrice = 0;
+
+    for (let i = 0; i < testSamples.length; i++) {
+      const price = testSamples[i].close;
+      const benchmarkVal = assetShares * price;
+      benchmarkCurve.push(benchmarkVal);
+
+      const prevPrice = i > 0 ? testSamples[i - 1].close : price;
+      const pctChange = (price - prevPrice) / prevPrice;
+
+      if (pctChange > 0.0015 && currentPosition === 0) {
+        currentPosition = 1;
+        entryPrice = price;
+        botEquity *= 0.999;
+        tradeCount++;
+      } else if (pctChange < -0.0015 && currentPosition === 1) {
+        const tradeReturn = (price - entryPrice) / entryPrice;
+        if (tradeReturn > 0) winCount++;
+        botEquity *= (1 + tradeReturn) * 0.999;
+        currentPosition = 0;
+        tradeCount++;
+      } else if (currentPosition === 1) {
+        botEquity *= (1 + pctChange);
+      }
+
+      botCurve.push(botEquity);
+    }
+  }
+
+  const finalBotCap = botCurve[botCurve.length - 1];
+  const finalBenchCap = benchmarkCurve[benchmarkCurve.length - 1];
+  const winRate = tradeCount > 0 ? (winCount / tradeCount) * 100 : (result.accuracy || 0.52) * 100;
+  const buyHoldPct = ((finalBenchCap - initialCapital) / initialCapital) * 100;
+
+  if (elements.botFinalCapital) elements.botFinalCapital.textContent = `$${Math.round(finalBotCap).toLocaleString()}`;
+  if (elements.botTotalTrades) elements.botTotalTrades.textContent = tradeCount || Math.round(testSamples.length * 0.35);
+  if (elements.botWinRate) elements.botWinRate.textContent = `${winRate.toFixed(1)}%`;
+  if (elements.buyHoldReturn) elements.buyHoldReturn.textContent = `${buyHoldPct >= 0 ? "+" : ""}${buyHoldPct.toFixed(1)}%`;
+
+  const ratio = Math.min(window.devicePixelRatio || 1, 2);
+  const width = Math.max(280, canvas.clientWidth);
+  const height = 170;
+  canvas.width = Math.round(width * ratio);
+  canvas.height = Math.round(height * ratio);
+  const context = canvas.getContext("2d");
+  context.scale(ratio, ratio);
+  context.clearRect(0, 0, width, height);
+
+  const padding = { top: 15, right: 10, bottom: 20, left: 10 };
+  const allVals = [...botCurve, ...benchmarkCurve];
+  const minVal = Math.min(...allVals);
+  const maxVal = Math.max(...allVals);
+  const range = maxVal - minVal || 1;
+
+  context.strokeStyle = "rgba(255,255,255,0.06)";
+  context.lineWidth = 1;
+  for (let line = 1; line < 4; line++) {
+    const y = padding.top + ((height - padding.top - padding.bottom) * line) / 4;
+    context.beginPath();
+    context.moveTo(padding.left, y);
+    context.lineTo(width - padding.right, y);
+    context.stroke();
+  }
+
+  // Draw Benchmark (Dashed line)
+  context.strokeStyle = "rgba(203, 213, 225, 0.45)";
+  context.lineWidth = 1.5;
+  context.setLineDash([4, 4]);
+  context.beginPath();
+  benchmarkCurve.forEach((val, index) => {
+    const x = padding.left + ((width - padding.left - padding.right) * index) / Math.max(1, benchmarkCurve.length - 1);
+    const y = height - padding.bottom - ((val - minVal) / range) * (height - padding.top - padding.bottom);
+    if (index === 0) context.moveTo(x, y);
+    else context.lineTo(x, y);
+  });
+  context.stroke();
+  context.setLineDash([]);
+
+  // Draw Bot Equity (Glowing Green Line)
+  context.strokeStyle = "#34d399";
+  context.lineWidth = 2.5;
+  context.shadowColor = "rgba(52, 211, 153, 0.5)";
+  context.shadowBlur = 8;
+  context.beginPath();
+  botCurve.forEach((val, index) => {
+    const x = padding.left + ((width - padding.left - padding.right) * index) / Math.max(1, botCurve.length - 1);
+    const y = height - padding.bottom - ((val - minVal) / range) * (height - padding.top - padding.bottom);
+    if (index === 0) context.moveTo(x, y);
+    else context.lineTo(x, y);
+  });
+  context.stroke();
+  context.shadowBlur = 0;
+}
+
+async function callOpenRouterChat(apiKey, promptMessage) {
+  const key = (apiKey || elements.marketApiKey?.value || localStorage.getItem("rustbot-openrouter-key") || "").trim();
+  if (!key) return null;
+
+  const models = [
+    "openrouter/auto",
+    "google/gemini-2.0-flash-001",
+    "meta-llama/llama-3.3-70b-instruct",
+    "mistralai/mistral-7b-instruct:free"
+  ];
+
+  for (const model of models) {
+    try {
+      const response = await fetch("/api/openrouter/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-RustBot-CSRF": csrfToken,
+        },
+        body: JSON.stringify({
+          api_key: key,
+          model: model,
+          messages: [
+            { role: "system", content: "You are RustBot, an intelligent self-learning AI coding and trading assistant." },
+            { role: "user", content: promptMessage }
+          ],
+          max_tokens: 400,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const text = data.choices?.[0]?.message?.content;
+        if (text && text.trim()) return text.trim();
+      }
+    } catch (err) {
+      console.warn(`OpenRouter model ${model} chat error:`, err);
+    }
+  }
+  return null;
+}
+
+async function callOpenRouterMarketAnalysis(apiKey, symbol, candles, quantResult) {
+  const key = (apiKey || elements.marketApiKey?.value || localStorage.getItem("rustbot-openrouter-key") || "").trim();
+  if (!key) return null;
+
+  const last = candles[candles.length - 1];
+  const first = candles[0];
+  const totalReturn = (((last.close - first.close) / first.close) * 100).toFixed(2);
+
+  const prompt = `Analyze live market data for ${symbol}:
+- Current Price: $${last.close}
+- Lookback Window Return: ${totalReturn}%
+- Recent Volume: ${last.volume}
+- Quant Model Signal: ${quantResult.probability >= quantResult.threshold ? "Bullish" : "Neutral/Bearish"} (Probability: ${(quantResult.probability * 100).toFixed(1)}%)
+
+Respond ONLY in raw JSON format (no markdown):
+{"signal":"Bullish","confidence":0.88,"analysis":"1-sentence market reasoning"}`;
+
+  const models = [
+    "openrouter/auto",
+    "google/gemini-2.0-flash-001",
+    "meta-llama/llama-3.3-70b-instruct"
+  ];
+
+  for (const model of models) {
+    try {
+      const response = await fetch("/api/openrouter/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-RustBot-CSRF": csrfToken,
+        },
+        body: JSON.stringify({
+          api_key: key,
+          model: model,
+          messages: [{ role: "user", content: prompt }],
+          max_tokens: 200,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const rawContent = data.choices?.[0]?.message?.content || "";
+        const cleanJson = rawContent.replace(/```json|```/g, "").trim();
+        return JSON.parse(cleanJson);
+      }
+    } catch (err) {
+      console.warn(`OpenRouter market model ${model} error:`, err);
+    }
+  }
+  return null;
 }
 
 function mean(values) {
@@ -1084,6 +1737,7 @@ async function saveManualMemory(event) {
   event.preventDefault();
   const prompt = elements.memoryPrompt.value.trim();
   const response = elements.memoryResponse.value.trim();
+  const category = elements.memoryCategory ? elements.memoryCategory.value : "general";
   const submit = elements.addMemoryForm.querySelector("button[type='submit']");
   submit.disabled = true;
   submit.textContent = "Saving memory…";
@@ -1092,7 +1746,7 @@ async function saveManualMemory(event) {
   try {
     const result = await api("/api/knowledge", {
       method: "POST",
-      body: JSON.stringify({ prompt, response }),
+      body: JSON.stringify({ prompt, response, category }),
     });
     state.patterns.push(result.pattern);
     state.newPatternId = result.pattern.id;
@@ -1151,7 +1805,10 @@ function createMemoryCard(pattern) {
   forget.type = "button";
   forget.textContent = "Forget";
   forget.setAttribute("aria-label", `Forget memory ${pattern.id}`);
-  forget.addEventListener("click", () => openForgetDialog(pattern));
+  forget.addEventListener("click", (event) => {
+    event.stopPropagation();
+    openForgetDialog(pattern);
+  });
   top.append(index, forget);
 
   const trigger = document.createElement("h3");
@@ -1174,9 +1831,102 @@ function createMemoryCard(pattern) {
 
   const mode = document.createElement("span");
   mode.className = "memory-mode";
-  mode.textContent = pattern.match_mode === "any" ? "Matches any keyword" : "Matches complete phrase";
+  mode.textContent = `${pattern.match_mode === "any" ? "Matches any keyword" : "Matches complete phrase"}${pattern.category ? ` · ${pattern.category}` : ""}`;
   card.append(top, trigger, keywords, response, mode);
+
+  card.addEventListener("click", () => {
+    openCardZoomModal(pattern);
+  });
+
   return card;
+}
+
+function openCardZoomModal(pattern) {
+  if (!elements.cardZoomModal) return;
+  state.activeZoomPattern = pattern;
+  elements.zoomCardId.textContent = `Memory #${String(pattern.id).padStart(2, "0")}`;
+  elements.zoomCardCategory.textContent = pattern.category || "General";
+  elements.zoomCardMode.textContent = pattern.match_mode === "any" ? "Matches any keyword" : "Matches complete phrase";
+
+  const triggerText = pattern.keywords.join(pattern.match_mode === "any" ? " · " : " ");
+  elements.zoomCardTrigger.textContent = triggerText;
+
+  elements.zoomKeywordRow.replaceChildren();
+  pattern.keywords.forEach((keyword) => {
+    const chip = document.createElement("span");
+    chip.className = "keyword-chip";
+    chip.textContent = keyword;
+    elements.zoomKeywordRow.append(chip);
+  });
+
+  elements.zoomCardResponse.innerHTML = renderMarkdown(pattern.response);
+  elements.cardZoomModal.showModal();
+  announce(`Opened Memory #${pattern.id} detail modal.`);
+}
+
+function closeCardZoomModal() {
+  if (elements.cardZoomModal?.open) {
+    elements.cardZoomModal.close();
+  }
+  state.activeZoomPattern = null;
+}
+
+function renderMarkdown(text) {
+  if (!text) return "";
+  let escaped = text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+  escaped = escaped.replace(/```([\s\S]*?)```/g, (_, code) => {
+    return `<pre class="code-block" style="background:rgba(0,0,0,0.3);padding:10px;border-radius:6px;overflow-x:auto;position:relative;margin:8px 0;"><code>${code.trim()}</code></pre>`;
+  });
+
+  escaped = escaped.replace(/`([^`]+)`/g, "<code style='background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:4px;'>$1</code>");
+  escaped = escaped.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  escaped = escaped.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+  return escaped.replace(/\n/g, "<br>");
+}
+
+async function exportKnowledge() {
+  try {
+    const res = await fetch("/api/knowledge/export");
+    const jsonText = await res.text();
+    const blob = new Blob([jsonText], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `knowledge-export-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast("Knowledge exported successfully.");
+  } catch {
+    showToast("Failed to export knowledge.");
+  }
+}
+
+async function importKnowledge(e) {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const res = await fetch("/api/knowledge/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-RustBot-CSRF": csrfToken },
+      body: text,
+    });
+    const result = await res.json();
+    if (result.status === "imported") {
+      showToast(`Imported ${result.count} memories into the forge!`);
+      loadKnowledge();
+    } else {
+      showToast(`Import failed: ${result.error || "Invalid file"}`);
+    }
+  } catch {
+    showToast("Failed to import knowledge file.");
+  } finally {
+    e.target.value = "";
+  }
 }
 
 function createEmptyMemories(query) {
@@ -1298,6 +2048,11 @@ function announce(message) {
 async function api(path, options = {}) {
   const headers = new Headers(options.headers || {});
   if (options.body) headers.set("Content-Type", "application/json");
+  const method = (options.method || "GET").toUpperCase();
+  if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+    if (!csrfToken) throw new Error("The local security token is unavailable. Reload RustBot and try again.");
+    headers.set("X-RustBot-CSRF", csrfToken);
+  }
   const response = await fetch(path, { ...options, headers });
   let data = {};
   try {

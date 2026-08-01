@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#101513" />
+    <meta name="rustbot-csrf-token" content="__CSRF_TOKEN__" />
     <meta
       name="description"
       content="RustBot is a local, self-learning chatbot. Ask a question, teach a missed answer, and shape its knowledge one memory at a time."
@@ -26,7 +27,7 @@
     />
     <meta name="twitter:image" content="__ORIGIN__/og.png" />
     <title>RustBot — Knowledge Forge</title>
-    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/styles.css?v=5" />
     <script src="/app.js" defer></script>
   </head>
   <body>
@@ -70,6 +71,11 @@
             <span class="nav-icon" aria-hidden="true">▦</span>
             <span class="rail-label">Knowledge</span>
             <span class="nav-count" id="rail-memory-count">0</span>
+          </button>
+          <button class="nav-item" type="button" data-nav="history" id="history-nav-btn">
+            <span class="nav-icon" aria-hidden="true">📜</span>
+            <span class="rail-label">Chat History</span>
+            <span class="nav-count" id="rail-history-count">0</span>
           </button>
         </nav>
 
@@ -236,6 +242,10 @@
                     <option value="1000">1,000 candles</option>
                   </select>
                 </label>
+                <label style="grid-column: 1 / -1;">
+                  <span>OpenRouter AI API Key</span>
+                  <input id="market-api-key" name="api_key" type="password" value="" placeholder="sk-or-v1-... (Optional OpenRouter API Key)" autocomplete="off" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(228,98,50,0.4); color: #fff; padding: 8px 12px; border-radius: 8px; font-size: 0.85rem;" />
+                </label>
               </div>
 
               <div class="api-source-note">
@@ -292,9 +302,20 @@
                   <p id="signal-explanation">Waiting for a trained model.</p>
                 </div>
 
+                <div class="analysis-breakdown-card" id="analysis-breakdown" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 12px; margin: 12px 0;">
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                    <strong style="font-size:0.9rem; color:#fff;">Candle Structure &amp; News Impact</strong>
+                    <span id="news-sentiment-badge" class="signal-pill neutral" style="font-size:0.75rem;">Sentiment: Neutral</span>
+                  </div>
+                  <p id="candle-patterns-list" style="font-size:0.825rem; opacity:0.85; margin-bottom:6px;">Patterns: Checking candle structures…</p>
+                  <p id="pivot-levels-display" style="font-size:0.8rem; opacity:0.75;">Pivot: — | Support S1: — | Resistance R1: —</p>
+                </div>
+
                 <div class="metric-grid">
                   <article><span>Test accuracy</span><strong id="test-accuracy">—</strong><small>directional</small></article>
                   <article><span>Net test return</span><strong id="strategy-return">—</strong><small>after costs</small></article>
+                  <article><span>Sharpe ratio</span><strong id="sharpe-ratio">—</strong><small>risk-adjusted</small></article>
+                  <article><span>Sortino ratio</span><strong id="sortino-ratio">—</strong><small>downside risk</small></article>
                   <article><span>Max drawdown</span><strong id="max-drawdown">—</strong><small>test window</small></article>
                   <article><span>Test candles</span><strong id="test-samples">—</strong><small>untouched split</small></article>
                 </div>
@@ -302,6 +323,41 @@
                 <div class="chart-card">
                   <div><strong>Price history</strong><span id="split-legend">Train 70% · Validate 15% · Test 15%</span></div>
                   <canvas id="price-chart" height="150" aria-label="Historical close-price chart"></canvas>
+                </div>
+
+                <div class="chart-card trade-bot-chart-card" style="margin-top: 14px; background: #141a17; border: 1px solid rgba(52, 211, 153, 0.3); border-radius: 16px; padding: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.35);">
+                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+                    <div>
+                      <strong style="color:#34d399; font-size:14px; display:block;">🤖 Trade Bot Progress &amp; Equity Curve</strong>
+                      <span style="color:#a5aea8; font-size:10px;">Out-of-Sample Progress ($10,000 Capital Baseline)</span>
+                    </div>
+                    <span class="signal-pill bullish" id="bot-status-pill" style="font-size:9px;">Bot Active · Real Feed</span>
+                  </div>
+
+                  <div class="bot-metrics-row" style="display:grid; grid-template-columns: repeat(4, 1fr); gap:8px; margin-bottom:14px;">
+                    <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); padding:10px; border-radius:10px;">
+                      <span style="font-size:9px; color:#838a84; display:block; text-transform:uppercase; font-weight:700;">Final Bot Capital</span>
+                      <strong id="bot-final-capital" style="font-size:15px; color:#fff; font-family:Georgia, serif;">$10,000</strong>
+                    </div>
+                    <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); padding:10px; border-radius:10px;">
+                      <span style="font-size:9px; color:#838a84; display:block; text-transform:uppercase; font-weight:700;">Executed Trades</span>
+                      <strong id="bot-total-trades" style="font-size:15px; color:#fff; font-family:Georgia, serif;">0</strong>
+                    </div>
+                    <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); padding:10px; border-radius:10px;">
+                      <span style="font-size:9px; color:#838a84; display:block; text-transform:uppercase; font-weight:700;">Trade Win Rate</span>
+                      <strong id="bot-win-rate" style="font-size:15px; color:#34d399; font-family:Georgia, serif;">0.0%</strong>
+                    </div>
+                    <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); padding:10px; border-radius:10px;">
+                      <span style="font-size:9px; color:#838a84; display:block; text-transform:uppercase; font-weight:700;">Buy &amp; Hold Return</span>
+                      <strong id="buy-hold-return" style="font-size:15px; color:#e46232; font-family:Georgia, serif;">0.0%</strong>
+                    </div>
+                  </div>
+
+                  <canvas id="equity-chart" height="170" aria-label="Trade Bot Cumulative Equity Chart"></canvas>
+                  <div style="display:flex; justify-content:space-between; margin-top:10px; font-size:10px; color:#a5aea8; font-family:ui-monospace, monospace;">
+                    <span style="color:#34d399;">🟢 Bot Cumulative Equity (Net Profit)</span>
+                    <span style="color:#cbd5e1;">⚪ Buy &amp; Hold Asset Return</span>
+                  </div>
                 </div>
 
                 <div class="model-note" id="model-note">
@@ -384,6 +440,40 @@
           <p>Each card connects a phrase to a response.</p>
         </div>
 
+        <div class="knowledge-toolbar">
+          <div class="category-select-wrapper">
+            <span class="category-icon" aria-hidden="true">🏷️</span>
+            <select id="category-filter" class="category-filter-select" aria-label="Filter memories by category">
+              <option value="all">All Categories</option>
+              <option value="general">General</option>
+              <option value="tech">Tech</option>
+              <option value="greetings">Greetings</option>
+              <option value="finance">Finance</option>
+            </select>
+            <span class="select-chevron" aria-hidden="true">▾</span>
+          </div>
+
+          <div class="knowledge-actions-group">
+            <button class="toolbar-action-btn export-btn" id="export-knowledge-button" type="button" title="Export memories as JSON">
+              <span class="btn-icon" aria-hidden="true">📥</span>
+              <span>Export</span>
+            </button>
+            <label class="toolbar-action-btn import-btn" for="import-knowledge-input" title="Import memories from JSON file">
+              <span class="btn-icon" aria-hidden="true">📤</span>
+              <span>Import</span>
+            </label>
+            <input type="file" id="import-knowledge-input" accept=".json" class="visually-hidden-file" />
+          </div>
+        </div>
+
+        <div class="category-pill-strip" id="category-pill-strip" aria-label="Category quick filters">
+          <button type="button" class="category-tab active" data-category="all">All</button>
+          <button type="button" class="category-tab" data-category="general">General</button>
+          <button type="button" class="category-tab" data-category="tech">Tech</button>
+          <button type="button" class="category-tab" data-category="greetings">Greetings</button>
+          <button type="button" class="category-tab" data-category="finance">Finance</button>
+        </div>
+
         <button class="add-memory-button" id="add-memory-button" type="button" aria-expanded="false">
           <span aria-hidden="true">＋</span>
           Forge a new memory
@@ -397,6 +487,15 @@
             </div>
             <button class="quiet-icon-button" type="button" id="cancel-add-memory" aria-label="Close form">×</button>
           </div>
+          <label>
+            <span>Category</span>
+            <select id="memory-category" name="category" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #fff; padding: 6px 10px; border-radius: 6px; width: 100%; margin-bottom: 8px;">
+              <option value="general" style="background: #111;">General</option>
+              <option value="tech" style="background: #111;">Tech</option>
+              <option value="greetings" style="background: #111;">Greetings</option>
+              <option value="finance" style="background: #111;">Finance</option>
+            </select>
+          </label>
           <label>
             <span>When someone says…</span>
             <input id="memory-prompt" name="prompt" maxlength="500" placeholder="e.g. Tell me a joke" required />
@@ -438,6 +537,44 @@
 
     <button class="panel-overlay" id="panel-overlay" type="button" aria-label="Close knowledge panel"></button>
 
+    <dialog class="card-zoom-modal" id="card-zoom-modal" aria-labelledby="zoom-card-id">
+      <div class="card-zoom-content">
+        <header class="zoom-header">
+          <div class="zoom-meta-top">
+            <span class="zoom-badge-id" id="zoom-card-id">Memory #00</span>
+            <span class="zoom-badge-category" id="zoom-card-category">General</span>
+            <span class="zoom-badge-mode" id="zoom-card-mode">Matches phrase</span>
+          </div>
+          <button class="zoom-close-btn" id="zoom-close-btn" type="button" aria-label="Close detail modal">×</button>
+        </header>
+
+        <div class="zoom-body">
+          <div class="zoom-section">
+            <p class="zoom-label">Trigger Prompt / Keywords</p>
+            <h3 class="zoom-trigger-text" id="zoom-card-trigger"></h3>
+            <div class="keyword-row" id="zoom-keyword-row"></div>
+          </div>
+
+          <div class="zoom-section">
+            <p class="zoom-label">RustBot Saved Response</p>
+            <div class="zoom-response-box" id="zoom-card-response"></div>
+          </div>
+        </div>
+
+        <footer class="zoom-footer">
+          <button class="zoom-action-btn secondary" id="zoom-copy-btn" type="button">
+            <span aria-hidden="true">📋</span> Copy Response
+          </button>
+          <button class="zoom-action-btn primary" id="zoom-test-btn" type="button">
+            <span aria-hidden="true">💬</span> Test in Chat
+          </button>
+          <button class="zoom-action-btn danger" id="zoom-forget-btn" type="button">
+            <span aria-hidden="true">🗑</span> Forget
+          </button>
+        </footer>
+      </div>
+    </dialog>
+
     <dialog class="forget-dialog" id="forget-dialog" aria-labelledby="forget-title">
       <form method="dialog">
         <div class="dialog-mark" aria-hidden="true">×</div>
@@ -449,6 +586,32 @@
           <button class="danger-button" id="confirm-forget" value="confirm">Forget memory</button>
         </div>
       </form>
+    </dialog>
+
+    <dialog class="card-zoom-modal" id="chat-history-modal" aria-labelledby="history-modal-title">
+      <div class="card-zoom-content" style="max-width: 680px; width: 92vw;">
+        <header class="zoom-header">
+          <div class="zoom-meta-top">
+            <span class="zoom-badge-id">Saved Transcripts</span>
+            <span class="zoom-badge-category" id="history-session-count">0 sessions</span>
+          </div>
+          <button class="zoom-close-btn" id="history-close-btn" type="button" aria-label="Close history modal">×</button>
+        </header>
+
+        <div class="zoom-body" style="max-height: 65vh; overflow-y: auto;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+            <h3 id="history-modal-title" style="font-size: 15px; color: #fff;">📜 Past Conversations Record</h3>
+            <div style="display: flex; gap: 8px;">
+              <button class="toolbar-action-btn" id="export-history-btn" type="button">📥 Export Log</button>
+              <button class="toolbar-action-btn" id="clear-history-btn" type="button" style="border-color: rgba(220,38,38,0.4); color: #f87171;">🗑️ Clear Logs</button>
+            </div>
+          </div>
+
+          <div class="history-list-container" id="history-list-container" style="display: flex; flex-direction: column; gap: 10px;">
+            <!-- History entries rendered dynamically -->
+          </div>
+        </div>
+      </div>
     </dialog>
 
     <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true" hidden>

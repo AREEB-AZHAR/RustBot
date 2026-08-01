@@ -1,0 +1,18 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+
+# Local data & database runtime files
+chat_history.json
+market_history.json
+
+# IDE and OS metadata
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
