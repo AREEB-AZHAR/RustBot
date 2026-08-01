@@ -45,15 +45,6 @@
       "category": "general"
     },
     {
-      "id": 5,
-      "keywords": [
-        "weather"
-      ],
-      "response": "I can't check live weather yet, but I hope it's kind where you are.",
-      "match_mode": "all",
-      "category": "general"
-    },
-    {
       "id": 6,
       "keywords": [
         "thanks",

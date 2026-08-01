@@ -1547,9 +1547,9 @@ async function callOpenRouterChat(apiKey, promptMessage) {
 
   const models = [
     "openrouter/auto",
-    "google/gemini-2.0-flash-001",
-    "meta-llama/llama-3.3-70b-instruct",
-    "mistralai/mistral-7b-instruct:free"
+    "deepseek/deepseek-chat",
+    "qwen/qwen-2.5-coder-32b-instruct",
+    "meta-llama/llama-3.3-70b-instruct"
   ];
 
   for (const model of models) {
@@ -1603,7 +1603,8 @@ Respond ONLY in raw JSON format (no markdown):
 
   const models = [
     "openrouter/auto",
-    "google/gemini-2.0-flash-001",
+    "deepseek/deepseek-chat",
+    "qwen/qwen-2.5-coder-32b-instruct",
     "meta-llama/llama-3.3-70b-instruct"
   ];
 

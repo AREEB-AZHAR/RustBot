@@ -32,8 +32,10 @@ const MAX_OPENROUTER_TOKENS: usize = 1_024;
 const MAX_MATH_EXPRESSION_LENGTH: usize = 256;
 const OPENROUTER_MODELS: &[&str] = &[
     "openrouter/auto",
-    "google/gemini-2.0-flash-001",
+    "deepseek/deepseek-chat",
+    "qwen/qwen-2.5-coder-32b-instruct",
     "meta-llama/llama-3.3-70b-instruct",
+    "google/gemini-2.0-flash-001",
     "mistralai/mistral-7b-instruct:free",
 ];
 
@@ -1507,7 +1509,7 @@ impl Response {
 
     fn write_to(self, stream: &mut TcpStream) -> Result<(), String> {
         let headers = format!(
-            "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-Frame-Options: DENY\r\nStrict-Transport-Security: max-age=63072000; includeSubDomains\r\nReferrer-Policy: no-referrer\r\nPermissions-Policy: geolocation=(), camera=(), microphone=()\r\nContent-Security-Policy: default-src 'self'; style-src 'self'; script-src 'self' https://s3.tradingview.com; img-src 'self' data:; connect-src 'self'; frame-src https://s.tradingview.com https://www.tradingview.com https://*.tradingview-widget.com; base-uri 'none'; frame-ancestors 'none'\r\n\r\n",
+            "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-Frame-Options: DENY\r\nStrict-Transport-Security: max-age=63072000; includeSubDomains\r\nReferrer-Policy: no-referrer\r\nPermissions-Policy: geolocation=(), camera=(), microphone=()\r\nContent-Security-Policy: default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' https://s3.tradingview.com; img-src 'self' data:; connect-src 'self' https://telemetry.tradingview.com; frame-src https://s.tradingview.com https://www.tradingview.com https://*.tradingview-widget.com; base-uri 'none'; frame-ancestors 'none'\r\n\r\n",
             self.status,
             self.reason,
             self.content_type,
