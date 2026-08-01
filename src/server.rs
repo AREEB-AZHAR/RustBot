@@ -1572,7 +1572,8 @@ fn handle_openrouter_chat(body: &[u8], request_lock: &Mutex<()>) -> Response {
         .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty())
-        .map(String::from);
+        .map(String::from)
+        .or_else(|| std::env::var("OPENROUTER_API_KEY").ok().filter(|s| !s.trim().is_empty()));
 
     let api_key = match api_key {
         Some(key) => key,
@@ -1580,7 +1581,7 @@ fn handle_openrouter_chat(body: &[u8], request_lock: &Mutex<()>) -> Response {
             return Response::error(
                 400,
                 "Bad Request",
-                "OpenRouter API key is missing. Enter an API key in the UI to enable AI features.",
+                "OpenRouter API key is missing. Enter an API key in the UI or set OPENROUTER_API_KEY in .env.",
             );
         }
     };

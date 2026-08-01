@@ -124,9 +124,19 @@ function initialize() {
   loadKnowledge();
   resizeComposer();
   updateMarketProvider();
+  if (elements.marketApiKey) {
+    const savedKey = localStorage.getItem("rustbot-openrouter-key");
+    if (savedKey) elements.marketApiKey.value = savedKey;
+  }
 }
 
 function bindEvents() {
+  if (elements.marketApiKey) {
+    elements.marketApiKey.addEventListener("input", () => {
+      localStorage.setItem("rustbot-openrouter-key", elements.marketApiKey.value.trim());
+    });
+  }
+
   elements.composerForm.addEventListener("submit", (event) => {
     event.preventDefault();
     sendMessage(elements.composerInput.value);
@@ -1544,7 +1554,6 @@ function drawEquityChart(result) {
 
 async function callOpenRouterChat(apiKey, promptMessage) {
   const key = (apiKey || elements.marketApiKey?.value || localStorage.getItem("rustbot-openrouter-key") || "").trim();
-  if (!key) return null;
 
   const models = [
     "openrouter/auto",
@@ -1555,21 +1564,23 @@ async function callOpenRouterChat(apiKey, promptMessage) {
 
   for (const model of models) {
     try {
+      const payload = {
+        model: model,
+        messages: [
+          { role: "system", content: "You are RustBot, an intelligent self-learning AI coding and trading assistant." },
+          { role: "user", content: promptMessage }
+        ],
+        max_tokens: 400,
+      };
+      if (key) payload.api_key = key;
+
       const response = await fetch("/api/openrouter/chat", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "X-RustBot-CSRF": csrfToken,
         },
-        body: JSON.stringify({
-          api_key: key,
-          model: model,
-          messages: [
-            { role: "system", content: "You are RustBot, an intelligent self-learning AI coding and trading assistant." },
-            { role: "user", content: promptMessage }
-          ],
-          max_tokens: 400,
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (response.ok) {
@@ -1586,7 +1597,6 @@ async function callOpenRouterChat(apiKey, promptMessage) {
 
 async function callOpenRouterMarketAnalysis(apiKey, symbol, candles, quantResult) {
   const key = (apiKey || elements.marketApiKey?.value || localStorage.getItem("rustbot-openrouter-key") || "").trim();
-  if (!key) return null;
 
   const last = candles[candles.length - 1];
   const first = candles[0];
@@ -1609,18 +1619,20 @@ Respond ONLY in raw JSON format (no markdown):
 
   for (const model of models) {
     try {
+      const payload = {
+        model: model,
+        messages: [{ role: "user", content: prompt }],
+        max_tokens: 200,
+      };
+      if (key) payload.api_key = key;
+
       const response = await fetch("/api/openrouter/chat", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "X-RustBot-CSRF": csrfToken,
         },
-        body: JSON.stringify({
-          api_key: key,
-          model: model,
-          messages: [{ role: "user", content: prompt }],
-          max_tokens: 200,
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (response.ok) {
