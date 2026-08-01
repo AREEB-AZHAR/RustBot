@@ -37,11 +37,43 @@ const OPENROUTER_MODELS: &[&str] = &[
     "mistralai/mistral-7b-instruct:free",
 ];
 
+use std::net::IpAddr;
+use std::time::Instant;
+
+const MAX_REQUESTS_PER_MINUTE_PER_IP: usize = 120;
+
 #[derive(Clone)]
 struct AppState {
     store: Arc<RwLock<KnowledgeStore>>,
     csrf_token: String,
     openrouter_lock: Arc<Mutex<()>>,
+    ip_limiter: Arc<Mutex<IpRateLimiter>>,
+}
+
+struct IpRateLimiter {
+    clients: HashMap<IpAddr, Vec<Instant>>,
+}
+
+impl IpRateLimiter {
+    fn new() -> Self {
+        Self {
+            clients: HashMap::new(),
+        }
+    }
+
+    fn check_and_record(&mut self, ip: IpAddr) -> bool {
+        let now = Instant::now();
+        let window = Duration::from_secs(60);
+        let history = self.clients.entry(ip).or_default();
+        history.retain(|&t| now.duration_since(t) < window);
+
+        if history.len() >= MAX_REQUESTS_PER_MINUTE_PER_IP {
+            false
+        } else {
+            history.push(now);
+            true
+        }
+    }
 }
 
 struct ConnectionLimiter {
@@ -157,6 +189,7 @@ pub fn run(address: &str, knowledge_path: PathBuf) -> Result<(), String> {
         store: Arc::new(RwLock::new(store)),
         csrf_token: generate_csrf_token()?,
         openrouter_lock: Arc::new(Mutex::new(())),
+        ip_limiter: Arc::new(Mutex::new(IpRateLimiter::new())),
     };
     let listener = TcpListener::bind(address)
         .map_err(|error| format!("Could not listen on http://{address}: {error}"))?;
@@ -201,6 +234,19 @@ fn handle_connection(mut stream: TcpStream, state: &AppState) -> Result<(), Stri
     stream
         .set_write_timeout(Some(Duration::from_secs(5)))
         .map_err(|error| error.to_string())?;
+
+    if let Ok(peer) = stream.peer_addr() {
+        let mut limiter = state.ip_limiter.lock().unwrap_or_else(|p| p.into_inner());
+        if !limiter.check_and_record(peer.ip()) {
+            return Response::error(
+                429,
+                "Too Many Requests",
+                "Rate limit exceeded (too many requests per minute).",
+            )
+            .write_to(&mut stream);
+        }
+    }
+
     let request = read_request(&mut stream)?;
 
     if !is_trusted_loopback_host(&request.host) {
@@ -1384,30 +1430,23 @@ fn fetch_json(
     request: reqwest::blocking::RequestBuilder,
     provider: &str,
 ) -> Result<serde_json::Value, String> {
-    let response = request
-        .send()
-        .map_err(|error| format!("Could not reach {provider}: {error}"))?;
+    let response = request.send().map_err(|error| {
+        eprintln!("Market data request error for {provider}: {error}");
+        format!("Could not connect to {provider}.")
+    })?;
     let status = response.status();
-    let body = response
-        .text()
-        .map_err(|error| format!("Could not read the {provider} response: {error}"))?;
+    let body = response.text().map_err(|error| {
+        eprintln!("Market data response read error for {provider}: {error}");
+        format!("Could not read response from {provider}.")
+    })?;
     if !status.is_success() {
-        let detail = serde_json::from_str::<serde_json::Value>(&body)
-            .ok()
-            .and_then(|value| {
-                value
-                    .get("msg")
-                    .or_else(|| value.get("error"))
-                    .and_then(serde_json::Value::as_str)
-                    .map(str::to_string)
-            })
-            .unwrap_or_else(|| format!("HTTP {status}"));
-        return Err(format!(
-            "{provider} rejected the market-data request: {detail}"
-        ));
+        eprintln!("{provider} returned HTTP {status}: {body}");
+        return Err(format!("{provider} rejected the market-data request."));
     }
-    serde_json::from_str(&body)
-        .map_err(|_| format!("{provider} returned market data in an unexpected format."))
+    serde_json::from_str(&body).map_err(|error| {
+        eprintln!("{provider} JSON parse error: {error}");
+        format!("{provider} returned market data in an unexpected format.")
+    })
 }
 
 fn json_number(value: &serde_json::Value) -> Option<f64> {
@@ -1468,7 +1507,7 @@ impl Response {
 
     fn write_to(self, stream: &mut TcpStream) -> Result<(), String> {
         let headers = format!(
-            "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nPermissions-Policy: geolocation=(), camera=(), microphone=()\r\nContent-Security-Policy: default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' https://s3.tradingview.com; img-src 'self' data:; connect-src 'self'; frame-src https://s.tradingview.com https://www.tradingview.com https://*.tradingview-widget.com; base-uri 'none'; frame-ancestors 'none'\r\n\r\n",
+            "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-Frame-Options: DENY\r\nStrict-Transport-Security: max-age=63072000; includeSubDomains\r\nReferrer-Policy: no-referrer\r\nPermissions-Policy: geolocation=(), camera=(), microphone=()\r\nContent-Security-Policy: default-src 'self'; style-src 'self'; script-src 'self' https://s3.tradingview.com; img-src 'self' data:; connect-src 'self'; frame-src https://s.tradingview.com https://www.tradingview.com https://*.tradingview-widget.com; base-uri 'none'; frame-ancestors 'none'\r\n\r\n",
             self.status,
             self.reason,
             self.content_type,
@@ -1786,5 +1825,20 @@ mod tests {
         assert!(history
             .values()
             .all(|candles| candles.len() <= MAX_MARKET_HISTORY_CANDLES_PER_SYMBOL));
+    }
+
+    #[test]
+    fn ip_rate_limiter_blocks_excessive_requests() {
+        use super::{IpRateLimiter, MAX_REQUESTS_PER_MINUTE_PER_IP};
+        use std::net::IpAddr;
+
+        let mut limiter = IpRateLimiter::new();
+        let ip: IpAddr = "127.0.0.1".parse().unwrap();
+
+        for _ in 0..MAX_REQUESTS_PER_MINUTE_PER_IP {
+            assert!(limiter.check_and_record(ip));
+        }
+
+        assert!(!limiter.check_and_record(ip));
     }
 }

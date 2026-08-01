@@ -242,9 +242,9 @@
                     <option value="1000">1,000 candles</option>
                   </select>
                 </label>
-                <label style="grid-column: 1 / -1;">
+                <label class="market-api-key-label">
                   <span>OpenRouter AI API Key</span>
-                  <input id="market-api-key" name="api_key" type="password" value="" placeholder="sk-or-v1-... (Optional OpenRouter API Key)" autocomplete="off" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(228,98,50,0.4); color: #fff; padding: 8px 12px; border-radius: 8px; font-size: 0.85rem;" />
+                  <input id="market-api-key" name="api_key" type="password" value="" placeholder="sk-or-v1-... (Optional OpenRouter API Key)" autocomplete="off" class="market-api-key-input" />
                 </label>
               </div>
 
@@ -302,13 +302,13 @@
                   <p id="signal-explanation">Waiting for a trained model.</p>
                 </div>
 
-                <div class="analysis-breakdown-card" id="analysis-breakdown" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 12px; margin: 12px 0;">
-                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                    <strong style="font-size:0.9rem; color:#fff;">Candle Structure &amp; News Impact</strong>
-                    <span id="news-sentiment-badge" class="signal-pill neutral" style="font-size:0.75rem;">Sentiment: Neutral</span>
+                <div class="analysis-breakdown-card" id="analysis-breakdown">
+                  <div class="breakdown-header">
+                    <strong class="breakdown-title">Candle Structure &amp; News Impact</strong>
+                    <span id="news-sentiment-badge" class="signal-pill neutral news-sentiment-badge">Sentiment: Neutral</span>
                   </div>
-                  <p id="candle-patterns-list" style="font-size:0.825rem; opacity:0.85; margin-bottom:6px;">Patterns: Checking candle structures…</p>
-                  <p id="pivot-levels-display" style="font-size:0.8rem; opacity:0.75;">Pivot: — | Support S1: — | Resistance R1: —</p>
+                  <p id="candle-patterns-list" class="candle-patterns-list">Patterns: Checking candle structures…</p>
+                  <p id="pivot-levels-display" class="pivot-levels-display">Pivot: — | Support S1: — | Resistance R1: —</p>
                 </div>
 
                 <div class="metric-grid">
@@ -325,38 +325,38 @@
                   <canvas id="price-chart" height="150" aria-label="Historical close-price chart"></canvas>
                 </div>
 
-                <div class="chart-card trade-bot-chart-card" style="margin-top: 14px; background: #141a17; border: 1px solid rgba(52, 211, 153, 0.3); border-radius: 16px; padding: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.35);">
-                  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+                <div class="chart-card trade-bot-chart-card">
+                  <div class="bot-chart-header">
                     <div>
-                      <strong style="color:#34d399; font-size:14px; display:block;">🤖 Trade Bot Progress &amp; Equity Curve</strong>
-                      <span style="color:#a5aea8; font-size:10px;">Out-of-Sample Progress ($10,000 Capital Baseline)</span>
+                      <strong class="bot-chart-title">🤖 Trade Bot Progress &amp; Equity Curve</strong>
+                      <span class="bot-chart-subtitle">Out-of-Sample Progress ($10,000 Capital Baseline)</span>
                     </div>
-                    <span class="signal-pill bullish" id="bot-status-pill" style="font-size:9px;">Bot Active · Real Feed</span>
+                    <span class="signal-pill bullish bot-status-pill" id="bot-status-pill">Bot Active · Real Feed</span>
                   </div>
 
-                  <div class="bot-metrics-row" style="display:grid; grid-template-columns: repeat(4, 1fr); gap:8px; margin-bottom:14px;">
-                    <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); padding:10px; border-radius:10px;">
-                      <span style="font-size:9px; color:#838a84; display:block; text-transform:uppercase; font-weight:700;">Final Bot Capital</span>
-                      <strong id="bot-final-capital" style="font-size:15px; color:#fff; font-family:Georgia, serif;">$10,000</strong>
+                  <div class="bot-metrics-row">
+                    <div class="bot-metric-card">
+                      <span class="bot-metric-label">Final Bot Capital</span>
+                      <strong id="bot-final-capital" class="bot-metric-val">$10,000</strong>
                     </div>
-                    <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); padding:10px; border-radius:10px;">
-                      <span style="font-size:9px; color:#838a84; display:block; text-transform:uppercase; font-weight:700;">Executed Trades</span>
-                      <strong id="bot-total-trades" style="font-size:15px; color:#fff; font-family:Georgia, serif;">0</strong>
+                    <div class="bot-metric-card">
+                      <span class="bot-metric-label">Executed Trades</span>
+                      <strong id="bot-total-trades" class="bot-metric-val">0</strong>
                     </div>
-                    <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); padding:10px; border-radius:10px;">
-                      <span style="font-size:9px; color:#838a84; display:block; text-transform:uppercase; font-weight:700;">Trade Win Rate</span>
-                      <strong id="bot-win-rate" style="font-size:15px; color:#34d399; font-family:Georgia, serif;">0.0%</strong>
+                    <div class="bot-metric-card">
+                      <span class="bot-metric-label">Trade Win Rate</span>
+                      <strong id="bot-win-rate" class="bot-metric-val green">0.0%</strong>
                     </div>
-                    <div style="background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); padding:10px; border-radius:10px;">
-                      <span style="font-size:9px; color:#838a84; display:block; text-transform:uppercase; font-weight:700;">Buy &amp; Hold Return</span>
-                      <strong id="buy-hold-return" style="font-size:15px; color:#e46232; font-family:Georgia, serif;">0.0%</strong>
+                    <div class="bot-metric-card">
+                      <span class="bot-metric-label">Buy &amp; Hold Return</span>
+                      <strong id="buy-hold-return" class="bot-metric-val orange">0.0%</strong>
                     </div>
                   </div>
 
                   <canvas id="equity-chart" height="170" aria-label="Trade Bot Cumulative Equity Chart"></canvas>
-                  <div style="display:flex; justify-content:space-between; margin-top:10px; font-size:10px; color:#a5aea8; font-family:ui-monospace, monospace;">
-                    <span style="color:#34d399;">🟢 Bot Cumulative Equity (Net Profit)</span>
-                    <span style="color:#cbd5e1;">⚪ Buy &amp; Hold Asset Return</span>
+                  <div class="bot-legend-row">
+                    <span class="bot-legend-green">🟢 Bot Cumulative Equity (Net Profit)</span>
+                    <span class="bot-legend-gray">⚪ Buy &amp; Hold Asset Return</span>
                   </div>
                 </div>
 
@@ -489,11 +489,11 @@
           </div>
           <label>
             <span>Category</span>
-            <select id="memory-category" name="category" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #fff; padding: 6px 10px; border-radius: 6px; width: 100%; margin-bottom: 8px;">
-              <option value="general" style="background: #111;">General</option>
-              <option value="tech" style="background: #111;">Tech</option>
-              <option value="greetings" style="background: #111;">Greetings</option>
-              <option value="finance" style="background: #111;">Finance</option>
+            <select id="memory-category" name="category" class="memory-category-select">
+              <option value="general" class="memory-category-option">General</option>
+              <option value="tech" class="memory-category-option">Tech</option>
+              <option value="greetings" class="memory-category-option">Greetings</option>
+              <option value="finance" class="memory-category-option">Finance</option>
             </select>
           </label>
           <label>
@@ -589,7 +589,7 @@
     </dialog>
 
     <dialog class="card-zoom-modal" id="chat-history-modal" aria-labelledby="history-modal-title">
-      <div class="card-zoom-content" style="max-width: 680px; width: 92vw;">
+      <div class="card-zoom-content history-modal-card">
         <header class="zoom-header">
           <div class="zoom-meta-top">
             <span class="zoom-badge-id">Saved Transcripts</span>
@@ -598,16 +598,16 @@
           <button class="zoom-close-btn" id="history-close-btn" type="button" aria-label="Close history modal">×</button>
         </header>
 
-        <div class="zoom-body" style="max-height: 65vh; overflow-y: auto;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
-            <h3 id="history-modal-title" style="font-size: 15px; color: #fff;">📜 Past Conversations Record</h3>
-            <div style="display: flex; gap: 8px;">
+        <div class="zoom-body history-modal-body">
+          <div class="history-modal-toolbar">
+            <h3 id="history-modal-title" class="history-modal-heading">📜 Past Conversations Record</h3>
+            <div class="history-modal-actions">
               <button class="toolbar-action-btn" id="export-history-btn" type="button">📥 Export Log</button>
-              <button class="toolbar-action-btn" id="clear-history-btn" type="button" style="border-color: rgba(220,38,38,0.4); color: #f87171;">🗑️ Clear Logs</button>
+              <button class="toolbar-action-btn clear-history-danger-btn" id="clear-history-btn" type="button">🗑️ Clear Logs</button>
             </div>
           </div>
 
-          <div class="history-list-container" id="history-list-container" style="display: flex; flex-direction: column; gap: 10px;">
+          <div class="history-list-container" id="history-list-container">
             <!-- History entries rendered dynamically -->
           </div>
         </div>
