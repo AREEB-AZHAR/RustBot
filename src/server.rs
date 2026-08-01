@@ -31,12 +31,8 @@ const MAX_OPENROUTER_MESSAGE_LENGTH: usize = 8_000;
 const MAX_OPENROUTER_TOKENS: usize = 1_024;
 const MAX_MATH_EXPRESSION_LENGTH: usize = 256;
 const OPENROUTER_MODELS: &[&str] = &[
-    "openrouter/auto",
-    "deepseek/deepseek-chat",
-    "qwen/qwen-2.5-coder-32b-instruct",
-    "meta-llama/llama-3.3-70b-instruct",
-    "google/gemini-2.0-flash-001",
-    "mistralai/mistral-7b-instruct:free",
+    "google/gemma-4-26b-a4b-it:free",
+    "google/gemma-4-31b-it:free",
 ];
 
 use std::net::IpAddr;

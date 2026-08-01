@@ -1546,10 +1546,8 @@ async function callOpenRouterChat(apiKey, promptMessage) {
   const key = (apiKey || elements.marketApiKey?.value || "").trim();
 
   const models = [
-    "openrouter/auto",
-    "deepseek/deepseek-chat",
-    "qwen/qwen-2.5-coder-32b-instruct",
-    "meta-llama/llama-3.3-70b-instruct"
+    "google/gemma-4-26b-a4b-it:free",
+    "google/gemma-4-31b-it:free"
   ];
 
   for (const model of models) {
@@ -1602,10 +1600,8 @@ Respond ONLY in raw JSON format (no markdown):
 {"signal":"Bullish","confidence":0.88,"analysis":"1-sentence market reasoning"}`;
 
   const models = [
-    "openrouter/auto",
-    "deepseek/deepseek-chat",
-    "qwen/qwen-2.5-coder-32b-instruct",
-    "meta-llama/llama-3.3-70b-instruct"
+    "google/gemma-4-26b-a4b-it:free",
+    "google/gemma-4-31b-it:free"
   ];
 
   for (const model of models) {
