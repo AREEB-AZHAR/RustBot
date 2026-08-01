@@ -124,19 +124,9 @@ function initialize() {
   loadKnowledge();
   resizeComposer();
   updateMarketProvider();
-  if (elements.marketApiKey) {
-    const savedKey = localStorage.getItem("rustbot-openrouter-key");
-    if (savedKey) elements.marketApiKey.value = savedKey;
-  }
 }
 
 function bindEvents() {
-  if (elements.marketApiKey) {
-    elements.marketApiKey.addEventListener("input", () => {
-      localStorage.setItem("rustbot-openrouter-key", elements.marketApiKey.value.trim());
-    });
-  }
-
   elements.composerForm.addEventListener("submit", (event) => {
     event.preventDefault();
     sendMessage(elements.composerInput.value);
@@ -1553,7 +1543,7 @@ function drawEquityChart(result) {
 }
 
 async function callOpenRouterChat(apiKey, promptMessage) {
-  const key = (apiKey || elements.marketApiKey?.value || localStorage.getItem("rustbot-openrouter-key") || "").trim();
+  const key = (apiKey || elements.marketApiKey?.value || "").trim();
 
   const models = [
     "openrouter/auto",
@@ -1596,7 +1586,7 @@ async function callOpenRouterChat(apiKey, promptMessage) {
 }
 
 async function callOpenRouterMarketAnalysis(apiKey, symbol, candles, quantResult) {
-  const key = (apiKey || elements.marketApiKey?.value || localStorage.getItem("rustbot-openrouter-key") || "").trim();
+  const key = (apiKey || elements.marketApiKey?.value || "").trim();
 
   const last = candles[candles.length - 1];
   const first = candles[0];
