@@ -328,13 +328,13 @@
                 <div class="chart-card trade-bot-chart-card">
                   <div class="bot-chart-header">
                     <div>
-                      <strong class="bot-chart-title">🤖 Trade Bot Progress &amp; Equity Curve</strong>
-                      <span class="bot-chart-subtitle">Out-of-Sample Progress ($10,000 Capital Baseline)</span>
+                      <strong class="bot-chart-title">🤖 Adaptive Trade Bot &amp; Self-Learning Engine</strong>
+                      <span class="bot-chart-subtitle">Out-of-Sample Online Training ($10,000 Capital Baseline)</span>
                     </div>
-                    <span class="signal-pill bullish bot-status-pill" id="bot-status-pill">Bot Active · Real Feed</span>
+                    <span class="signal-pill bullish bot-status-pill" id="bot-status-pill">Adaptive Learning Active</span>
                   </div>
 
-                  <div class="bot-metrics-row">
+                  <div class="bot-metrics-row bot-metrics-row-expanded">
                     <div class="bot-metric-card">
                       <span class="bot-metric-label">Final Bot Capital</span>
                       <strong id="bot-final-capital" class="bot-metric-val">$10,000</strong>
@@ -348,6 +348,14 @@
                       <strong id="bot-win-rate" class="bot-metric-val green">0.0%</strong>
                     </div>
                     <div class="bot-metric-card">
+                      <span class="bot-metric-label">Average Gain</span>
+                      <strong id="bot-avg-gain" class="bot-metric-val green">+0.0%</strong>
+                    </div>
+                    <div class="bot-metric-card">
+                      <span class="bot-metric-label">Average Loss</span>
+                      <strong id="bot-avg-loss" class="bot-metric-val orange">-0.0%</strong>
+                    </div>
+                    <div class="bot-metric-card">
                       <span class="bot-metric-label">Buy &amp; Hold Return</span>
                       <strong id="buy-hold-return" class="bot-metric-val orange">0.0%</strong>
                     </div>
@@ -355,8 +363,42 @@
 
                   <canvas id="equity-chart" height="170" aria-label="Trade Bot Cumulative Equity Chart"></canvas>
                   <div class="bot-legend-row">
-                    <span class="bot-legend-green">🟢 Bot Cumulative Equity (Net Profit)</span>
+                    <span class="bot-legend-green">🟢 Adaptive Bot Cumulative Equity (Net Profit)</span>
                     <span class="bot-legend-gray">⚪ Buy &amp; Hold Asset Return</span>
+                  </div>
+
+                  <div class="trades-log-container">
+                    <div class="trades-log-header">
+                      <div>
+                        <span class="trades-log-title">📜 Executed Trades &amp; Mistake Learning Log</span>
+                        <span class="trades-log-subtitle">Real-time trade experience memory</span>
+                      </div>
+                      <span class="signal-pill neutral" id="trades-count-badge" style="font-size: 9px;">0 Trades Logged</span>
+                    </div>
+
+                    <div class="trades-table-wrapper">
+                      <table class="executed-trades-table">
+                        <thead>
+                          <tr>
+                            <th>#</th>
+                            <th>Time / Candle</th>
+                            <th>Signal</th>
+                            <th>Entry</th>
+                            <th>Exit</th>
+                            <th>Trade PnL</th>
+                            <th>Capital</th>
+                            <th>Adaptive Learning Experience Note</th>
+                          </tr>
+                        </thead>
+                        <tbody id="executed-trades-list">
+                          <tr>
+                            <td colspan="8" style="text-align: center; color: #838a84; padding: 16px;">
+                              No executed trades yet. Click "Fetch, train &amp; walk-forward test" to run the adaptive bot.
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </div>
 

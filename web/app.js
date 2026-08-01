@@ -66,7 +66,11 @@ const elements = {
   botFinalCapital: document.querySelector("#bot-final-capital"),
   botTotalTrades: document.querySelector("#bot-total-trades"),
   botWinRate: document.querySelector("#bot-win-rate"),
+  botAvgGain: document.querySelector("#bot-avg-gain"),
+  botAvgLoss: document.querySelector("#bot-avg-loss"),
   buyHoldReturn: document.querySelector("#buy-hold-return"),
+  executedTradesList: document.querySelector("#executed-trades-list"),
+  tradesCountBadge: document.querySelector("#trades-count-badge"),
   tradingViewWidget: document.querySelector("#tradingview-widget"),
   tradingViewLink: document.querySelector("#tradingview-link"),
   memoryCount: document.querySelector("#memory-count"),
@@ -1431,44 +1435,94 @@ function drawPriceChart() {
 
 function drawEquityChart(result) {
   const canvas = elements.equityChart;
-  const samples = state.marketChartData;
-  if (!canvas || !samples || !samples.length || canvas.clientWidth === 0) return;
+  const candles = state.marketChartData;
+  if (!canvas || !candles || !candles.length || canvas.clientWidth === 0) return;
 
   const initialCapital = 10000;
   let botEquity = initialCapital;
 
-  const testStartIndex = Math.floor(samples.length * 0.85);
-  const testSamples = samples.slice(testStartIndex);
+  const testStartIndex = Math.floor(candles.length * 0.85);
+  const testSamples = candles.slice(testStartIndex);
 
   const botCurve = [initialCapital];
   const benchmarkCurve = [initialCapital];
+  const executedTrades = [];
+
   let winCount = 0;
-  let tradeCount = 0;
+  let lossCount = 0;
+  let totalWinPct = 0;
+  let totalLossPct = 0;
 
   if (testSamples.length > 1) {
     const assetShares = initialCapital / testSamples[0].close;
-    let currentPosition = 0;
+    let currentPosition = 0; // 0 = Cash, 1 = Long
     let entryPrice = 0;
+    let adaptiveThreshold = 0.0012; // Base signal threshold
+    let consecutiveLosses = 0;
 
     for (let i = 0; i < testSamples.length; i++) {
       const price = testSamples[i].close;
+      const candle = testSamples[i];
       const benchmarkVal = assetShares * price;
       benchmarkCurve.push(benchmarkVal);
 
       const prevPrice = i > 0 ? testSamples[i - 1].close : price;
       const pctChange = (price - prevPrice) / prevPrice;
 
-      if (pctChange > 0.0015 && currentPosition === 0) {
+      // Online Signal Generation with Adaptive Threshold
+      if (pctChange > adaptiveThreshold && currentPosition === 0) {
         currentPosition = 1;
         entryPrice = price;
-        botEquity *= 0.999;
-        tradeCount++;
-      } else if (pctChange < -0.0015 && currentPosition === 1) {
-        const tradeReturn = (price - entryPrice) / entryPrice;
-        if (tradeReturn > 0) winCount++;
-        botEquity *= (1 + tradeReturn) * 0.999;
+        botEquity *= 0.999; // 0.1% transaction fee
+      } else if (pctChange < -adaptiveThreshold && currentPosition === 1) {
+        // Exit Long Trade & Learn Online
+        const rawReturn = (price - entryPrice) / entryPrice;
+        const netReturn = rawReturn - 0.001; // deduct exit fee
+        const tradeWin = netReturn > 0;
+
+        botEquity *= (1 + netReturn);
+
+        if (tradeWin) {
+          winCount++;
+          totalWinPct += netReturn;
+          consecutiveLosses = 0;
+          adaptiveThreshold = Math.max(0.0008, adaptiveThreshold * 0.98); // Gain confidence, slightly lower threshold
+        } else {
+          lossCount++;
+          totalLossPct += Math.abs(netReturn);
+          consecutiveLosses++;
+          adaptiveThreshold = Math.min(0.0035, adaptiveThreshold * 1.12); // Adapt to choppy market: require stronger conviction
+        }
+
+        // Online Experience Memory Note Generation
+        let lessonNote = "";
+        if (tradeWin) {
+          lessonNote = netReturn > 0.02
+            ? "🟢 Strong trend capture: high momentum signal validated."
+            : "🟢 Scalp profit realized: positive feature alignment.";
+        } else {
+          if (consecutiveLosses > 1) {
+            lessonNote = `🔴 Consecutive loss #${consecutiveLosses}: Raised threshold to ${(adaptiveThreshold * 100).toFixed(2)}% to filter false breakouts.`;
+          } else {
+            lessonNote = "🔴 Choppy market whipsaw: adaptively increased entry filter.";
+          }
+        }
+
+        const dateStr = new Date(candle.timestamp > 1e11 ? candle.timestamp : candle.timestamp * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+        executedTrades.push({
+          id: executedTrades.length + 1,
+          time: dateStr,
+          direction: "LONG",
+          entryPrice: entryPrice,
+          exitPrice: price,
+          pnlPct: netReturn,
+          capital: botEquity,
+          lesson: lessonNote,
+          isWin: tradeWin
+        });
+
         currentPosition = 0;
-        tradeCount++;
       } else if (currentPosition === 1) {
         botEquity *= (1 + pctChange);
       }
@@ -1477,16 +1531,25 @@ function drawEquityChart(result) {
     }
   }
 
+  const tradeCount = winCount + lossCount;
   const finalBotCap = botCurve[botCurve.length - 1];
   const finalBenchCap = benchmarkCurve[benchmarkCurve.length - 1];
-  const winRate = tradeCount > 0 ? (winCount / tradeCount) * 100 : (result.accuracy || 0.52) * 100;
+  const winRate = tradeCount > 0 ? (winCount / tradeCount) * 100 : 0;
+  const avgGainPct = winCount > 0 ? (totalWinPct / winCount) * 100 : 0;
+  const avgLossPct = lossCount > 0 ? (totalLossPct / lossCount) * 100 : 0;
   const buyHoldPct = ((finalBenchCap - initialCapital) / initialCapital) * 100;
 
   if (elements.botFinalCapital) elements.botFinalCapital.textContent = `$${Math.round(finalBotCap).toLocaleString()}`;
-  if (elements.botTotalTrades) elements.botTotalTrades.textContent = tradeCount || Math.round(testSamples.length * 0.35);
+  if (elements.botTotalTrades) elements.botTotalTrades.textContent = String(tradeCount);
   if (elements.botWinRate) elements.botWinRate.textContent = `${winRate.toFixed(1)}%`;
+  if (elements.botAvgGain) elements.botAvgGain.textContent = `+${avgGainPct.toFixed(1)}%`;
+  if (elements.botAvgLoss) elements.botAvgLoss.textContent = `-${avgLossPct.toFixed(1)}%`;
   if (elements.buyHoldReturn) elements.buyHoldReturn.textContent = `${buyHoldPct >= 0 ? "+" : ""}${buyHoldPct.toFixed(1)}%`;
+  if (elements.tradesCountBadge) elements.tradesCountBadge.textContent = `${tradeCount} Trades Logged`;
 
+  renderExecutedTradesTable(executedTrades);
+
+  // Render Equity Chart Canvas
   const ratio = Math.min(window.devicePixelRatio || 1, 2);
   const width = Math.max(280, canvas.clientWidth);
   const height = 170;
@@ -1540,6 +1603,39 @@ function drawEquityChart(result) {
   });
   context.stroke();
   context.shadowBlur = 0;
+}
+
+function renderExecutedTradesTable(trades) {
+  const container = elements.executedTradesList;
+  if (!container) return;
+
+  container.replaceChildren();
+  if (!trades.length) {
+    const emptyRow = document.createElement("tr");
+    emptyRow.innerHTML = `<td colspan="8" style="text-align: center; color: #838a84; padding: 16px;">No executed trades in this out-of-sample window.</td>`;
+    container.append(emptyRow);
+    return;
+  }
+
+  trades.slice().reverse().forEach((trade) => {
+    const tr = document.createElement("tr");
+
+    const pnlSign = trade.pnlPct >= 0 ? "+" : "";
+    const pnlClass = trade.isWin ? "win" : "loss";
+    const pnlFormatted = `${pnlSign}${(trade.pnlPct * 100).toFixed(2)}%`;
+
+    tr.innerHTML = `
+      <td>#${trade.id}</td>
+      <td>${trade.time}</td>
+      <td><span class="trade-direction-pill ${trade.direction.toLowerCase()}">${trade.direction}</span></td>
+      <td>$${trade.entryPrice.toFixed(2)}</td>
+      <td>$${trade.exitPrice.toFixed(2)}</td>
+      <td><span class="trade-pnl-pill ${pnlClass}">${pnlFormatted}</span></td>
+      <td>$${Math.round(trade.capital).toLocaleString()}</td>
+      <td><span class="trade-adaptive-note">${trade.lesson}</span></td>
+    `;
+    container.append(tr);
+  });
 }
 
 async function callOpenRouterChat(apiKey, promptMessage) {
