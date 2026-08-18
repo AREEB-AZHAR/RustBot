@@ -31,6 +31,7 @@ The original conversation remains the default workspace. **Market Lab** adds a r
 The lab does not place orders, store exchange credentials, or promise future accuracy. Binance and Kraken public market-data requests do not require account keys. If CoinGecko requires demo authentication, set its key before starting RustBot:
 
 ```powershell
+$env:OPENROUTER_API_KEY="your-openrouter-key"
 $env:COINGECKO_API_KEY="your-demo-key"
 cargo run --release
 ```
