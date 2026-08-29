@@ -1208,11 +1208,19 @@ function handleNavigation(destination) {
     switchWorkspace("market");
     closeKnowledgePanel();
   } else if (destination === "teach") {
+    if (!state.currentUser || state.currentUser.role !== "admin") {
+      showToast("Access Restricted: Only administrators have access to forge memories.");
+      return;
+    }
     switchWorkspace("chat");
     openTeachingForm();
   } else if (destination === "history") {
     openHistoryModal();
-  } else {
+  } else if (destination === "knowledge") {
+    if (!state.currentUser || state.currentUser.role !== "admin") {
+      showToast("Access Restricted: Only administrators have access to the Knowledge Forge.");
+      return;
+    }
     openKnowledgePanel();
     elements.memorySearch.focus();
   }
@@ -2065,13 +2073,19 @@ function restorePanelPreference() {
 }
 
 function toggleKnowledgePanel() {
-  if (!state.currentUser || state.currentUser.role !== "admin") return;
+  if (!state.currentUser || state.currentUser.role !== "admin") {
+    showToast("Access Restricted: Only administrators have access to the Knowledge Forge.");
+    return;
+  }
   if (isKnowledgePanelOpen()) closeKnowledgePanel();
   else openKnowledgePanel();
 }
 
 function openKnowledgePanel() {
-  if (!state.currentUser || state.currentUser.role !== "admin") return;
+  if (!state.currentUser || state.currentUser.role !== "admin") {
+    showToast("Access Restricted: Only administrators have access to the Knowledge Forge.");
+    return;
+  }
   if (narrowWorkspace.matches) {
     elements.knowledgePanel.classList.add("is-open");
     elements.panelOverlay.classList.add("is-visible");
@@ -2095,6 +2109,10 @@ function closeKnowledgePanel() {
 }
 
 function openTeachingForm(prompt = "") {
+  if (!state.currentUser || state.currentUser.role !== "admin") {
+    showToast("Access Restricted: Only administrators have access to forge memories.");
+    return;
+  }
   openKnowledgePanel();
   toggleAddMemoryForm(true);
   elements.memoryPrompt.value = prompt;

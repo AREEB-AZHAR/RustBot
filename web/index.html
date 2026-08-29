@@ -86,11 +86,11 @@
             <span class="rail-label">Market Lab</span>
             <span class="nav-beta">Beta</span>
           </button>
-          <button class="nav-item admin-only-feature" type="button" data-nav="teach" id="nav-teach-btn" hidden>
+          <button class="nav-item" type="button" data-nav="teach" id="nav-teach-btn">
             <span class="nav-icon" aria-hidden="true">⌁</span>
             <span class="rail-label">Teach RustBot</span>
           </button>
-          <button class="nav-item admin-only-feature" type="button" data-nav="knowledge" id="nav-knowledge-btn" hidden>
+          <button class="nav-item" type="button" data-nav="knowledge" id="nav-knowledge-btn">
             <span class="nav-icon" aria-hidden="true">▦</span>
             <span class="rail-label">Knowledge</span>
             <span class="nav-count" id="rail-memory-count">0</span>
@@ -145,14 +145,13 @@
               <span id="ready-label">Connecting…</span>
             </div>
             <button
-              class="icon-button knowledge-toggle admin-only-feature"
+              class="icon-button knowledge-toggle"
               id="knowledge-toggle"
               type="button"
               aria-controls="knowledge-panel"
-              aria-expanded="true"
-              aria-label="Close knowledge panel"
-              title="Close knowledge panel"
-              hidden
+              aria-expanded="false"
+              aria-label="Knowledge panel"
+              title="Knowledge panel"
             >
               <span aria-hidden="true">▦</span>
             </button>
