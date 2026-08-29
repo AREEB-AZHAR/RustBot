@@ -257,23 +257,23 @@ button:disabled {
   padding: 0 4px;
 }
 
-.rail-collapse-btn {
+.rail-toggle-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   margin-left: auto;
   color: #aeb8b2;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
   cursor: pointer;
-  font-size: 11px;
+  font-size: 13px;
   transition: all 0.18s ease;
 }
 
-.rail-collapse-btn:hover {
+.rail-toggle-btn:hover {
   color: #fff;
   background: rgba(228, 98, 50, 0.25);
   border-color: rgba(228, 98, 50, 0.45);
@@ -288,9 +288,17 @@ button:disabled {
 }
 
 .rail-expand-btn {
-  display: grid;
-  place-items: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
   flex-shrink: 0;
+  font-size: 15px;
+}
+
+.rail-expand-btn[hidden] {
+  display: none !important;
 }
 
 .brand-mark {

@@ -30,7 +30,7 @@ const elements = {
   sendButton: document.querySelector("#send-button"),
   teachButton: document.querySelector("#teach-button"),
   newChatButton: document.querySelector("#new-chat-button"),
-  railCollapseBtn: document.querySelector("#rail-collapse-btn"),
+  railToggleBtn: document.querySelector("#rail-toggle-btn"),
   railExpandBtn: document.querySelector("#rail-expand-btn"),
   knowledgePanel: document.querySelector("#knowledge-panel"),
   knowledgeToggle: document.querySelector("#knowledge-toggle"),
@@ -156,7 +156,7 @@ let csrfToken = document.querySelector('meta[name="rustbot-csrf-token"]')?.getAt
 document.addEventListener("DOMContentLoaded", initialize);
 
 async function initialize() {
-  restorePanelPreference();
+  restoreRailPreference();
   bindEvents();
   resizeComposer();
   updateMarketProvider();
@@ -283,11 +283,11 @@ function bindEvents() {
 
   elements.toastClose.addEventListener("click", hideToast);
 
-  if (elements.railCollapseBtn) {
-    elements.railCollapseBtn.addEventListener("click", collapseRail);
+  if (elements.railToggleBtn) {
+    elements.railToggleBtn.addEventListener("click", toggleRail);
   }
   if (elements.railExpandBtn) {
-    elements.railExpandBtn.addEventListener("click", expandRail);
+    elements.railExpandBtn.addEventListener("click", toggleRail);
   }
 
   if (elements.historyCloseBtn) {
@@ -371,14 +371,20 @@ function bindEvents() {
   });
 }
 
-function collapseRail() {
-  elements.appShell.classList.add("rail-collapsed");
-  if (elements.railExpandBtn) elements.railExpandBtn.hidden = false;
+function toggleRail() {
+  const isCollapsed = elements.appShell.classList.toggle("rail-collapsed");
+  if (elements.railExpandBtn) {
+    elements.railExpandBtn.hidden = !isCollapsed;
+  }
+  localStorage.setItem("rustbot-rail-collapsed", isCollapsed ? "true" : "false");
 }
 
-function expandRail() {
-  elements.appShell.classList.remove("rail-collapsed");
-  if (elements.railExpandBtn) elements.railExpandBtn.hidden = true;
+function restoreRailPreference() {
+  const isCollapsed = localStorage.getItem("rustbot-rail-collapsed") === "true";
+  elements.appShell.classList.toggle("rail-collapsed", isCollapsed);
+  if (elements.railExpandBtn) {
+    elements.railExpandBtn.hidden = !isCollapsed;
+  }
 }
 
 /* ==========================================
@@ -2040,6 +2046,13 @@ function syncPanelControls(isOpen) {
 }
 
 function restorePanelPreference() {
+  if (!state.currentUser || state.currentUser.role !== "admin") {
+    elements.appShell.classList.add("knowledge-collapsed");
+    elements.knowledgePanel?.classList.remove("is-open");
+    syncPanelControls(false);
+    return;
+  }
+
   elements.appShell.classList.remove("knowledge-collapsed");
   if (narrowWorkspace.matches) {
     syncPanelControls(false);
@@ -2052,11 +2065,13 @@ function restorePanelPreference() {
 }
 
 function toggleKnowledgePanel() {
+  if (!state.currentUser || state.currentUser.role !== "admin") return;
   if (isKnowledgePanelOpen()) closeKnowledgePanel();
   else openKnowledgePanel();
 }
 
 function openKnowledgePanel() {
+  if (!state.currentUser || state.currentUser.role !== "admin") return;
   if (narrowWorkspace.matches) {
     elements.knowledgePanel.classList.add("is-open");
     elements.panelOverlay.classList.add("is-visible");
