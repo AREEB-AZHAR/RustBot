@@ -354,6 +354,9 @@ async function checkAuth() {
   try {
     const res = await api("/api/auth/me");
     if (res.user) {
+      if (res.csrf_token) {
+        csrfToken = res.csrf_token;
+      }
       setUserState(res.user);
       await loadConversations();
       if (res.user.role === "admin") {

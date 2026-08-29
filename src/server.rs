@@ -325,15 +325,34 @@ fn validate_session_csrf(
     state: &AppState,
 ) -> bool {
     let origin = match request.header("origin") {
-        Some(o) => o.trim(),
-        None => return false,
+        Some(o) if !o.trim().is_empty() => Some(o.trim()),
+        _ => request.header("referer").and_then(|ref_url| {
+            if let Some(pos) = ref_url.find("://") {
+                let rest = &ref_url[pos + 3..];
+                let host_part = rest.split('/').next().unwrap_or("");
+                let proto_end = pos + 3;
+                let full_origin_len = proto_end + host_part.len();
+                if full_origin_len <= ref_url.len() {
+                    Some(ref_url[..full_origin_len].trim())
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        }),
     };
 
-    let origin_valid = if state.config.is_production() {
-        origin.eq_ignore_ascii_case(&state.config.public_origin)
-    } else {
-        is_trusted_loopback_origin(origin)
-            || origin.eq_ignore_ascii_case(&state.config.public_origin)
+    let origin_valid = match origin {
+        Some(o) => {
+            if state.config.is_production() {
+                o.eq_ignore_ascii_case(&state.config.public_origin)
+            } else {
+                is_trusted_loopback_origin(o)
+                    || o.eq_ignore_ascii_case(&state.config.public_origin)
+            }
+        }
+        None => !state.config.is_production(),
     };
 
     if !origin_valid {
@@ -635,6 +654,10 @@ fn handle_auth_me(request: &Request, state: &AppState) -> Response {
         Err(err_resp) => return err_resp,
     };
 
+    let raw_csrf_token = generate_secure_token();
+    let csrf_digest = digest_token(&raw_csrf_token, &state.config.session_pepper);
+    let _ = state.db.update_session_csrf(&session.id, &csrf_digest);
+
     Response::json(
         200,
         "OK",
@@ -644,7 +667,8 @@ fn handle_auth_me(request: &Request, state: &AppState) -> Response {
                 "username": user.username,
                 "role": user.role
             },
-            "session_id": session.id
+            "session_id": session.id,
+            "csrf_token": raw_csrf_token
         }),
     )
 }

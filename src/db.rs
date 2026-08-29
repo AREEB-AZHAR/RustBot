@@ -564,6 +564,16 @@ impl Database {
         Ok(())
     }
 
+    pub fn update_session_csrf(&self, session_id: &str, new_csrf_digest: &str) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "UPDATE sessions SET csrf_token_digest = ?1 WHERE id = ?2 AND revoked_at IS NULL",
+            params![new_csrf_digest, session_id],
+        )
+        .map_err(|e| format!("Failed to update session CSRF: {e}"))?;
+        Ok(())
+    }
+
     pub fn revoke_session(&self, session_id: &str) -> Result<(), String> {
         let now = now_timestamp();
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
