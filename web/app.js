@@ -30,6 +30,8 @@ const elements = {
   sendButton: document.querySelector("#send-button"),
   teachButton: document.querySelector("#teach-button"),
   newChatButton: document.querySelector("#new-chat-button"),
+  railCollapseBtn: document.querySelector("#rail-collapse-btn"),
+  railExpandBtn: document.querySelector("#rail-expand-btn"),
   knowledgePanel: document.querySelector("#knowledge-panel"),
   knowledgeToggle: document.querySelector("#knowledge-toggle"),
   knowledgeClose: document.querySelector("#knowledge-close"),
@@ -281,6 +283,13 @@ function bindEvents() {
 
   elements.toastClose.addEventListener("click", hideToast);
 
+  if (elements.railCollapseBtn) {
+    elements.railCollapseBtn.addEventListener("click", collapseRail);
+  }
+  if (elements.railExpandBtn) {
+    elements.railExpandBtn.addEventListener("click", expandRail);
+  }
+
   if (elements.historyCloseBtn) {
     elements.historyCloseBtn.addEventListener("click", closeHistoryModal);
   }
@@ -338,7 +347,7 @@ function bindEvents() {
   document.addEventListener("keydown", (event) => {
     const activeTag = document.activeElement?.tagName;
     const isTyping = activeTag === "INPUT" || activeTag === "TEXTAREA";
-    if (event.key === "/" && !isTyping) {
+    if (event.key === "/" && !isTyping && state.currentUser?.role === "admin") {
       event.preventDefault();
       openKnowledgePanel();
       elements.memorySearch.focus();
@@ -356,8 +365,20 @@ function bindEvents() {
     elements.knowledgePanel.classList.remove("is-open");
     elements.panelOverlay.classList.remove("is-visible");
     document.body.classList.remove("panel-open");
-    restorePanelPreference();
+    if (state.currentUser?.role === "admin") {
+      restorePanelPreference();
+    }
   });
+}
+
+function collapseRail() {
+  elements.appShell.classList.add("rail-collapsed");
+  if (elements.railExpandBtn) elements.railExpandBtn.hidden = false;
+}
+
+function expandRail() {
+  elements.appShell.classList.remove("rail-collapsed");
+  if (elements.railExpandBtn) elements.railExpandBtn.hidden = true;
 }
 
 /* ==========================================
@@ -387,16 +408,29 @@ async function checkAuth() {
 
 function setUserState(user) {
   state.currentUser = user;
+  const isAdmin = Boolean(user && user.role === "admin");
+
+  // Toggle admin-only features across the UI (knowledge tab, teach button, etc.)
+  document.querySelectorAll(".admin-only-feature").forEach((el) => {
+    el.hidden = !isAdmin;
+  });
+
   if (user) {
     if (elements.userNameDisplay) elements.userNameDisplay.textContent = user.username;
     if (elements.userRoleBadge) {
       elements.userRoleBadge.textContent = user.role;
-      elements.userRoleBadge.classList.toggle("admin", user.role === "admin");
+      elements.userRoleBadge.classList.toggle("admin", isAdmin);
     }
     if (elements.authActionBtn) elements.authActionBtn.textContent = "Log Out";
-    if (elements.navTeachBtn) elements.navTeachBtn.hidden = user.role !== "admin";
-    if (elements.navKnowledgeBtn) elements.navKnowledgeBtn.hidden = user.role !== "admin";
     if (elements.readyLabel) elements.readyLabel.textContent = `Connected as ${user.username}`;
+    
+    // Non-admin users cannot see or open the knowledge panel
+    if (!isAdmin) {
+      elements.appShell.classList.add("knowledge-collapsed");
+      elements.knowledgePanel?.classList.remove("is-open");
+    } else {
+      restorePanelPreference();
+    }
   } else {
     if (elements.userNameDisplay) elements.userNameDisplay.textContent = "Guest";
     if (elements.userRoleBadge) {
@@ -404,10 +438,10 @@ function setUserState(user) {
       elements.userRoleBadge.classList.remove("admin");
     }
     if (elements.authActionBtn) elements.authActionBtn.textContent = "Log In";
-    if (elements.navTeachBtn) elements.navTeachBtn.hidden = true;
-    if (elements.navKnowledgeBtn) elements.navKnowledgeBtn.hidden = true;
     if (elements.railConversationsList) elements.railConversationsList.replaceChildren();
     if (elements.readyLabel) elements.readyLabel.textContent = "Please sign in";
+    elements.appShell.classList.add("knowledge-collapsed");
+    elements.knowledgePanel?.classList.remove("is-open");
   }
 }
 

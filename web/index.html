@@ -46,6 +46,9 @@
             <strong>RustBot</strong>
             <span>Knowledge Forge</span>
           </div>
+          <button class="rail-collapse-btn" id="rail-collapse-btn" type="button" aria-label="Collapse sidebar" title="Collapse sidebar">
+            <span aria-hidden="true">◀</span>
+          </button>
         </div>
 
         <!-- User Profile Section -->
@@ -118,9 +121,14 @@
 
       <main class="chat-panel" aria-labelledby="conversation-title">
         <header class="chat-header">
-          <div>
-            <p class="header-eyebrow" id="workspace-eyebrow">Active workspace</p>
-            <h1 id="conversation-title">Fresh conversation</h1>
+          <div class="header-title-group">
+            <button class="icon-button rail-expand-btn" id="rail-expand-btn" type="button" aria-label="Expand sidebar" title="Open sidebar" hidden>
+              <span aria-hidden="true">☰</span>
+            </button>
+            <div>
+              <p class="header-eyebrow" id="workspace-eyebrow">Active workspace</p>
+              <h1 id="conversation-title">Fresh conversation</h1>
+            </div>
           </div>
           <div class="header-actions">
             <button
@@ -137,13 +145,14 @@
               <span id="ready-label">Connecting…</span>
             </div>
             <button
-              class="icon-button knowledge-toggle"
+              class="icon-button knowledge-toggle admin-only-feature"
               id="knowledge-toggle"
               type="button"
               aria-controls="knowledge-panel"
               aria-expanded="true"
               aria-label="Close knowledge panel"
               title="Close knowledge panel"
+              hidden
             >
               <span aria-hidden="true">▦</span>
             </button>
