@@ -2,7 +2,7 @@
 
 RustBot is a high-performance, secure, multi-user AI chatbot and quantitative market analysis platform built in pure Rust and vanilla web technologies. 
 
-It features sub-millisecond local fuzzy knowledge matching, self-learning memory caching, strict per-user database isolation, enterprise-grade authentication, and an embedded glassmorphic single-page web application.
+It features sub-millisecond local fuzzy knowledge matching, dynamic self-learning memory caching, strict per-user database isolation, role-based access control, real-time market engines, and a responsive mobile-first glassmorphic single-page web application.
 
 ---
 
@@ -11,11 +11,20 @@ It features sub-millisecond local fuzzy knowledge matching, self-learning memory
 * **⚡ Pure Rust Architecture**: Zero heavy web framework dependencies. The HTTP engine, session middleware, SQLite data layer, and fuzzy matching engine compile into a single lightweight native binary.
 * **🧠 Sub-Millisecond Knowledge Matching (<1ms)**: Custom in-memory NLP pipeline using Porter stemming, stopword filtering, and Levenshtein edit distance for typo tolerance.
 * **🌐 Self-Learning AI Engine**: Automatically queries upstream AI routers (`openrouter/free`, `openrouter/auto`, and free LLM endpoints) for unmatched questions, auto-tokenizes the answers, and permanently caches them into the local Knowledge Forge for instant future recall.
-* **👥 Multi-User Isolation**: Built-in user accounts, secure sessions, and isolated private conversation threads. Users can create, switch between, and delete their own chat threads.
+* **🛡️ Smart Ephemeral Filtering**: Questions regarding constantly changing data (live crypto prices, weather, sports scores) are answered dynamically via OpenRouter/Binance without polluting long-term memory.
+* **👥 Multi-User Isolation & Role-Based Access Control**:
+  * Built-in user registration, login, session tokens, and encrypted storage.
+  * **Admin Role**: Full access to the Knowledge Forge, memory management, and training tools.
+  * **User Role**: Access to private chat workspaces, market research, and multi-conversation management with permission-gated alerts.
+* **💬 5-Second Undo Conversation Deletion**: Custom modal confirmation and 5-second countdown toast with interactive undo. Deleting chats preserves learned knowledge in the database.
 * **🧮 Built-in Tool Engines**:
   * **Math Solver**: Instant evaluation of mathematical expressions (e.g., `25 * 40 + 15`).
-  * **Live Market Lab**: Quantitative cryptocurrency market structure analysis, candlestick charting, and machine learning directional models.
-* **🎨 Modern Vanilla Web Interface**: Zero Node.js or npm build steps required. HTML, CSS, and JavaScript are bundled directly into the Rust binary.
+  * **Live Market Lab**: Quantitative cryptocurrency market structure analysis, candlestick charting, and machine learning directional models with direct plain-English Executive Outlook summaries.
+* **📱 Mobile-First Responsive UI**:
+  * Responsive layout with off-canvas slide-out navigation drawer on mobile and collapsible sidebar on desktop toggled with a single **`☰`** icon.
+  * Custom ember/obsidian glowing scrollbars across all scrollable panels.
+  * Touch-friendly mobile composer with safe-area padding and auto-resizing input.
+  * Zero Node.js or npm build steps required — HTML, CSS, and JavaScript are bundled directly into the Rust binary.
 
 ---
 
@@ -60,6 +69,7 @@ RustBot is engineered with a security-first approach to protect user privacy and
 | **How is memory fetched?** | Queries are tokenized, stemmed, and scored against in-memory patterns. Exact matches and typo-tolerant fuzzy matches resolve in under 1 millisecond. |
 | **What if a prompt has multiple questions?** | Candidate memories are ranked by match density. If a multi-topic prompt exceeds local memory boundaries, it automatically escalates to Web AI, which answers all components cleanly without corrupting local data. |
 | **Are conversations private?** | **Yes.** Chat threads and messages are strictly constrained to the authenticated user ID (`WHERE user_id = ?`). |
+| **What happens when a chat is deleted?** | Deleting a chat thread deletes its message logs from SQLite, but facts learned from that chat remain permanently preserved in the Knowledge Forge. |
 
 ---
 
@@ -103,6 +113,9 @@ RUSTBOT_ENV=development
 RUSTBOT_HOST=127.0.0.1
 RUSTBOT_PORT=7878
 
+# Session Pepper for double-digest token hashing
+RUSTBOT_SESSION_PEPPER=your-secure-random-pepper-here
+
 # Optional: OpenRouter AI Key for live web fallback
 OPENROUTER_API_KEY="your-openrouter-key-here"
 
@@ -116,7 +129,7 @@ COINGECKO_API_KEY="your-coingecko-key-here"
 
 ## 🧪 Verification & Automated Testing
 
-RustBot includes a comprehensive automated test suite verifying password hashing, database isolation, token digests, session expiration, and fuzzy text search:
+RustBot includes a comprehensive automated test suite verifying password hashing, database isolation, token digests, session expiration, market analysis, and fuzzy text search:
 
 ```bash
 # Run all unit and integration tests
