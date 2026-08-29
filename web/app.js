@@ -1,6 +1,9 @@
 "use strict";
 
 const state = {
+  currentUser: null,
+  activeConversationId: null,
+  conversations: [],
   patterns: [],
   messages: [],
   query: "",
@@ -12,6 +15,7 @@ const state = {
   marketData: [],
   marketChartData: [],
   activeZoomPattern: null,
+  authMode: "login",
 };
 
 const elements = {
@@ -113,24 +117,73 @@ const elements = {
   historyListContainer: document.querySelector("#history-list-container"),
   exportHistoryBtn: document.querySelector("#export-history-btn"),
   clearHistoryBtn: document.querySelector("#clear-history-btn"),
+
+  // Multi-user Profile & Conversations
+  userNameDisplay: document.querySelector("#user-name-display"),
+  userRoleBadge: document.querySelector("#user-role-badge"),
+  authActionBtn: document.querySelector("#auth-action-btn"),
+  railConversationsList: document.querySelector("#rail-conversations-list"),
+  navTeachBtn: document.querySelector("#nav-teach-btn"),
+  navKnowledgeBtn: document.querySelector("#nav-knowledge-btn"),
+
+  // Auth Modal
+  authModal: document.querySelector("#auth-modal"),
+  authModalTitle: document.querySelector("#auth-modal-title"),
+  authSubtitle: document.querySelector("#auth-subtitle"),
+  authTabLogin: document.querySelector("#auth-tab-login"),
+  authTabRegister: document.querySelector("#auth-tab-register"),
+  authCloseBtn: document.querySelector("#auth-close-btn"),
+  authForm: document.querySelector("#auth-form"),
+  authUsername: document.querySelector("#auth-username"),
+  authUsernameLabel: document.querySelector("#auth-username-label"),
+  authEmailGroup: document.querySelector("#auth-email-group"),
+  authEmail: document.querySelector("#auth-email"),
+  authPassword: document.querySelector("#auth-password"),
+  authFormError: document.querySelector("#auth-form-error"),
+  authSubmitBtn: document.querySelector("#auth-submit-btn"),
 };
 
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 const narrowWorkspace = window.matchMedia("(max-width: 1180px)");
-const csrfToken = document.querySelector('meta[name="rustbot-csrf-token"]')?.getAttribute("content") || "";
+let csrfToken = document.querySelector('meta[name="rustbot-csrf-token"]')?.getAttribute("content") || "";
 
 document.addEventListener("DOMContentLoaded", initialize);
 
-function initialize() {
+async function initialize() {
   restorePanelPreference();
   bindEvents();
-  restoreConversation();
-  loadKnowledge();
   resizeComposer();
   updateMarketProvider();
+  await checkAuth();
 }
 
 function bindEvents() {
+  if (elements.authActionBtn) {
+    elements.authActionBtn.addEventListener("click", () => {
+      if (state.currentUser) {
+        handleLogout();
+      } else {
+        openAuthModal("login");
+      }
+    });
+  }
+
+  if (elements.authTabLogin) {
+    elements.authTabLogin.addEventListener("click", () => switchAuthTab("login"));
+  }
+
+  if (elements.authTabRegister) {
+    elements.authTabRegister.addEventListener("click", () => switchAuthTab("register"));
+  }
+
+  if (elements.authCloseBtn) {
+    elements.authCloseBtn.addEventListener("click", closeAuthModal);
+  }
+
+  if (elements.authForm) {
+    elements.authForm.addEventListener("submit", handleAuthSubmit);
+  }
+
   elements.composerForm.addEventListener("submit", (event) => {
     event.preventDefault();
     sendMessage(elements.composerInput.value);
@@ -294,11 +347,144 @@ function bindEvents() {
   });
 }
 
+/* ==========================================
+   AUTHENTICATION & USER STATE
+   ========================================== */
+async function checkAuth() {
+  try {
+    const res = await api("/api/auth/me");
+    if (res.user) {
+      setUserState(res.user);
+      await loadConversations();
+      if (res.user.role === "admin") {
+        await loadKnowledge();
+      }
+    } else {
+      setUserState(null);
+      openAuthModal("login");
+    }
+  } catch {
+    setUserState(null);
+    openAuthModal("login");
+  }
+}
+
+function setUserState(user) {
+  state.currentUser = user;
+  if (user) {
+    if (elements.userNameDisplay) elements.userNameDisplay.textContent = user.username;
+    if (elements.userRoleBadge) {
+      elements.userRoleBadge.textContent = user.role;
+      elements.userRoleBadge.classList.toggle("admin", user.role === "admin");
+    }
+    if (elements.authActionBtn) elements.authActionBtn.textContent = "Log Out";
+    if (elements.navTeachBtn) elements.navTeachBtn.hidden = user.role !== "admin";
+    if (elements.navKnowledgeBtn) elements.navKnowledgeBtn.hidden = user.role !== "admin";
+    if (elements.readyLabel) elements.readyLabel.textContent = `Connected as ${user.username}`;
+  } else {
+    if (elements.userNameDisplay) elements.userNameDisplay.textContent = "Guest";
+    if (elements.userRoleBadge) {
+      elements.userRoleBadge.textContent = "Visitor";
+      elements.userRoleBadge.classList.remove("admin");
+    }
+    if (elements.authActionBtn) elements.authActionBtn.textContent = "Log In";
+    if (elements.navTeachBtn) elements.navTeachBtn.hidden = true;
+    if (elements.navKnowledgeBtn) elements.navKnowledgeBtn.hidden = true;
+    if (elements.railConversationsList) elements.railConversationsList.replaceChildren();
+    if (elements.readyLabel) elements.readyLabel.textContent = "Please sign in";
+  }
+}
+
+function openAuthModal(mode = "login") {
+  switchAuthTab(mode);
+  if (elements.authFormError) {
+    elements.authFormError.style.display = "none";
+    elements.authFormError.textContent = "";
+  }
+  elements.authModal?.showModal();
+}
+
+function closeAuthModal() {
+  elements.authModal?.close();
+}
+
+function switchAuthTab(mode) {
+  state.authMode = mode;
+  if (elements.authTabLogin) elements.authTabLogin.classList.toggle("active", mode === "login");
+  if (elements.authTabRegister) elements.authTabRegister.classList.toggle("active", mode === "register");
+  if (elements.authModalTitle) elements.authModalTitle.textContent = mode === "login" ? "Welcome back" : "Create an account";
+  if (elements.authSubtitle) elements.authSubtitle.textContent = mode === "login" ? "Sign in to access your private conversations." : "Register to start chatting with RustBot.";
+  if (elements.authUsernameLabel) elements.authUsernameLabel.textContent = mode === "login" ? "Username or Email" : "Username (min 3 chars)";
+  if (elements.authEmailGroup) elements.authEmailGroup.style.display = mode === "register" ? "flex" : "none";
+  if (elements.authSubmitBtn) elements.authSubmitBtn.textContent = mode === "login" ? "Log In" : "Create Account";
+}
+
+async function handleAuthSubmit(event) {
+  event.preventDefault();
+  const username = elements.authUsername?.value.trim();
+  const password = elements.authPassword?.value;
+  const email = elements.authEmail?.value.trim() || undefined;
+
+  if (!username || !password) return;
+  if (elements.authFormError) {
+    elements.authFormError.style.display = "none";
+    elements.authFormError.textContent = "";
+  }
+
+  elements.authSubmitBtn.disabled = true;
+  elements.authSubmitBtn.textContent = state.authMode === "login" ? "Logging in…" : "Registering…";
+
+  try {
+    const endpoint = state.authMode === "login" ? "/api/auth/login" : "/api/auth/register";
+    const body = state.authMode === "login" ? { username, password } : { username, email, password };
+    const res = await api(endpoint, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+
+    if (res.csrf_token) {
+      csrfToken = res.csrf_token;
+    }
+    setUserState(res.user);
+    closeAuthModal();
+    showToast(state.authMode === "login" ? `Welcome back, ${res.user.username}!` : `Account created! Welcome, ${res.user.username}!`);
+    await loadConversations();
+    if (res.user.role === "admin") {
+      await loadKnowledge();
+    }
+  } catch (error) {
+    if (elements.authFormError) {
+      elements.authFormError.textContent = error.message;
+      elements.authFormError.style.display = "block";
+    }
+  } finally {
+    elements.authSubmitBtn.disabled = false;
+    elements.authSubmitBtn.textContent = state.authMode === "login" ? "Log In" : "Create Account";
+  }
+}
+
+async function handleLogout() {
+  try {
+    await api("/api/auth/logout", { method: "POST" });
+  } catch {
+    // Ignore error on logout
+  }
+  setUserState(null);
+  state.messages = [];
+  state.conversations = [];
+  state.activeConversationId = null;
+  elements.conversation.replaceChildren(createWelcomeState());
+  elements.welcome = document.querySelector("#welcome-state");
+  showToast("Logged out successfully.");
+  openAuthModal("login");
+}
+
+
 async function loadKnowledge() {
   try {
     const url = state.category && state.category !== "all"
-      ? `/api/knowledge?category=${encodeURIComponent(state.category)}`
-      : "/api/knowledge";
+      ? `/api/memories?category=${encodeURIComponent(state.category)}`
+      : "/api/memories";
     const data = await api(url);
     state.patterns = Array.isArray(data.patterns) ? data.patterns : [];
     updateMemorySummary();
@@ -313,17 +499,26 @@ async function sendMessage(rawMessage) {
   const message = rawMessage.trim();
   if (!message || state.sending) return;
 
+  if (!state.currentUser) {
+    openAuthModal("login");
+    return;
+  }
+
+  if (!state.activeConversationId) {
+    await startNewConversation();
+  }
+
   if (state.workspace !== "chat") switchWorkspace("chat");
 
   elements.composerInput.value = "";
   resizeComposer();
-  appendMessage("user", message);
+  appendMessage("user", message, { save: false });
   setSending(true);
   const loadingRow = appendLoadingMessage();
   const requestStartedAt = performance.now();
 
   try {
-    const result = await api("/api/chat", {
+    const result = await api(`/api/conversations/${state.activeConversationId}/messages`, {
       method: "POST",
       body: JSON.stringify({ message }),
     });
@@ -331,23 +526,18 @@ async function sendMessage(rawMessage) {
     await wait(reducedMotion.matches ? 0 : Math.max(0, 280 - responseTimeMs));
 
     loadingRow.remove();
-    const row = appendMessage("bot", result.response || "I found a memory, but it was empty.", {
+    const botText = result.assistant_message?.content || "Message received.";
+    const row = appendMessage("bot", botText, {
       responseTimeMs,
+      save: false,
     });
-    if (result.status === "unknown") {
-      const apiKey = elements.marketApiKey?.value.trim() || "";
-      try {
-        const aiResponse = await callOpenRouterChat(apiKey, message);
-        if (aiResponse) {
-          row.querySelector(".message-bubble").innerHTML = renderMarkdown(`🤖 **OpenRouter AI Response:**\n\n${aiResponse}`);
-          announce("OpenRouter AI answered your prompt.");
-          return;
-        }
-      } catch (aiErr) {
-        console.warn("OpenRouter Chat Error:", aiErr);
-      }
-      row.querySelector(".message-body").append(createTeachCard(message));
-      announce("RustBot does not know that answer yet. A teaching form is ready.");
+
+    // Update conversation title if needed
+    const convObj = state.conversations.find((c) => c.id === state.activeConversationId);
+    if (convObj && (!convObj.title || convObj.title === "New Conversation" || convObj.title === "New Chat")) {
+      convObj.title = message.substring(0, 30);
+      renderConversationsList();
+      if (elements.conversationTitle) elements.conversationTitle.textContent = convObj.title;
     }
   } catch (error) {
     loadingRow.remove();
@@ -407,16 +597,6 @@ function appendMessage(role, text, options = {}) {
 
   document.querySelector(".message-list").append(row);
 
-  if (options.save !== false) {
-    const savedMessage = { role, text };
-    if (role === "bot" && Number.isFinite(options.responseTimeMs)) {
-      savedMessage.responseTimeMs = options.responseTimeMs;
-    }
-    state.messages.push(savedMessage);
-    state.messages = state.messages.slice(-40);
-    saveConversation();
-  }
-
   scrollConversation();
   return row;
 }
@@ -452,7 +632,7 @@ function appendLoadingMessage() {
 function appendErrorMessage(originalMessage, detail) {
   const row = appendMessage(
     "bot",
-    "The forge lost its connection. Your message is still here, so you can try again.",
+    "The server lost its connection or returned an error. Your message was not lost.",
     { error: true, save: false },
   );
   const retry = document.createElement("button");
@@ -537,7 +717,7 @@ function createTeachCard(prompt) {
     error.textContent = "";
 
     try {
-      const result = await api("/api/knowledge", {
+      const result = await api("/api/memories", {
         method: "POST",
         body: JSON.stringify({ prompt, response: answer }),
       });
@@ -585,16 +765,127 @@ function ensureMessageList() {
   }
 }
 
-function startNewConversation() {
+/* ==========================================
+   MULTI-USER CONVERSATION MANAGEMENT
+   ========================================== */
+async function loadConversations() {
+  if (!state.currentUser) return;
+  try {
+    const res = await api("/api/conversations");
+    state.conversations = Array.isArray(res.conversations) ? res.conversations : [];
+    renderConversationsList();
+    if (state.conversations.length > 0) {
+      if (!state.activeConversationId || !state.conversations.some((c) => c.id === state.activeConversationId)) {
+        await selectConversation(state.conversations[0].id);
+      }
+    } else {
+      await startNewConversation();
+    }
+  } catch (err) {
+    console.error("Failed to load conversations:", err);
+  }
+}
+
+function renderConversationsList() {
+  if (!elements.railConversationsList) return;
+  elements.railConversationsList.replaceChildren();
+
+  state.conversations.forEach((conv) => {
+    const item = document.createElement("div");
+    item.className = `conversation-rail-item${conv.id === state.activeConversationId ? " active" : ""}`;
+    item.setAttribute("role", "button");
+    item.tabIndex = 0;
+
+    const title = document.createElement("span");
+    title.className = "conv-item-title";
+    title.textContent = conv.title || "New Chat";
+
+    const delBtn = document.createElement("button");
+    delBtn.className = "conv-item-del-btn";
+    delBtn.type = "button";
+    delBtn.title = "Delete chat";
+    delBtn.textContent = "✕";
+    delBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      deleteConversation(conv.id);
+    });
+
+    item.append(title, delBtn);
+    item.addEventListener("click", () => selectConversation(conv.id));
+    elements.railConversationsList.append(item);
+  });
+}
+
+async function selectConversation(convId) {
+  state.activeConversationId = convId;
+  renderConversationsList();
+
+  try {
+    const res = await api(`/api/conversations/${convId}/messages`);
+    elements.conversation.replaceChildren();
+    ensureMessageList();
+
+    const convObj = state.conversations.find((c) => c.id === convId);
+    if (elements.conversationTitle) {
+      elements.conversationTitle.textContent = convObj?.title || "Active Chat";
+    }
+
+    state.messages = [];
+    if (Array.isArray(res.messages) && res.messages.length > 0) {
+      res.messages.forEach((m) => {
+        appendMessage(m.role === "assistant" ? "bot" : "user", m.content, { save: false });
+      });
+    } else {
+      elements.conversation.replaceChildren(createWelcomeState());
+      elements.welcome = document.querySelector("#welcome-state");
+    }
+  } catch (err) {
+    showToast("Could not load conversation messages.");
+  }
+}
+
+async function startNewConversation() {
+  if (!state.currentUser) {
+    openAuthModal("login");
+    return;
+  }
   switchWorkspace("chat");
-  state.messages = [];
-  sessionStorage.removeItem("rustbot-conversation");
-  elements.conversation.replaceChildren(createWelcomeState());
-  elements.welcome = document.querySelector("#welcome-state");
+  try {
+    const res = await api("/api/conversations", {
+      method: "POST",
+      body: JSON.stringify({ title: "New Conversation" }),
+    });
+    if (res.conversation) {
+      state.conversations.unshift(res.conversation);
+      await selectConversation(res.conversation.id);
+    }
+  } catch (err) {
+    showToast("Failed to create conversation.");
+  }
   elements.composerInput.value = "";
   resizeComposer();
   elements.composerInput.focus();
-  announce("Started a fresh conversation.");
+}
+
+async function deleteConversation(convId) {
+  if (!confirm("Are you sure you want to delete this conversation?")) return;
+  try {
+    await api(`/api/conversations/${convId}`, { method: "DELETE" });
+    state.conversations = state.conversations.filter((c) => c.id !== convId);
+    if (state.activeConversationId === convId) {
+      state.activeConversationId = null;
+      if (state.conversations.length > 0) {
+        await selectConversation(state.conversations[0].id);
+      } else {
+        await startNewConversation();
+      }
+    } else {
+      renderConversationsList();
+    }
+    showToast("Conversation deleted.");
+  } catch (err) {
+    showToast("Failed to delete conversation.");
+  }
 }
 
 function createWelcomeState() {
@@ -617,13 +908,13 @@ function createWelcomeState() {
   );
   const eyebrow = document.createElement("p");
   eyebrow.className = "welcome-eyebrow";
-  eyebrow.append(document.createElement("span"), " Local · Self-learning");
+  eyebrow.append(document.createElement("span"), " Local · Multi-user isolated");
   const title = document.createElement("h2");
   title.textContent = "Ask. Teach. Repeat.";
   const copy = document.createElement("p");
   copy.className = "welcome-copy";
   copy.textContent =
-    "A small local bot that gets smarter one answer at a time. Try one of the prompts below or write your own.";
+    "A secured local assistant with multi-user session isolation. Try one of the prompts below or write your own.";
   const starters = document.createElement("div");
   starters.className = "starter-grid";
   starters.setAttribute("aria-label", "Suggested messages");
@@ -656,62 +947,10 @@ function createWelcomeState() {
   return wrapper;
 }
 
-function restoreConversation() {
-  try {
-    const stored = JSON.parse(localStorage.getItem("rustbot-conversation-permanent") || sessionStorage.getItem("rustbot-conversation") || "[]");
-    if (!Array.isArray(stored) || stored.length === 0) return;
-    state.messages = stored.filter(
-      (message) =>
-        (message.role === "bot" || message.role === "user") && typeof message.text === "string",
-    );
-    const messages = [...state.messages];
-    state.messages = [];
-    messages.forEach((message) =>
-      appendMessage(message.role, message.text, { responseTimeMs: message.responseTimeMs, save: false }),
-    );
-    state.messages = messages;
-  } catch {
-    localStorage.removeItem("rustbot-conversation-permanent");
-  }
-  updateHistoryCount();
-}
-
-function saveConversation() {
-  localStorage.setItem("rustbot-conversation-permanent", JSON.stringify(state.messages));
-  sessionStorage.setItem("rustbot-conversation", JSON.stringify(state.messages));
-
-  try {
-    const sessions = JSON.parse(localStorage.getItem("rustbot-all-sessions") || "[]");
-    let currentSessionId = sessionStorage.getItem("rustbot-session-id");
-    if (!currentSessionId) {
-      currentSessionId = `session-${Date.now()}`;
-      sessionStorage.setItem("rustbot-session-id", currentSessionId);
-    }
-
-    const existingIndex = sessions.findIndex((s) => s.id === currentSessionId);
-    const sessionObj = {
-      id: currentSessionId,
-      timestamp: Date.now(),
-      title: state.messages[0]?.text?.substring(0, 45) || "Conversation Session",
-      messages: state.messages,
-    };
-
-    if (existingIndex >= 0) sessions[existingIndex] = sessionObj;
-    else sessions.unshift(sessionObj);
-
-    localStorage.setItem("rustbot-all-sessions", JSON.stringify(sessions.slice(0, 100)));
-    updateHistoryCount();
-  } catch (err) {
-    console.warn("Failed to archive session:", err);
-  }
-}
-
 function updateHistoryCount() {
-  try {
-    const sessions = JSON.parse(localStorage.getItem("rustbot-all-sessions") || "[]");
-    if (elements.railHistoryCount) elements.railHistoryCount.textContent = String(sessions.length);
-    if (elements.historySessionCount) elements.historySessionCount.textContent = `${sessions.length} saved sessions`;
-  } catch {}
+  const count = state.conversations.length;
+  if (elements.railHistoryCount) elements.railHistoryCount.textContent = String(count);
+  if (elements.historySessionCount) elements.historySessionCount.textContent = `${count} active conversations`;
 }
 
 async function openHistoryModal() {
@@ -730,170 +969,80 @@ async function renderHistoryModal() {
   if (!elements.historyListContainer) return;
   elements.historyListContainer.replaceChildren();
 
-  let serverHistory = [];
-  try {
-    const res = await api("/api/chat/history");
-    serverHistory = Array.isArray(res.history) ? res.history : [];
-  } catch (err) {
-    console.warn("Could not fetch server chat history:", err);
-  }
-
-  const localSessions = JSON.parse(localStorage.getItem("rustbot-all-sessions") || "[]");
-
-  if (!localSessions.length && !serverHistory.length) {
+  if (!state.conversations.length) {
     const emptyState = document.createElement("div");
     emptyState.style.padding = "20px";
     emptyState.style.textAlign = "center";
     emptyState.style.color = "#838a84";
-    emptyState.textContent = "No chat history recorded yet. Start talking to RustBot!";
+    emptyState.textContent = "No conversations recorded yet. Start talking to RustBot!";
     elements.historyListContainer.append(emptyState);
     return;
   }
 
-  // Render Saved Sessions
-  if (localSessions.length > 0) {
-    const sectionTitle = document.createElement("p");
-    sectionTitle.style.fontSize = "11px";
-    sectionTitle.style.fontWeight = "700";
-    sectionTitle.style.color = "#34d399";
-    sectionTitle.style.textTransform = "uppercase";
-    sectionTitle.textContent = "Saved Chat Sessions";
-    elements.historyListContainer.append(sectionTitle);
+  const sectionTitle = document.createElement("p");
+  sectionTitle.style.fontSize = "11px";
+  sectionTitle.style.fontWeight = "700";
+  sectionTitle.style.color = "#34d399";
+  sectionTitle.style.textTransform = "uppercase";
+  sectionTitle.textContent = "Your Server Conversations";
+  elements.historyListContainer.append(sectionTitle);
 
-    localSessions.forEach((sess) => {
-      const card = document.createElement("div");
-      card.style.background = "rgba(255, 255, 255, 0.05)";
-      card.style.border = "1px solid rgba(255, 255, 255, 0.1)";
-      card.style.borderRadius = "12px";
-      card.style.padding = "12px 14px";
-      card.style.display = "flex";
-      card.style.justifyContent = "space-between";
-      card.style.alignItems = "center";
+  state.conversations.forEach((conv) => {
+    const card = document.createElement("div");
+    card.style.background = "rgba(255, 255, 255, 0.05)";
+    card.style.border = "1px solid rgba(255, 255, 255, 0.1)";
+    card.style.borderRadius = "12px";
+    card.style.padding = "12px 14px";
+    card.style.display = "flex";
+    card.style.justifyContent = "space-between";
+    card.style.alignItems = "center";
+    card.style.marginBottom = "8px";
 
-      const info = document.createElement("div");
-      const title = document.createElement("strong");
-      title.style.display = "block";
-      title.style.color = "#fff";
-      title.style.fontSize = "13px";
-      title.textContent = `“${sess.title}…”`;
+    const info = document.createElement("div");
+    const title = document.createElement("strong");
+    title.style.display = "block";
+    title.style.color = "#fff";
+    title.style.fontSize = "13px";
+    title.textContent = `“${conv.title || "New Chat"}”`;
 
-      const meta = document.createElement("span");
-      meta.style.fontSize = "10px";
-      meta.style.color = "#94a3b8";
-      meta.textContent = `${new Date(sess.timestamp).toLocaleString()} · ${sess.messages.length} messages`;
-      info.append(title, meta);
+    const meta = document.createElement("span");
+    meta.style.fontSize = "10px";
+    meta.style.color = "#94a3b8";
+    meta.textContent = `${new Date(conv.created_at || Date.now()).toLocaleString()}`;
+    info.append(title, meta);
 
-      const loadBtn = document.createElement("button");
-      loadBtn.className = "toolbar-action-btn";
-      loadBtn.type = "button";
-      loadBtn.textContent = "Load Session";
-      loadBtn.addEventListener("click", () => {
-        loadSessionMessages(sess);
-        closeHistoryModal();
-      });
-
-      card.append(info, loadBtn);
-      elements.historyListContainer.append(card);
+    const loadBtn = document.createElement("button");
+    loadBtn.className = "toolbar-action-btn";
+    loadBtn.type = "button";
+    loadBtn.textContent = "Open";
+    loadBtn.addEventListener("click", async () => {
+      await selectConversation(conv.id);
+      closeHistoryModal();
     });
-  }
 
-  // Render Server Disk Log Summary
-  if (serverHistory.length > 0) {
-    const serverTitle = document.createElement("p");
-    serverTitle.style.fontSize = "11px";
-    serverTitle.style.fontWeight = "700";
-    serverTitle.style.color = "#e46232";
-    serverTitle.style.margin = "14px 0 6px";
-    serverTitle.style.textTransform = "uppercase";
-    serverTitle.textContent = `Disk Log (chat_history.json · ${serverHistory.length} entries)`;
-    elements.historyListContainer.append(serverTitle);
-
-    const logBox = document.createElement("div");
-    logBox.style.background = "#141a17";
-    logBox.style.border = "1px solid rgba(228, 98, 50, 0.25)";
-    logBox.style.borderRadius = "10px";
-    logBox.style.padding = "10px 12px";
-    logBox.style.maxHeight = "180px";
-    logBox.style.overflowY = "auto";
-    logBox.style.fontFamily = "ui-monospace, SFMono-Regular, monospace";
-    logBox.style.fontSize = "10px";
-    logBox.style.color = "#cbd5e1";
-
-    serverHistory.slice(-25).reverse().forEach((entry) => {
-      const line = document.createElement("div");
-      line.style.marginBottom = "6px";
-      line.style.borderBottom = "1px solid rgba(255,255,255,0.05)";
-      line.style.paddingBottom = "4px";
-
-      const userTag = document.createElement("span");
-      userTag.style.color = "#e46232";
-      userTag.textContent = "User: ";
-
-      const userText = document.createTextNode(entry.user || "");
-
-      const br = document.createElement("br");
-
-      const botTag = document.createElement("span");
-      botTag.style.color = "#34d399";
-      botTag.textContent = "Bot: ";
-
-      const botSpan = document.createElement("span");
-      botSpan.innerHTML = renderMarkdown(entry.bot || "");
-
-      line.append(userTag, userText, br, botTag, botSpan);
-      logBox.append(line);
-    });
-    elements.historyListContainer.append(logBox);
-  }
-}
-
-function loadSessionMessages(session) {
-  switchWorkspace("chat");
-  state.messages = [];
-  sessionStorage.setItem("rustbot-session-id", session.id);
-  sessionStorage.setItem("rustbot-conversation", JSON.stringify(session.messages));
-  localStorage.setItem("rustbot-conversation-permanent", JSON.stringify(session.messages));
-  elements.conversation.replaceChildren();
-
-  const messages = [...session.messages];
-  messages.forEach((message) =>
-    appendMessage(message.role, message.text, { responseTimeMs: message.responseTimeMs, save: false }),
-  );
-  state.messages = messages;
-  showToast("Loaded selected chat session.");
+    card.append(info, loadBtn);
+    elements.historyListContainer.append(card);
+  });
 }
 
 async function exportHistoryLogs() {
-  const localSessions = JSON.parse(localStorage.getItem("rustbot-all-sessions") || "[]");
-  let serverHistory = [];
-  try {
-    const res = await api("/api/chat/history");
-    serverHistory = res.history || [];
-  } catch {}
-
-  const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({ sessions: localSessions, server_logs: serverHistory }, null, 2));
+  const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({ conversations: state.conversations }, null, 2));
   const downloadAnchor = document.createElement("a");
   downloadAnchor.setAttribute("href", dataStr);
-  downloadAnchor.setAttribute("download", `rustbot-chat-history-${new Date().toISOString().slice(0,10)}.json`);
+  downloadAnchor.setAttribute("download", `rustbot-conversations-${new Date().toISOString().slice(0,10)}.json`);
   document.body.appendChild(downloadAnchor);
   downloadAnchor.click();
   downloadAnchor.remove();
-  showToast("Exported chat history logs.");
+  showToast("Exported conversations metadata.");
 }
 
 async function clearHistoryLogs() {
-  if (confirm("Are you sure you want to clear all past chat history logs?")) {
-    localStorage.removeItem("rustbot-all-sessions");
-    localStorage.removeItem("rustbot-conversation-permanent");
-    sessionStorage.removeItem("rustbot-conversation");
-    sessionStorage.removeItem("rustbot-session-id");
-    try {
-      await api("/api/chat/history", { method: "DELETE" });
-    } catch {}
-    startNewConversation();
+  if (confirm("Are you sure you want to delete your active conversation?")) {
+    if (state.activeConversationId) {
+      await deleteConversation(state.activeConversationId);
+    }
     await renderHistoryModal();
     updateHistoryCount();
-    showToast("All past chat history cleared.");
   }
 }
 
@@ -1985,7 +2134,7 @@ function renderMarkdown(text) {
 
 async function exportKnowledge() {
   try {
-    const res = await fetch("/api/knowledge/export");
+    const res = await fetch("/api/memories/export");
     const jsonText = await res.text();
     const blob = new Blob([jsonText], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -2005,7 +2154,7 @@ async function importKnowledge(e) {
   if (!file) return;
   try {
     const text = await file.text();
-    const res = await fetch("/api/knowledge/import", {
+    const res = await fetch("/api/memories/import", {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-RustBot-CSRF": csrfToken },
       body: text,
@@ -2077,20 +2226,19 @@ function renderKnowledgeError(message) {
 
 function openForgetDialog(pattern) {
   state.pendingDelete = pattern;
-  elements.forgetCopy.textContent = `“${pattern.keywords.join(" ")}” will stop returning its saved response. You can undo this immediately afterward.`;
+  elements.forgetCopy.textContent = `“${pattern.keywords.join(" ")}” will stop returning its saved response.`;
   elements.forgetDialog.returnValue = "cancel";
   elements.forgetDialog.showModal();
 }
 
 async function forgetMemory(pattern) {
   try {
-    const result = await api(`/api/knowledge/${pattern.id}`, { method: "DELETE" });
-    const removed = result.pattern;
+    await api(`/api/memories/${pattern.id}`, { method: "DELETE" });
     state.patterns = state.patterns.filter((item) => item.id !== pattern.id);
     updateMemorySummary();
     renderKnowledge();
-    showToast("Memory forgotten.", "Undo", () => restoreMemory(removed));
-    announce("Memory removed. Undo is available.");
+    showToast("Memory removed from the forge.");
+    announce("Memory removed.");
   } catch (error) {
     showToast(error.message);
   }
@@ -2098,7 +2246,7 @@ async function forgetMemory(pattern) {
 
 async function restoreMemory(pattern) {
   try {
-    const result = await api("/api/knowledge/restore", {
+    const result = await api("/api/memories", {
       method: "POST",
       body: JSON.stringify(pattern),
     });
@@ -2145,8 +2293,9 @@ async function api(path, options = {}) {
   if (options.body) headers.set("Content-Type", "application/json");
   const method = (options.method || "GET").toUpperCase();
   if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
-    if (!csrfToken) throw new Error("The local security token is unavailable. Reload RustBot and try again.");
-    headers.set("X-RustBot-CSRF", csrfToken);
+    if (csrfToken) {
+      headers.set("X-RustBot-CSRF", csrfToken);
+    }
   }
   const response = await fetch(path, { ...options, headers });
   let data = {};
@@ -2154,6 +2303,11 @@ async function api(path, options = {}) {
     data = await response.json();
   } catch {
     data = {};
+  }
+  if (response.status === 401 && !path.startsWith("/api/auth/login") && !path.startsWith("/api/auth/register")) {
+    setUserState(null);
+    openAuthModal("login");
+    throw new Error(data.error || "Session expired. Please log in.");
   }
   if (!response.ok) {
     throw new Error(data.error || `Request failed with status ${response.status}.`);

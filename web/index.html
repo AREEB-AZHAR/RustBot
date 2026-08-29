@@ -48,10 +48,30 @@
           </div>
         </div>
 
+        <!-- User Profile Section -->
+        <div class="user-profile-section" id="user-profile-section">
+          <div class="user-badge" id="user-badge">
+            <span class="user-avatar" id="user-avatar">👤</span>
+            <div class="user-info">
+              <strong id="user-name-display">Guest</strong>
+              <span class="user-role-badge" id="user-role-badge">Visitor</span>
+            </div>
+          </div>
+          <button class="auth-action-btn" id="auth-action-btn" type="button">Log In</button>
+        </div>
+
         <button class="new-chat-button" id="new-chat-button" type="button">
           <span aria-hidden="true">＋</span>
           <span class="rail-label">New conversation</span>
         </button>
+
+        <!-- Dynamic User Conversations List -->
+        <div class="rail-conversations-section">
+          <p class="rail-eyebrow">Your Chats</p>
+          <div class="rail-conversations-list" id="rail-conversations-list">
+            <!-- Rendered dynamically -->
+          </div>
+        </div>
 
         <nav class="workspace-nav" aria-label="Workspace sections">
           <button class="nav-item is-active" type="button" data-nav="chat" aria-current="page">
@@ -63,19 +83,14 @@
             <span class="rail-label">Market Lab</span>
             <span class="nav-beta">Beta</span>
           </button>
-          <button class="nav-item" type="button" data-nav="teach">
+          <button class="nav-item admin-only-feature" type="button" data-nav="teach" id="nav-teach-btn" hidden>
             <span class="nav-icon" aria-hidden="true">⌁</span>
             <span class="rail-label">Teach RustBot</span>
           </button>
-          <button class="nav-item" type="button" data-nav="knowledge">
+          <button class="nav-item admin-only-feature" type="button" data-nav="knowledge" id="nav-knowledge-btn" hidden>
             <span class="nav-icon" aria-hidden="true">▦</span>
             <span class="rail-label">Knowledge</span>
             <span class="nav-count" id="rail-memory-count">0</span>
-          </button>
-          <button class="nav-item" type="button" data-nav="history" id="history-nav-btn">
-            <span class="nav-icon" aria-hidden="true">📜</span>
-            <span class="rail-label">Chat History</span>
-            <span class="nav-count" id="rail-history-count">0</span>
           </button>
         </nav>
 
@@ -95,8 +110,8 @@
         <div class="local-note">
           <span class="status-beacon" aria-hidden="true"></span>
           <div class="rail-label">
-            <strong>Local &amp; private</strong>
-            <span>Memories stay in knowledge.json</span>
+            <strong>Isolated &amp; Private</strong>
+            <span>Multi-user encrypted sessions</span>
           </div>
         </div>
       </aside>
@@ -652,6 +667,39 @@
           <div class="history-list-container" id="history-list-container">
             <!-- History entries rendered dynamically -->
           </div>
+        </div>
+      </div>
+    </dialog>
+
+    <!-- Multi-User Authentication Modal -->
+    <dialog class="auth-modal" id="auth-modal" aria-labelledby="auth-modal-title">
+      <div class="auth-modal-card">
+        <header class="auth-modal-header">
+          <div class="auth-tabs">
+            <button class="auth-tab-btn active" id="auth-tab-login" type="button">Log In</button>
+            <button class="auth-tab-btn" id="auth-tab-register" type="button">Create Account</button>
+          </div>
+          <button class="zoom-close-btn" id="auth-close-btn" type="button" aria-label="Close">×</button>
+        </header>
+        <div class="auth-modal-body">
+          <h3 id="auth-modal-title" class="auth-title">Welcome to RustBot</h3>
+          <p class="auth-subtitle" id="auth-subtitle">Sign in to access your private conversations and history.</p>
+          <form id="auth-form" class="auth-form" autocomplete="on">
+            <div class="form-group">
+              <label for="auth-username" id="auth-username-label">Username / Email</label>
+              <input id="auth-username" type="text" placeholder="Enter username or email" required autocomplete="username" />
+            </div>
+            <div class="form-group" id="auth-email-group" style="display: none;">
+              <label for="auth-email">Email (optional)</label>
+              <input id="auth-email" type="email" placeholder="name@example.com" autocomplete="email" />
+            </div>
+            <div class="form-group">
+              <label for="auth-password">Password</label>
+              <input id="auth-password" type="password" placeholder="Enter password (min 8 chars)" required minlength="8" autocomplete="current-password" />
+            </div>
+            <p class="form-error" id="auth-form-error" role="alert" style="display: none;"></p>
+            <button class="primary-button auth-submit-btn" id="auth-submit-btn" type="submit">Log In</button>
+          </form>
         </div>
       </div>
     </dialog>

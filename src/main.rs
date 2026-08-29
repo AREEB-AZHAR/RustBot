@@ -59,7 +59,7 @@ fn run() -> Result<(), String> {
         }
     }
 
-    server::run(&config.bind_address(), knowledge_path)
+    server::run(config, db, knowledge_path)
 }
 
 fn run_bootstrap_admin(db: &Database) -> Result<(), String> {

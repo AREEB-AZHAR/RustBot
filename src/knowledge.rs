@@ -109,6 +109,39 @@ impl KnowledgeStore {
         Ok(store)
     }
 
+    pub fn from_memories(memories: &[crate::db::MemoryRecord]) -> Self {
+        let mut patterns = Vec::new();
+        let mut next_id = 1;
+        for m in memories {
+            let id = m.id as u64;
+            if id >= next_id {
+                next_id = id + 1;
+            }
+            patterns.push(Pattern {
+                id,
+                keywords: m.keywords.clone(),
+                response: m.response.clone(),
+                match_mode: if m.match_mode.eq_ignore_ascii_case("any") {
+                    MatchMode::Any
+                } else {
+                    MatchMode::All
+                },
+                category: Some(m.category.clone()),
+            });
+        }
+        Self {
+            path: PathBuf::from("knowledge.json"),
+            knowledge: Knowledge { patterns },
+            next_id,
+        }
+    }
+
+    pub fn reload_from_db(&mut self, db: &crate::db::Database) -> Result<(), String> {
+        let memories = db.list_memories()?;
+        *self = Self::from_memories(&memories);
+        Ok(())
+    }
+
     pub fn patterns(&self) -> &[Pattern] {
         &self.knowledge.patterns
     }
@@ -290,6 +323,7 @@ impl KnowledgeStore {
         Ok(removed)
     }
 
+    #[allow(dead_code)]
     pub fn restore(&mut self, mut pattern: Pattern) -> Result<Pattern, String> {
         if pattern.id == 0 {
             return Err("A restored memory must have a non-zero ID.".to_string());
@@ -484,7 +518,7 @@ fn unique_tokens(tokens: Vec<String>) -> Vec<String> {
         .collect()
 }
 
-fn tokenize(value: &str) -> Vec<String> {
+pub fn tokenize(value: &str) -> Vec<String> {
     value
         .to_lowercase()
         .split(|character: char| !character.is_alphanumeric())

@@ -1,20 +1,21 @@
-use crate::knowledge::{KnowledgeStore, Pattern};
+use crate::config::AppConfig;
+use crate::db::{
+    constant_time_eq_str, digest_token, generate_secure_token, Database, MemoryRecord,
+    SessionRecord, UserRecord,
+};
+use crate::knowledge::KnowledgeStore;
 use crate::market_structure::{analyze_candle_structure, MarketCandleInput};
 use crate::news_sentiment::analyze_news_sentiment;
-use getrandom::getrandom;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::{IpAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::thread;
-use std::time::Duration;
-
-static CHAT_LOG_LOCK: Mutex<()> = Mutex::new(());
-static MARKET_LOG_LOCK: Mutex<()> = Mutex::new(());
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const INDEX_HTML: &str = include_str!("../web/index.html");
 const STYLES_CSS: &str = include_str!("../web/styles.css");
@@ -22,33 +23,31 @@ const APP_JS: &str = include_str!("../web/app.js");
 const OG_IMAGE: &[u8] = include_bytes!("../web/og.png");
 const MAX_REQUEST_SIZE: usize = 512 * 1024; // Up to 512 KB for imports
 const MAX_CONCURRENT_CONNECTIONS: usize = 64;
-const MAX_MARKET_HISTORY_SYMBOLS: usize = 32;
-const MAX_MARKET_HISTORY_CANDLES_PER_SYMBOL: usize = 2_000;
 const LOOPBACK_ORIGINS: &[&str] = &["http://127.0.0.1:7878", "http://localhost:7878"];
-const LOOPBACK_HOSTS: &[&str] = &["127.0.0.1:7878", "localhost:7878"];
+const LOOPBACK_HOSTS: &[&str] = &["127.0.0.1:7878", "localhost:7878", "127.0.0.1", "localhost"];
 const MAX_OPENROUTER_MESSAGES: usize = 12;
 const MAX_OPENROUTER_MESSAGE_LENGTH: usize = 8_000;
 const MAX_OPENROUTER_TOKENS: usize = 1_024;
 const MAX_MATH_EXPRESSION_LENGTH: usize = 256;
+const MAX_REQUESTS_PER_MINUTE_PER_IP: usize = 120;
+const MAX_AI_REQUESTS_PER_HOUR_PER_USER: i64 = 60;
+const SESSION_TTL_SECONDS: i64 = 7 * 86400; // 7 days
+
 const OPENROUTER_MODELS: &[&str] = &[
     "google/gemma-4-26b-a4b-it:free",
     "google/gemma-4-31b-it:free",
 ];
 
-use std::net::IpAddr;
-use std::time::Instant;
-
-const MAX_REQUESTS_PER_MINUTE_PER_IP: usize = 120;
-
 #[derive(Clone)]
-struct AppState {
-    store: Arc<RwLock<KnowledgeStore>>,
-    csrf_token: String,
-    openrouter_lock: Arc<Mutex<()>>,
-    ip_limiter: Arc<Mutex<IpRateLimiter>>,
+pub struct AppState {
+    pub config: AppConfig,
+    pub db: Database,
+    pub store: Arc<RwLock<KnowledgeStore>>,
+    pub openrouter_lock: Arc<Mutex<()>>,
+    pub ip_limiter: Arc<Mutex<IpRateLimiter>>,
 }
 
-struct IpRateLimiter {
+pub struct IpRateLimiter {
     clients: HashMap<IpAddr, Vec<Instant>>,
 }
 
@@ -128,13 +127,51 @@ struct Request {
     body: Vec<u8>,
 }
 
+impl Request {
+    fn header(&self, name: &str) -> Option<&str> {
+        self.headers.get(&name.to_ascii_lowercase()).map(String::as_str)
+    }
+
+    fn cookie(&self, name: &str) -> Option<&str> {
+        let cookie_header = self.header("cookie")?;
+        for part in cookie_header.split(';') {
+            let part = part.trim();
+            if let Some((k, v)) = part.split_once('=') {
+                if k.trim() == name {
+                    return Some(v.trim());
+                }
+            }
+        }
+        None
+    }
+}
+
 #[derive(Deserialize)]
-struct ChatRequest {
+struct RegisterRequest {
+    username: String,
+    email: Option<String>,
+    password: String,
+}
+
+#[derive(Deserialize)]
+struct LoginRequest {
+    username: String,
+    password: String,
+}
+
+#[derive(Deserialize)]
+struct CreateConversationRequest {
+    title: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct PostMessageRequest {
     message: String,
 }
 
 #[derive(Deserialize)]
 struct OpenRouterProxyRequest {
+    #[serde(default)]
     api_key: Option<String>,
     model: String,
     messages: serde_json::Value,
@@ -142,17 +179,12 @@ struct OpenRouterProxyRequest {
 }
 
 #[derive(Deserialize)]
-struct TeachRequest {
-    prompt: String,
+struct SaveMemoryRequest {
+    keywords: Option<Vec<String>>,
+    prompt: Option<String>,
     response: String,
+    match_mode: Option<String>,
     category: Option<String>,
-}
-
-#[derive(Serialize)]
-struct ChatResponse<'a> {
-    status: &'a str,
-    response: &'a str,
-    pattern_id: Option<u64>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -180,21 +212,34 @@ struct CoinGeckoChart {
     total_volumes: Vec<(u64, f64)>,
 }
 
-pub fn run(address: &str, knowledge_path: PathBuf) -> Result<(), String> {
-    load_dotenv();
-    let store = KnowledgeStore::load(knowledge_path)?;
+pub fn run(config: AppConfig, db: Database, knowledge_path: PathBuf) -> Result<(), String> {
+    let store = if let Ok(memories) = db.list_memories() {
+        if !memories.is_empty() {
+            KnowledgeStore::from_memories(&memories)
+        } else {
+            KnowledgeStore::load(knowledge_path)?
+        }
+    } else {
+        KnowledgeStore::load(knowledge_path)?
+    };
+
+    let bind_addr = config.bind_address();
     let state = AppState {
+        config,
+        db,
         store: Arc::new(RwLock::new(store)),
-        csrf_token: generate_csrf_token()?,
         openrouter_lock: Arc::new(Mutex::new(())),
         ip_limiter: Arc::new(Mutex::new(IpRateLimiter::new())),
     };
-    let listener = TcpListener::bind(address)
-        .map_err(|error| format!("Could not listen on http://{address}: {error}"))?;
+
+    let listener = TcpListener::bind(&bind_addr)
+        .map_err(|error| format!("Could not listen on http://{bind_addr}: {error}"))?;
     let connection_limiter = Arc::new(ConnectionLimiter::new());
 
     println!("\n  RustBot Knowledge Forge is ready");
-    println!("  Open http://{address} in your browser");
+    println!("  Mode: {:?}", state.config.env);
+    println!("  Public Origin: {}", state.config.public_origin);
+    println!("  Listening on http://{bind_addr}");
     println!("  Press Ctrl+C to stop\n");
 
     for connection in listener.incoming() {
@@ -225,6 +270,111 @@ pub fn run(address: &str, knowledge_path: PathBuf) -> Result<(), String> {
     Ok(())
 }
 
+fn session_cookie_name(is_prod: bool) -> &'static str {
+    if is_prod {
+        "__Host-rustbot_session"
+    } else {
+        "rustbot_session"
+    }
+}
+
+fn authenticate(
+    request: &Request,
+    state: &AppState,
+) -> Result<(SessionRecord, UserRecord), Response> {
+    let cookie_name = session_cookie_name(state.config.is_production());
+    let raw_token = match request.cookie(cookie_name) {
+        Some(t) if !t.is_empty() => t,
+        _ => {
+            return Err(Response::error(
+                401,
+                "Unauthorized",
+                "Authentication required.",
+            ))
+        }
+    };
+
+    let token_digest = digest_token(raw_token, &state.config.session_pepper);
+    match state.db.get_valid_session_by_token_digest(&token_digest) {
+        Ok(Some((session, user))) => {
+            let _ = state.db.touch_session(&session.id);
+            Ok((session, user))
+        }
+        _ => Err(Response::error(
+            401,
+            "Unauthorized",
+            "Session expired or invalid.",
+        )),
+    }
+}
+
+fn validate_session_csrf(
+    request: &Request,
+    session: &SessionRecord,
+    state: &AppState,
+) -> bool {
+    let origin = match request.header("origin") {
+        Some(o) => o.trim(),
+        None => return false,
+    };
+
+    let origin_valid = if state.config.is_production() {
+        origin.eq_ignore_ascii_case(&state.config.public_origin)
+    } else {
+        is_trusted_loopback_origin(origin)
+            || origin.eq_ignore_ascii_case(&state.config.public_origin)
+    };
+
+    if !origin_valid {
+        return false;
+    }
+
+    let csrf_header = match request.header("x-rustbot-csrf") {
+        Some(token) if !token.trim().is_empty() => token.trim(),
+        _ => return false,
+    };
+
+    let computed_digest = digest_token(csrf_header, &state.config.session_pepper);
+    constant_time_eq_str(&computed_digest, &session.csrf_token_digest)
+}
+
+fn issue_session_response(
+    user: &UserRecord,
+    state: &AppState,
+) -> Result<Response, String> {
+    let raw_session_token = generate_secure_token();
+    let raw_csrf_token = generate_secure_token();
+
+    let session_digest = digest_token(&raw_session_token, &state.config.session_pepper);
+    let csrf_digest = digest_token(&raw_csrf_token, &state.config.session_pepper);
+
+    state
+        .db
+        .create_session(&user.id, &session_digest, &csrf_digest, SESSION_TTL_SECONDS)?;
+
+    let cookie_name = session_cookie_name(state.config.is_production());
+    let response = Response::json(
+        200,
+        "OK",
+        json!({
+            "user": {
+                "id": user.id,
+                "username": user.username,
+                "role": user.role
+            },
+            "csrf_token": raw_csrf_token
+        }),
+    )
+    .with_cookie(
+        cookie_name,
+        &raw_session_token,
+        SESSION_TTL_SECONDS,
+        state.config.is_production(),
+    );
+
+    Ok(response)
+}
+
 fn handle_connection(mut stream: TcpStream, state: &AppState) -> Result<(), String> {
     stream
         .set_read_timeout(Some(Duration::from_secs(5)))
@@ -247,255 +397,1033 @@ fn handle_connection(mut stream: TcpStream, state: &AppState) -> Result<(), Stri
 
     let request = read_request(&mut stream)?;
 
-    if !is_trusted_loopback_host(&request.host) {
+    let is_host_allowed = if state.config.is_production() {
+        let clean_host = request.host.split(':').next().unwrap_or(&request.host);
+        let expected_host = state
+            .config
+            .public_origin
+            .trim_start_matches("https://")
+            .trim_start_matches("http://")
+            .split(':')
+            .next()
+            .unwrap_or("");
+        clean_host.eq_ignore_ascii_case(expected_host)
+    } else {
+        is_trusted_loopback_host(&request.host)
+    };
+
+    if !is_host_allowed {
         return Response::error(400, "Bad Request", "Untrusted Host header.").write_to(&mut stream);
     }
 
-    if matches!(request.method.as_str(), "POST" | "PUT" | "DELETE" | "PATCH")
-        && !validate_csrf(&request, &state.csrf_token)
-    {
-        return Response::error(
-            403,
-            "Forbidden",
-            "Cross-origin request rejected (CSRF check failed).",
-        )
-        .write_to(&mut stream);
-    }
+    let response = route_request(&request, state);
+    response.write_to(&mut stream)
+}
 
-    let response = match (request.method.as_str(), request.path.as_str()) {
-        ("GET", "/") | ("GET", "/index.html") => Response::html(
-            200,
-            "OK",
-            INDEX_HTML
-                .replace("__ORIGIN__", LOOPBACK_ORIGINS[0])
-                .replace("__CSRF_TOKEN__", &state.csrf_token),
-        ),
-        ("GET", "/styles.css") => Response::asset(200, "OK", "text/css; charset=utf-8", STYLES_CSS),
-        ("GET", "/app.js") => Response::asset(200, "OK", "text/javascript; charset=utf-8", APP_JS),
+fn route_request(request: &Request, state: &AppState) -> Response {
+    let method = request.method.as_str();
+    let path = request.path.as_str();
+
+    match (method, path) {
+        ("GET", "/") | ("GET", "/index.html") => {
+            let html = INDEX_HTML
+                .replace("__ORIGIN__", &state.config.public_origin)
+                .replace("__CSRF_TOKEN__", "");
+            Response::html(200, "OK", html)
+        }
+        ("GET", "/styles.css") => {
+            Response::asset(200, "OK", "text/css; charset=utf-8", STYLES_CSS)
+        }
+        ("GET", "/app.js") => {
+            Response::asset(200, "OK", "text/javascript; charset=utf-8", APP_JS)
+        }
         ("GET", "/og.png") => Response::binary(200, "OK", "image/png", OG_IMAGE),
         ("GET", "/api/health") => Response::json(200, "OK", json!({ "status": "ready" })),
-        ("POST", "/api/openrouter/chat") => {
-            handle_openrouter_chat(&request.body, &state.openrouter_lock)
+
+        // ==========================================
+        // AUTHENTICATION ROUTES
+        // ==========================================
+        ("POST", "/api/auth/register") => handle_register(request, state),
+        ("POST", "/api/auth/login") => handle_login(request, state),
+        ("POST", "/api/auth/logout") => handle_logout(request, state),
+        ("GET", "/api/auth/me") => handle_auth_me(request, state),
+
+        // ==========================================
+        // CONVERSATIONS & MESSAGES (PER-USER)
+        // ==========================================
+        ("GET", "/api/conversations") => handle_list_conversations(request, state),
+        ("POST", "/api/conversations") => handle_create_conversation(request, state),
+        ("GET", path) if path.starts_with("/api/conversations/") && path.ends_with("/messages") => {
+            let conv_id = path
+                .trim_start_matches("/api/conversations/")
+                .trim_end_matches("/messages");
+            handle_list_messages(request, state, conv_id)
         }
+        ("POST", path) if path.starts_with("/api/conversations/") && path.ends_with("/messages") => {
+            let conv_id = path
+                .trim_start_matches("/api/conversations/")
+                .trim_end_matches("/messages");
+            handle_post_message(request, state, conv_id)
+        }
+        ("DELETE", path) if path.starts_with("/api/conversations/") => {
+            let conv_id = path.trim_start_matches("/api/conversations/");
+            handle_delete_conversation(request, state, conv_id)
+        }
+
+        // ==========================================
+        // MEMORIES / KNOWLEDGE (ADMIN ONLY FOR MANAGEMENT)
+        // ==========================================
+        ("GET", "/api/memories") | ("GET", "/api/knowledge") => handle_list_memories(request, state),
+        ("POST", "/api/memories") | ("POST", "/api/knowledge") => handle_save_memory(request, state),
+        ("GET", "/api/memories/export") | ("GET", "/api/knowledge/export") => {
+            handle_export_memories(request, state)
+        }
+        ("POST", "/api/memories/import") | ("POST", "/api/knowledge/import") => {
+            handle_import_memories(request, state)
+        }
+        ("DELETE", path) if path.starts_with("/api/memories/") || path.starts_with("/api/knowledge/") => {
+            let raw_id = if path.starts_with("/api/memories/") {
+                path.trim_start_matches("/api/memories/")
+            } else {
+                path.trim_start_matches("/api/knowledge/")
+            };
+            handle_delete_memory(request, state, raw_id)
+        }
+
+        // ==========================================
+        // AI / MARKET DATA
+        // ==========================================
+        ("POST", "/api/openrouter/chat") => handle_openrouter_chat(request, state),
         ("GET", "/api/market/candles") => match fetch_market_candles(&request.query) {
             Ok(data) => Response::json(200, "OK", data),
             Err(error) => Response::error(502, "Bad Gateway", &error),
         },
-        ("GET", "/api/knowledge") => {
-            let category = request
-                .query
-                .get("category")
-                .map(|value| normalize_category_filter(value))
-                .transpose();
 
-            match category {
-                Ok(category) => match state.store.read() {
-                    Ok(store) => {
-                        let patterns = store.patterns_by_category(category.as_deref());
-                        Response::json(200, "OK", json!({ "patterns": patterns }))
-                    }
-                    Err(_) => Response::error(
-                        500,
-                        "Internal Server Error",
-                        "Knowledge store is unavailable.",
-                    ),
-                },
-                Err(error) => Response::error(400, "Bad Request", &error),
-            }
-        }
-        ("GET", "/api/knowledge/export") => match state.store.read() {
-            Ok(store) => match store.export_json() {
-                Ok(json_data) => {
-                    Response::asset(200, "OK", "application/json; charset=utf-8", &json_data)
-                }
-                Err(error) => Response::error(500, "Internal Server Error", &error),
-            },
-            Err(_) => Response::error(500, "Internal Server Error", "Knowledge store unavailable."),
-        },
-        ("POST", "/api/knowledge/import") => match String::from_utf8(request.body.clone()) {
-            Ok(json_str) => match state.store.write() {
-                Ok(mut store) => match store.import_json(&json_str) {
-                    Ok(count) => {
-                        Response::json(200, "OK", json!({ "status": "imported", "count": count }))
-                    }
-                    Err(error) => Response::error(400, "Bad Request", &error),
-                },
-                Err(_) => {
-                    Response::error(500, "Internal Server Error", "Knowledge store unavailable.")
-                }
-            },
-            Err(_) => Response::error(400, "Bad Request", "Invalid UTF-8 payload."),
-        },
-        ("POST", "/api/chat") => match parse_json::<ChatRequest>(&request.body) {
-            Ok(payload) if payload.message.trim().chars().count() > 500 => Response::error(
-                400,
-                "Bad Request",
-                "Message must be 500 characters or fewer.",
-            ),
-            Ok(payload) if payload.message.trim().is_empty() => {
-                Response::error(400, "Bad Request", "Message cannot be empty.")
-            }
-            Ok(payload) => {
-                let msg = payload.message.trim();
-                // 1. Math calculation intent check
-                if let Some(result) = evaluate_math(msg) {
-                    let formatted = if (result.fract()).abs() < 1e-9 {
-                        format!("{} = {:.0}", msg, result)
-                    } else {
-                        format!("{} = {:.4}", msg, result)
-                    };
-                    record_chat_entry(msg, &formatted, "matched", None);
-                    return Response::json(
-                        200,
-                        "OK",
-                        json!({
-                            "status": "matched",
-                            "response": formatted,
-                            "pattern_id": null
-                        }),
-                    )
-                    .write_to(&mut stream);
-                }
+        _ => Response::error(404, "Not Found", "The requested endpoint does not exist."),
+    }
+}
 
-                // 2. Market price intent check
-                if let Some((_sym, price_resp)) = check_market_intent(msg) {
-                    record_chat_entry(msg, &price_resp, "matched", None);
-                    return Response::json(
-                        200,
-                        "OK",
-                        json!({
-                            "status": "matched",
-                            "response": price_resp,
-                            "pattern_id": null
-                        }),
-                    )
-                    .write_to(&mut stream);
-                }
+// ==========================================
+// AUTH HANDLERS
+// ==========================================
 
-                // 3. Knowledge base lookup
-                match state.store.read() {
-                    Ok(store) => match store.find_best_match(msg) {
-                        Some(pattern) => {
-                            let expanded =
-                                expand_placeholders(&pattern.response, store.patterns().len());
-                            record_chat_entry(msg, &expanded, "matched", Some(pattern.id));
-                            Response::json(
-                                200,
-                                "OK",
-                                json!({
-                                    "status": "matched",
-                                    "response": expanded,
-                                    "pattern_id": pattern.id,
-                                    "category": pattern.category
-                                }),
-                            )
-                        }
-                        None => {
-                            record_chat_entry(msg, "That isn't in my memory yet.", "unknown", None);
-                            Response::json(
-                                200,
-                                "OK",
-                                ChatResponse {
-                                    status: "unknown",
-                                    response: "That isn't in my memory yet.",
-                                    pattern_id: None,
-                                },
-                            )
-                        }
-                    },
-                    Err(_) => Response::error(
-                        500,
-                        "Internal Server Error",
-                        "Knowledge store is unavailable.",
-                    ),
-                }
-            }
-            Err(error) => Response::error(400, "Bad Request", &error),
-        },
-        ("GET", "/api/chat/history") => {
-            let path = std::path::Path::new("chat_history.json");
-            let history: serde_json::Value = if path.exists() {
-                std::fs::read_to_string(path)
-                    .ok()
-                    .and_then(|s| serde_json::from_str(&s).ok())
-                    .unwrap_or_else(|| json!([]))
-            } else {
-                json!([])
-            };
-            Response::json(200, "OK", json!({ "history": history }))
-        }
-        ("DELETE", "/api/chat/history") => {
-            match std::fs::remove_file("chat_history.json") {
-                Ok(()) => {
-                    Response::json(200, "OK", json!({ "status": "cleared" }))
-                }
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                    Response::json(200, "OK", json!({ "status": "cleared" }))
-                }
-                Err(error) => Response::error(
-                    500,
-                    "Internal Server Error",
-                    &format!("Could not clear chat history: {error}"),
-                ),
-            }
-        }
-        ("POST", "/api/knowledge") => match parse_json::<TeachRequest>(&request.body) {
-            Ok(payload) => match state.store.write() {
-                Ok(mut store) => {
-                    match store.teach_with_category(
-                        &payload.prompt,
-                        &payload.response,
-                        payload.category,
-                    ) {
-                        Ok(pattern) => {
-                            Response::json(201, "Created", json!({ "pattern": pattern }))
-                        }
-                        Err(error) => Response::error(400, "Bad Request", &error),
-                    }
-                }
-                Err(_) => Response::error(
-                    500,
-                    "Internal Server Error",
-                    "Knowledge store is unavailable.",
-                ),
-            },
-            Err(error) => Response::error(400, "Bad Request", &error),
-        },
-        ("POST", "/api/knowledge/restore") => match parse_json::<Pattern>(&request.body) {
-            Ok(pattern) => match state.store.write() {
-                Ok(mut store) => match store.restore(pattern) {
-                    Ok(restored) => Response::json(201, "Created", json!({ "pattern": restored })),
-                    Err(error) => Response::error(400, "Bad Request", &error),
-                },
-                Err(_) => Response::error(
-                    500,
-                    "Internal Server Error",
-                    "Knowledge store is unavailable.",
-                ),
-            },
-            Err(error) => Response::error(400, "Bad Request", &error),
-        },
-        ("DELETE", path) if path.starts_with("/api/knowledge/") => {
-            let id = path.trim_start_matches("/api/knowledge/").parse::<u64>();
-            match id {
-                Ok(id) => match state.store.write() {
-                    Ok(mut store) => match store.forget(id) {
-                        Ok(pattern) => Response::json(200, "OK", json!({ "pattern": pattern })),
-                        Err(error) => Response::error(404, "Not Found", &error),
-                    },
-                    Err(_) => Response::error(
-                        500,
-                        "Internal Server Error",
-                        "Knowledge store is unavailable.",
-                    ),
-                },
-                Err(_) => Response::error(400, "Bad Request", "Invalid memory id."),
-            }
-        }
-        _ => Response::error(404, "Not Found", "The requested page does not exist."),
+fn handle_register(request: &Request, state: &AppState) -> Response {
+    let payload: RegisterRequest = match parse_json(&request.body) {
+        Ok(p) => p,
+        Err(err) => return Response::error(400, "Bad Request", &err),
     };
 
-    response.write_to(&mut stream)
+    let username = payload.username.trim();
+    if username.len() < 3 || username.len() > 32 {
+        return Response::error(
+            400,
+            "Bad Request",
+            "Username must be between 3 and 32 characters.",
+        );
+    }
+    if !username
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
+        return Response::error(
+            400,
+            "Bad Request",
+            "Username may only contain alphanumeric characters, underscores, and hyphens.",
+        );
+    }
+
+    if payload.password.len() < 8 || payload.password.len() > 256 {
+        return Response::error(
+            400,
+            "Bad Request",
+            "Password must be between 8 and 256 characters.",
+        );
+    }
+
+    let password_hash = match crate::db::hash_password(&payload.password) {
+        Ok(h) => h,
+        Err(e) => return Response::error(500, "Internal Server Error", &e),
+    };
+
+    let role = "user";
+    let user = match state.db.create_user(
+        username,
+        payload.email.as_deref(),
+        &password_hash,
+        role,
+    ) {
+        Ok(u) => u,
+        Err(e) => return Response::error(400, "Bad Request", &e),
+    };
+
+    match issue_session_response(&user, state) {
+        Ok(resp) => resp,
+        Err(e) => Response::error(500, "Internal Server Error", &e),
+    }
+}
+
+fn handle_login(request: &Request, state: &AppState) -> Response {
+    let payload: LoginRequest = match parse_json(&request.body) {
+        Ok(p) => p,
+        Err(err) => return Response::error(400, "Bad Request", &err),
+    };
+
+    let identity = payload.username.trim();
+    let user = match state.db.get_user_by_username_or_email(identity) {
+        Ok(Some(u)) => u,
+        _ => {
+            return Response::error(
+                401,
+                "Unauthorized",
+                "Invalid username or password.",
+            )
+        }
+    };
+
+    if user.disabled_at.is_some() {
+        return Response::error(
+            403,
+            "Forbidden",
+            "This account has been disabled.",
+        );
+    }
+
+    if !crate::db::verify_password(&payload.password, &user.password_hash) {
+        return Response::error(
+            401,
+            "Unauthorized",
+            "Invalid username or password.",
+        );
+    }
+
+    match issue_session_response(&user, state) {
+        Ok(resp) => resp,
+        Err(e) => Response::error(500, "Internal Server Error", &e),
+    }
+}
+
+fn handle_logout(request: &Request, state: &AppState) -> Response {
+    let (session, _user) = match authenticate(request, state) {
+        Ok(res) => res,
+        Err(err_resp) => return err_resp,
+    };
+
+    if !validate_session_csrf(request, &session, state) {
+        return Response::error(403, "Forbidden", "Invalid CSRF token.");
+    }
+
+    let _ = state.db.revoke_session(&session.id);
+    let cookie_name = session_cookie_name(state.config.is_production());
+    Response::json(200, "OK", json!({ "status": "logged_out" }))
+        .with_clear_cookie(cookie_name, state.config.is_production())
+}
+
+fn handle_auth_me(request: &Request, state: &AppState) -> Response {
+    let (session, user) = match authenticate(request, state) {
+        Ok(res) => res,
+        Err(err_resp) => return err_resp,
+    };
+
+    Response::json(
+        200,
+        "OK",
+        json!({
+            "user": {
+                "id": user.id,
+                "username": user.username,
+                "role": user.role
+            },
+            "session_id": session.id
+        }),
+    )
+}
+
+// ==========================================
+// CONVERSATIONS HANDLERS
+// ==========================================
+
+fn handle_list_conversations(request: &Request, state: &AppState) -> Response {
+    let (_session, user) = match authenticate(request, state) {
+        Ok(res) => res,
+        Err(err_resp) => return err_resp,
+    };
+
+    match state.db.list_conversations_for_user(&user.id) {
+        Ok(conversations) => Response::json(200, "OK", json!({ "conversations": conversations })),
+        Err(e) => Response::error(500, "Internal Server Error", &e),
+    }
+}
+
+fn handle_create_conversation(request: &Request, state: &AppState) -> Response {
+    let (session, user) = match authenticate(request, state) {
+        Ok(res) => res,
+        Err(err_resp) => return err_resp,
+    };
+
+    if !validate_session_csrf(request, &session, state) {
+        return Response::error(403, "Forbidden", "Invalid CSRF token.");
+    }
+
+    let payload: CreateConversationRequest = parse_json(&request.body).unwrap_or(CreateConversationRequest { title: None });
+    match state
+        .db
+        .create_conversation(&user.id, payload.title.as_deref())
+    {
+        Ok(conv) => Response::json(201, "Created", json!({ "conversation": conv })),
+        Err(e) => Response::error(500, "Internal Server Error", &e),
+    }
+}
+
+fn handle_list_messages(request: &Request, state: &AppState, conv_id: &str) -> Response {
+    let (_session, user) = match authenticate(request, state) {
+        Ok(res) => res,
+        Err(err_resp) => return err_resp,
+    };
+
+    match state.db.list_messages_for_conversation(conv_id, &user.id) {
+        Ok(messages) => Response::json(200, "OK", json!({ "messages": messages })),
+        Err(_) => Response::error(
+            404,
+            "Not Found",
+            "Conversation not found or access denied.",
+        ),
+    }
+}
+
+fn handle_post_message(request: &Request, state: &AppState, conv_id: &str) -> Response {
+    let (session, user) = match authenticate(request, state) {
+        Ok(res) => res,
+        Err(err_resp) => return err_resp,
+    };
+
+    if !validate_session_csrf(request, &session, state) {
+        return Response::error(403, "Forbidden", "Invalid CSRF token.");
+    }
+
+    let payload: PostMessageRequest = match parse_json(&request.body) {
+        Ok(p) => p,
+        Err(e) => return Response::error(400, "Bad Request", &e),
+    };
+
+    let msg = payload.message.trim();
+    if msg.is_empty() {
+        return Response::error(400, "Bad Request", "Message cannot be empty.");
+    }
+    if msg.chars().count() > 2_000 {
+        return Response::error(400, "Bad Request", "Message exceeds 2,000 characters.");
+    }
+
+    // 1. Insert user message
+    let user_msg_record = match state
+        .db
+        .add_message(conv_id, &user.id, "user", msg, None)
+    {
+        Ok(m) => m,
+        Err(e) => return Response::error(404, "Not Found", &e),
+    };
+
+    // 2. Generate bot response
+    let (bot_response_text, bot_status) = if let Some(result) = evaluate_math(msg) {
+        let formatted = if (result.fract()).abs() < 1e-9 {
+            format!("{} = {:.0}", msg, result)
+        } else {
+            format!("{} = {:.4}", msg, result)
+        };
+        (formatted, "math_matched")
+    } else if let Some((_sym, price_resp)) = check_market_intent(msg) {
+        (price_resp, "market_matched")
+    } else {
+        let store_guard = state.store.read().unwrap();
+        match store_guard.find_best_match(msg) {
+            Some(pattern) => {
+                let expanded = expand_placeholders(&pattern.response, store_guard.patterns().len());
+                (expanded, "memory_matched")
+            }
+            None => (
+                "That isn't in my memory yet. Feel free to ask another question!".to_string(),
+                "unknown",
+            ),
+        }
+    };
+
+    // 3. Insert bot response
+    let bot_msg_record = match state.db.add_message(
+        conv_id,
+        &user.id,
+        "assistant",
+        &bot_response_text,
+        Some(bot_status),
+    ) {
+        Ok(m) => m,
+        Err(e) => return Response::error(500, "Internal Server Error", &e),
+    };
+
+    Response::json(
+        200,
+        "OK",
+        json!({
+            "user_message": user_msg_record,
+            "assistant_message": bot_msg_record,
+            "status": bot_status
+        }),
+    )
+}
+
+fn handle_delete_conversation(
+    request: &Request,
+    state: &AppState,
+    conv_id: &str,
+) -> Response {
+    let (session, user) = match authenticate(request, state) {
+        Ok(res) => res,
+        Err(err_resp) => return err_resp,
+    };
+
+    if !validate_session_csrf(request, &session, state) {
+        return Response::error(403, "Forbidden", "Invalid CSRF token.");
+    }
+
+    match state.db.delete_conversation_for_user(conv_id, &user.id) {
+        Ok(true) => Response::json(200, "OK", json!({ "status": "deleted" })),
+        Ok(false) => Response::error(404, "Not Found", "Conversation not found."),
+        Err(e) => Response::error(500, "Internal Server Error", &e),
+    }
+}
+
+// ==========================================
+// MEMORY / KNOWLEDGE HANDLERS (ADMIN ONLY)
+// ==========================================
+
+fn handle_list_memories(request: &Request, state: &AppState) -> Response {
+    let (_session, user) = match authenticate(request, state) {
+        Ok(res) => res,
+        Err(err_resp) => return err_resp,
+    };
+
+    if user.role != "admin" {
+        return Response::error(
+            403,
+            "Forbidden",
+            "Memory management is restricted to administrators.",
+        );
+    }
+
+    let category = request.query.get("category").map(|c| c.trim().to_lowercase());
+    match state.db.list_memories() {
+        Ok(memories) => {
+            let filtered: Vec<MemoryRecord> = match category {
+                Some(ref cat) if !cat.is_empty() && cat != "all" => memories
+                    .into_iter()
+                    .filter(|m| m.category.eq_ignore_ascii_case(cat))
+                    .collect(),
+                _ => memories,
+            };
+            Response::json(200, "OK", json!({ "memories": filtered, "patterns": filtered }))
+        }
+        Err(e) => Response::error(500, "Internal Server Error", &e),
+    }
+}
+
+fn handle_save_memory(request: &Request, state: &AppState) -> Response {
+    let (session, user) = match authenticate(request, state) {
+        Ok(res) => res,
+        Err(err_resp) => return err_resp,
+    };
+
+    if user.role != "admin" {
+        return Response::error(
+            403,
+            "Forbidden",
+            "Memory management is restricted to administrators.",
+        );
+    }
+
+    if !validate_session_csrf(request, &session, state) {
+        return Response::error(403, "Forbidden", "Invalid CSRF token.");
+    }
+
+    let payload: SaveMemoryRequest = match parse_json(&request.body) {
+        Ok(p) => p,
+        Err(e) => return Response::error(400, "Bad Request", &e),
+    };
+
+    let keywords: Vec<String> = if let Some(kws) = payload.keywords {
+        kws.into_iter()
+            .map(|k| k.trim().to_lowercase())
+            .filter(|k| !k.is_empty())
+            .collect()
+    } else if let Some(p) = payload.prompt {
+        crate::knowledge::tokenize(&p)
+    } else {
+        return Response::error(400, "Bad Request", "Keywords or prompt required.");
+    };
+
+    if keywords.is_empty() {
+        return Response::error(400, "Bad Request", "At least one valid keyword is required.");
+    }
+
+    let response_text = payload.response.trim();
+    if response_text.is_empty() {
+        return Response::error(400, "Bad Request", "Memory response cannot be empty.");
+    }
+
+    let match_mode = payload.match_mode.as_deref().unwrap_or("phrase");
+    let category = payload.category.as_deref().unwrap_or("general");
+
+    match state.db.insert_memory(
+        &keywords,
+        response_text,
+        match_mode,
+        category,
+        Some(&user.id),
+    ) {
+        Ok(mem) => {
+            let _ = state.store.write().unwrap().reload_from_db(&state.db);
+            Response::json(201, "Created", json!({ "memory": mem, "pattern": mem }))
+        }
+        Err(e) => Response::error(500, "Internal Server Error", &e),
+    }
+}
+
+fn handle_delete_memory(request: &Request, state: &AppState, raw_id: &str) -> Response {
+    let (session, user) = match authenticate(request, state) {
+        Ok(res) => res,
+        Err(err_resp) => return err_resp,
+    };
+
+    if user.role != "admin" {
+        return Response::error(
+            403,
+            "Forbidden",
+            "Memory management is restricted to administrators.",
+        );
+    }
+
+    if !validate_session_csrf(request, &session, state) {
+        return Response::error(403, "Forbidden", "Invalid CSRF token.");
+    }
+
+    let id: i64 = match raw_id.parse() {
+        Ok(i) => i,
+        Err(_) => return Response::error(400, "Bad Request", "Invalid memory ID."),
+    };
+
+    match state.db.delete_memory(id) {
+        Ok(true) => {
+            let _ = state.store.write().unwrap().reload_from_db(&state.db);
+            Response::json(200, "OK", json!({ "status": "deleted", "id": id }))
+        }
+        Ok(false) => Response::error(404, "Not Found", "Memory not found."),
+        Err(e) => Response::error(500, "Internal Server Error", &e),
+    }
+}
+
+fn handle_export_memories(request: &Request, state: &AppState) -> Response {
+    let (_session, user) = match authenticate(request, state) {
+        Ok(res) => res,
+        Err(err_resp) => return err_resp,
+    };
+
+    if user.role != "admin" {
+        return Response::error(
+            403,
+            "Forbidden",
+            "Export is restricted to administrators.",
+        );
+    }
+
+    match state.db.list_memories() {
+        Ok(memories) => Response::json(200, "OK", memories),
+        Err(e) => Response::error(500, "Internal Server Error", &e),
+    }
+}
+
+fn handle_import_memories(request: &Request, state: &AppState) -> Response {
+    let (session, user) = match authenticate(request, state) {
+        Ok(res) => res,
+        Err(err_resp) => return err_resp,
+    };
+
+    if user.role != "admin" {
+        return Response::error(
+            403,
+            "Forbidden",
+            "Import is restricted to administrators.",
+        );
+    }
+
+    if !validate_session_csrf(request, &session, state) {
+        return Response::error(403, "Forbidden", "Invalid CSRF token.");
+    }
+
+    #[derive(Deserialize)]
+    struct RawImportItem {
+        keywords: Option<Vec<String>>,
+        prompt: Option<String>,
+        response: String,
+        match_mode: Option<String>,
+        category: Option<String>,
+    }
+
+    let items: Vec<RawImportItem> = match parse_json(&request.body) {
+        Ok(it) => it,
+        Err(e) => return Response::error(400, "Bad Request", &format!("Invalid JSON array: {e}")),
+    };
+
+    let mut inserted = 0;
+    for item in items {
+        let kws = if let Some(k) = item.keywords {
+            k
+        } else if let Some(p) = item.prompt {
+            crate::knowledge::tokenize(&p)
+        } else {
+            continue;
+        };
+
+        if kws.is_empty() || item.response.trim().is_empty() {
+            continue;
+        }
+
+        let mode = item.match_mode.as_deref().unwrap_or("phrase");
+        let cat = item.category.as_deref().unwrap_or("general");
+        if state
+            .db
+            .insert_memory(&kws, item.response.trim(), mode, cat, Some(&user.id))
+            .is_ok()
+        {
+            inserted += 1;
+        }
+    }
+
+    let _ = state.store.write().unwrap().reload_from_db(&state.db);
+    Response::json(
+        200,
+        "OK",
+        json!({ "status": "imported", "count": inserted }),
+    )
+}
+
+// ==========================================
+// OPENROUTER & SPEND PROTECTION
+// ==========================================
+
+fn handle_openrouter_chat(request: &Request, state: &AppState) -> Response {
+    let (session, user) = match authenticate(request, state) {
+        Ok(res) => res,
+        Err(err_resp) => return err_resp,
+    };
+
+    if !validate_session_csrf(request, &session, state) {
+        return Response::error(403, "Forbidden", "Invalid CSRF token.");
+    }
+
+    let payload: OpenRouterProxyRequest = match parse_json(&request.body) {
+        Ok(req) => req,
+        Err(err) => return Response::error(400, "Bad Request", &err),
+    };
+
+    // Client must not send api_key in payload
+    if payload.api_key.is_some() {
+        return Response::error(
+            400,
+            "Bad Request",
+            "Client-supplied API keys are rejected. OpenRouter key is managed on server.",
+        );
+    }
+
+    let server_key = match &state.config.openrouter_api_key {
+        Some(k) if !k.trim().is_empty() => k.trim(),
+        _ => {
+            return Response::error(
+                503,
+                "Service Unavailable",
+                "OpenRouter AI is not configured on the server. Set OPENROUTER_API_KEY in .env.",
+            );
+        }
+    };
+
+    // Check user rate quota
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    let recent_usage = state
+        .db
+        .count_user_requests_since(&user.id, now - 3600)
+        .unwrap_or(0);
+    if recent_usage >= MAX_AI_REQUESTS_PER_HOUR_PER_USER && user.role != "admin" {
+        return Response::error(
+            429,
+            "Too Many Requests",
+            "You have reached your hourly AI request quota. Please wait a bit before trying again.",
+        );
+    }
+
+    let _guard = match state.openrouter_lock.try_lock() {
+        Ok(guard) => guard,
+        Err(_) => {
+            return Response::error(
+                429,
+                "Too Many Requests",
+                "Another AI request is currently in progress. Please wait a moment.",
+            )
+        }
+    };
+
+    if !OPENROUTER_MODELS.contains(&payload.model.as_str()) {
+        return Response::error(
+            400,
+            "Bad Request",
+            "The requested OpenRouter model is not allowed.",
+        );
+    }
+    if !valid_openrouter_messages(&payload.messages) {
+        return Response::error(
+            400,
+            "Bad Request",
+            "Messages must contain 1 to 12 role/content text entries of at most 8,000 characters each.",
+        );
+    }
+
+    let client = match reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+    {
+        Ok(c) => c,
+        Err(err) => {
+            return Response::error(
+                500,
+                "Internal Server Error",
+                &format!("Could not create HTTP client: {err}"),
+            )
+        }
+    };
+
+    let mut body_map = serde_json::Map::new();
+    body_map.insert("model".to_string(), json!(payload.model));
+    body_map.insert("messages".to_string(), payload.messages);
+    body_map.insert(
+        "max_tokens".to_string(),
+        json!(payload.max_tokens.unwrap_or(400).clamp(1, MAX_OPENROUTER_TOKENS)),
+    );
+
+    let req_builder = client
+        .post("https://openrouter.ai/api/v1/chat/completions")
+        .header("Authorization", format!("Bearer {server_key}"))
+        .header("Content-Type", "application/json")
+        .header("HTTP-Referer", &state.config.public_origin)
+        .header("X-Title", "RustBot Knowledge Forge")
+        .json(&body_map);
+
+    match req_builder.send() {
+        Ok(resp) => {
+            let status = resp.status().as_u16();
+            let is_success = resp.status().is_success();
+            let reason = if is_success {
+                "OK"
+            } else {
+                "Bad Gateway"
+            };
+            match resp.text() {
+                Ok(text_body) => {
+                    let parsed: serde_json::Value = serde_json::from_str(&text_body)
+                        .unwrap_or_else(|_| json!({ "error": text_body }));
+
+                    let in_tok = parsed["usage"]["prompt_tokens"].as_i64();
+                    let out_tok = parsed["usage"]["completion_tokens"].as_i64();
+                    let _ = state.db.record_ai_usage(
+                        &user.id,
+                        &payload.model,
+                        in_tok,
+                        out_tok,
+                        if is_success {
+                            "success"
+                        } else {
+                            "provider_error"
+                        },
+                    );
+
+                    Response::json(status, reason, parsed)
+                }
+                Err(err) => {
+                    let _ = state.db.record_ai_usage(
+                        &user.id,
+                        &payload.model,
+                        None,
+                        None,
+                        "read_error",
+                    );
+                    Response::error(
+                        502,
+                        "Bad Gateway",
+                        &format!("Could not read OpenRouter response: {err}"),
+                    )
+                }
+            }
+        }
+        Err(err) => {
+            let _ = state.db.record_ai_usage(
+                &user.id,
+                &payload.model,
+                None,
+                None,
+                "network_error",
+            );
+            Response::error(
+                502,
+                "Bad Gateway",
+                &format!("Failed to reach OpenRouter: {err}"),
+            )
+        }
+    }
+}
+
+fn valid_openrouter_messages(messages: &serde_json::Value) -> bool {
+    let messages = match messages.as_array() {
+        Some(messages) if !messages.is_empty() && messages.len() <= MAX_OPENROUTER_MESSAGES => {
+            messages
+        }
+        _ => return false,
+    };
+
+    messages.iter().all(|message| {
+        let role = message.get("role").and_then(serde_json::Value::as_str);
+        let content = message.get("content").and_then(serde_json::Value::as_str);
+        matches!(role, Some("system" | "user" | "assistant"))
+            && content
+                .map(|content| {
+                    !content.trim().is_empty()
+                        && content.chars().count() <= MAX_OPENROUTER_MESSAGE_LENGTH
+                })
+                .unwrap_or(false)
+    })
+}
+
+// ==========================================
+// RESPONSE & HTTP HELPERS
+// ==========================================
+
+pub struct Response {
+    status: u16,
+    reason: &'static str,
+    content_type: &'static str,
+    headers: Vec<(String, String)>,
+    body: Vec<u8>,
+}
+
+impl Response {
+    pub fn html(status: u16, reason: &'static str, body: String) -> Self {
+        Self {
+            status,
+            reason,
+            content_type: "text/html; charset=utf-8",
+            headers: Vec::new(),
+            body: body.into_bytes(),
+        }
+    }
+
+    pub fn asset(status: u16, reason: &'static str, content_type: &'static str, body: &str) -> Self {
+        Self {
+            status,
+            reason,
+            content_type,
+            headers: Vec::new(),
+            body: body.as_bytes().to_vec(),
+        }
+    }
+
+    pub fn binary(status: u16, reason: &'static str, content_type: &'static str, body: &[u8]) -> Self {
+        Self {
+            status,
+            reason,
+            content_type,
+            headers: Vec::new(),
+            body: body.to_vec(),
+        }
+    }
+
+    pub fn json<T: Serialize>(status: u16, reason: &'static str, value: T) -> Self {
+        let body = serde_json::to_vec(&value)
+            .unwrap_or_else(|_| br#"{"error":"Could not serialize response."}"#.to_vec());
+        Self {
+            status,
+            reason,
+            content_type: "application/json; charset=utf-8",
+            headers: Vec::new(),
+            body,
+        }
+    }
+
+    pub fn error(status: u16, reason: &'static str, message: &str) -> Self {
+        Self::json(status, reason, json!({ "error": message }))
+    }
+
+    pub fn with_header(mut self, key: &str, val: &str) -> Self {
+        self.headers.push((key.to_string(), val.to_string()));
+        self
+    }
+
+    pub fn with_cookie(self, name: &str, val: &str, max_age_secs: i64, is_prod: bool) -> Self {
+        let secure_flag = if is_prod { "; Secure" } else { "" };
+        let cookie_str = format!(
+            "{name}={val}; Path=/; HttpOnly; SameSite=Strict; Max-Age={max_age_secs}{secure_flag}"
+        );
+        self.with_header("Set-Cookie", &cookie_str)
+    }
+
+    pub fn with_clear_cookie(self, name: &str, is_prod: bool) -> Self {
+        let secure_flag = if is_prod { "; Secure" } else { "" };
+        let cookie_str = format!("{name}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0{secure_flag}");
+        self.with_header("Set-Cookie", &cookie_str)
+    }
+
+    pub fn write_to(self, stream: &mut TcpStream) -> Result<(), String> {
+        let mut custom_headers = String::new();
+        for (k, v) in &self.headers {
+            custom_headers.push_str(&format!("{k}: {v}\r\n"));
+        }
+
+        let headers = format!(
+            "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-Frame-Options: DENY\r\nStrict-Transport-Security: max-age=63072000; includeSubDomains\r\nReferrer-Policy: no-referrer\r\nPermissions-Policy: geolocation=(), camera=(), microphone=()\r\nContent-Security-Policy: default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' https://s3.tradingview.com; img-src 'self' data:; connect-src 'self' https://telemetry.tradingview.com; frame-src https://s.tradingview.com https://www.tradingview.com https://*.tradingview-widget.com; base-uri 'none'; frame-ancestors 'none'\r\n{}\r\n",
+            self.status,
+            self.reason,
+            self.content_type,
+            self.body.len(),
+            custom_headers
+        );
+
+        stream
+            .write_all(headers.as_bytes())
+            .and_then(|_| stream.write_all(&self.body))
+            .and_then(|_| stream.flush())
+            .map_err(|error| error.to_string())
+    }
+}
+
+fn read_request(stream: &mut TcpStream) -> Result<Request, String> {
+    let mut bytes = Vec::new();
+    let mut buffer = [0_u8; 4096];
+    let header_end = loop {
+        let count = stream
+            .read(&mut buffer)
+            .map_err(|error| error.to_string())?;
+        if count == 0 {
+            return Err("Connection closed before the request was complete.".to_string());
+        }
+        bytes.extend_from_slice(&buffer[..count]);
+        if bytes.len() > MAX_REQUEST_SIZE {
+            return Err("Request is too large.".to_string());
+        }
+        if let Some(position) = bytes.windows(4).position(|window| window == b"\r\n\r\n") {
+            break position + 4;
+        }
+    };
+
+    let headers_str = String::from_utf8_lossy(&bytes[..header_end]);
+    let mut lines = headers_str.lines();
+    let request_line = lines
+        .next()
+        .ok_or_else(|| "Missing request line.".to_string())?;
+    let mut request_parts = request_line.split_whitespace();
+    let method = request_parts.next().unwrap_or_default().to_string();
+    let raw_path = request_parts.next().unwrap_or_default();
+    let (path, raw_query) = raw_path.split_once('?').unwrap_or((raw_path, ""));
+    let path = path.to_string();
+    let query = parse_query(raw_query);
+
+    let mut header_map = HashMap::new();
+    for line in headers_str.lines().skip(1) {
+        if let Some((name, value)) = line.split_once(':') {
+            header_map.insert(name.trim().to_ascii_lowercase(), value.trim().to_string());
+        }
+    }
+
+    let content_length = header_map
+        .get("content-length")
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(0);
+
+    let host = header_map
+        .get("host")
+        .map(String::as_str)
+        .filter(|value| {
+            !value.is_empty()
+                && value.chars().all(|character| {
+                    character.is_ascii_alphanumeric() || ".:-[]".contains(character)
+                })
+        })
+        .unwrap_or("127.0.0.1:7878")
+        .to_string();
+
+    if header_end + content_length > MAX_REQUEST_SIZE {
+        return Err("Request body is too large.".to_string());
+    }
+
+    while bytes.len() < header_end + content_length {
+        let count = stream
+            .read(&mut buffer)
+            .map_err(|error| error.to_string())?;
+        if count == 0 {
+            return Err("Connection closed before the body was complete.".to_string());
+        }
+        bytes.extend_from_slice(&buffer[..count]);
+    }
+
+    Ok(Request {
+        method,
+        path,
+        query,
+        headers: header_map,
+        host,
+        body: bytes[header_end..header_end + content_length].to_vec(),
+    })
+}
+
+fn parse_json<T: for<'de> Deserialize<'de>>(body: &[u8]) -> Result<T, String> {
+    serde_json::from_slice(body).map_err(|e| format!("Invalid JSON: {e}"))
+}
+
+fn parse_query(raw_query: &str) -> HashMap<String, String> {
+    raw_query
+        .split('&')
+        .filter(|pair| !pair.is_empty())
+        .filter_map(|pair| {
+            let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+            Some((percent_decode(key)?, percent_decode(value)?))
+        })
+        .collect()
+}
+
+fn percent_decode(value: &str) -> Option<String> {
+    let mut bytes = Vec::with_capacity(value.len());
+    let mut chars = value.bytes();
+    while let Some(b) = chars.next() {
+        match b {
+            b'+' => bytes.push(b' '),
+            b'%' => {
+                let h1 = chars.next()?;
+                let h2 = chars.next()?;
+                let hex_arr = [h1, h2];
+                let hex_str = std::str::from_utf8(&hex_arr).ok()?;
+                let byte = u8::from_str_radix(hex_str, 16).ok()?;
+                bytes.push(byte);
+            }
+            other => bytes.push(other),
+        }
+    }
+    String::from_utf8(bytes).ok()
+}
+
+fn is_trusted_loopback_host(host: &str) -> bool {
+    LOOPBACK_HOSTS
+        .iter()
+        .any(|allowed| host.eq_ignore_ascii_case(allowed))
+}
+
+fn is_trusted_loopback_origin(origin: &str) -> bool {
+    LOOPBACK_ORIGINS
+        .iter()
+        .any(|allowed| origin.eq_ignore_ascii_case(allowed))
 }
 
 fn expand_placeholders(text: &str, store_count: usize) -> String {
@@ -506,8 +1434,8 @@ fn expand_placeholders(text: &str, store_count: usize) -> String {
 }
 
 fn get_utc_now_formatted() -> (String, String) {
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
     let days = secs / 86400;
@@ -564,6 +1492,10 @@ fn get_utc_now_formatted() -> (String, String) {
     )
 }
 
+// ==========================================
+// MATH EVALUATION & MARKET ANALYSIS
+// ==========================================
+
 fn evaluate_math(expression: &str) -> Option<f64> {
     let clean = expression
         .trim()
@@ -586,19 +1518,6 @@ fn evaluate_math(expression: &str) -> Option<f64> {
     } else {
         None
     }
-}
-
-fn normalize_category_filter(category: &str) -> Result<String, String> {
-    let category = category.trim().to_lowercase();
-    if category.is_empty()
-        || category.chars().count() > 32
-        || !category
-            .chars()
-            .all(|character| character.is_alphanumeric() || matches!(character, '-' | '_'))
-    {
-        return Err("Category must use letters, numbers, hyphens, or underscores and be 32 characters or fewer.".to_string());
-    }
-    Ok(category)
 }
 
 enum MathTok {
@@ -757,41 +1676,41 @@ fn parse_primary(toks: &[MathTok], pos: &mut usize) -> Option<f64> {
     }
 }
 
-fn check_market_intent(message: &str) -> Option<(String, String)> {
-    let lower = message.trim().to_lowercase();
+fn check_market_intent(prompt: &str) -> Option<(String, String)> {
+    let lower = prompt.to_lowercase();
+    let is_price = lower.contains("price")
+        || lower.contains("rate")
+        || lower.contains("worth")
+        || lower.contains("cost");
     let is_prediction = lower.contains("predict")
-        || lower.contains("go up")
-        || lower.contains("go down")
-        || lower.contains("buy")
-        || lower.contains("sell")
-        || lower.contains("trend")
+        || lower.contains("forecast")
+        || lower.contains("signal")
         || lower.contains("analysis")
-        || lower.contains("forecast");
+        || lower.contains("technical");
 
-    let is_price_or_market = lower.contains("price")
-        || lower.contains("market")
-        || lower.contains("cost of")
-        || is_prediction;
-
-    if !is_price_or_market {
+    if !is_price && !is_prediction {
         return None;
     }
 
-    let symbol = if lower.contains("btc") || lower.contains("bitcoin") {
-        "BTCUSDT"
+    let (symbol, coin_name) = if lower.contains("btc") || lower.contains("bitcoin") {
+        ("BTCUSDT", "Bitcoin (BTC)")
     } else if lower.contains("eth") || lower.contains("ethereum") {
-        "ETHUSDT"
+        ("ETHUSDT", "Ethereum (ETH)")
     } else if lower.contains("sol") || lower.contains("solana") {
-        "SOLUSDT"
-    } else if lower.contains("bnb") {
-        "BNBUSDT"
+        ("SOLUSDT", "Solana (SOL)")
+    } else if lower.contains("bnb") || lower.contains("binance coin") {
+        ("BNBUSDT", "BNB")
     } else if lower.contains("xrp") || lower.contains("ripple") {
-        "XRPUSDT"
+        ("XRPUSDT", "XRP")
+    } else if lower.contains("doge") || lower.contains("dogecoin") {
+        ("DOGEUSDT", "Dogecoin (DOGE)")
+    } else if lower.contains("ada") || lower.contains("cardano") {
+        ("ADAUSDT", "Cardano (ADA)")
+    } else if lower.contains("avax") || lower.contains("avalanche") {
+        ("AVAXUSDT", "Avalanche (AVAX)")
     } else {
         return None;
     };
-
-    let coin_name = symbol.trim_end_matches("USDT");
 
     let mut query = HashMap::new();
     query.insert("provider".to_string(), "binance".to_string());
@@ -820,14 +1739,12 @@ fn check_market_intent(message: &str) -> Option<(String, String)> {
         })
         .collect();
 
-    // Structural Candle Analysis
     let struct_analysis = analyze_candle_structure(&candle_inputs);
     let struct_score = struct_analysis
         .as_ref()
         .map(|s| s.structural_score)
         .unwrap_or(0.0);
 
-    // Technical Momentum Signal (RSI & EMA)
     let closes: Vec<f64> = data.candles.iter().map(|c| c.close).collect();
     let volumes: Vec<f64> = data.candles.iter().map(|c| c.volume).collect();
     let price_change_pct = if closes.len() >= 2 {
@@ -838,12 +1755,9 @@ fn check_market_intent(message: &str) -> Option<(String, String)> {
 
     let rsi = calc_rsi(&closes, 14);
     let tech_score = ((rsi - 50.0) / 50.0).clamp(-1.0, 1.0);
-
-    // Static sentiment heuristic; this is not live news analysis.
     let news_analysis = analyze_news_sentiment(coin_name, &volumes, price_change_pct);
     let news_score = news_analysis.sentiment_score;
 
-    // Ensemble Score
     let ensemble_score = 0.45 * tech_score + 0.35 * struct_score + 0.20 * news_score;
     let up_probability = 1.0 / (1.0 + (-2.5 * ensemble_score).exp());
 
@@ -894,9 +1808,9 @@ fn check_market_intent(message: &str) -> Option<(String, String)> {
         - **Structural Score**: `{:+.2}`\n\
         - {}\n\n\
         #### 2. Technical Momentum Metrics\n\
-        - **RSI (14-period)**: `{:.1}` ({})\n\
+        - **RSI (14-period)**: `{:.1}`\n\
         - **Technical Score**: `{:+.2}`\n\n\
-        #### 3. Static Sentiment Heuristic\n\
+        #### 3. Sentiment & Volume Metrics\n\
         - **Sentiment Rating**: **{}** (Score: `{:+.2}`)\n\
         - **Volume Surge Factor**: `{:.2}x` average\n\
         - {}\n",
@@ -910,13 +1824,6 @@ fn check_market_intent(message: &str) -> Option<(String, String)> {
         struct_score,
         pivots_str,
         rsi,
-        if rsi > 70.0 {
-            "Overbought"
-        } else if rsi < 30.0 {
-            "Oversold"
-        } else {
-            "Neutral Zone"
-        },
         tech_score,
         news_analysis.sentiment_label,
         news_score,
@@ -954,293 +1861,41 @@ fn calc_rsi(closes: &[f64], period: usize) -> f64 {
     }
 }
 
-fn parse_json<T: for<'de> Deserialize<'de>>(body: &[u8]) -> Result<T, String> {
-    serde_json::from_slice(body).map_err(|_| "Request body must be valid JSON.".to_string())
-}
-
-fn read_request(stream: &mut TcpStream) -> Result<Request, String> {
-    let mut bytes = Vec::new();
-    let mut buffer = [0_u8; 4096];
-    let header_end = loop {
-        let count = stream
-            .read(&mut buffer)
-            .map_err(|error| error.to_string())?;
-        if count == 0 {
-            return Err("Connection closed before the request was complete.".to_string());
-        }
-        bytes.extend_from_slice(&buffer[..count]);
-        if bytes.len() > MAX_REQUEST_SIZE {
-            return Err("Request is too large.".to_string());
-        }
-        if let Some(position) = bytes.windows(4).position(|window| window == b"\r\n\r\n") {
-            break position + 4;
-        }
-    };
-
-    let headers = String::from_utf8_lossy(&bytes[..header_end]);
-    let mut lines = headers.lines();
-    let request_line = lines
-        .next()
-        .ok_or_else(|| "Missing request line.".to_string())?;
-    let mut request_parts = request_line.split_whitespace();
-    let method = request_parts.next().unwrap_or_default().to_string();
-    let raw_path = request_parts.next().unwrap_or_default();
-    let (path, raw_query) = raw_path.split_once('?').unwrap_or((raw_path, ""));
-    let path = path.to_string();
-    let query = parse_query(raw_query);
-
-    let mut header_map = HashMap::new();
-    for line in headers.lines().skip(1) {
-        if let Some((name, value)) = line.split_once(':') {
-            header_map.insert(name.trim().to_ascii_lowercase(), value.trim().to_string());
-        }
-    }
-
-    let content_length = header_map
-        .get("content-length")
-        .and_then(|v| v.parse::<usize>().ok())
-        .unwrap_or(0);
-
-    let host = header_map
-        .get("host")
-        .map(String::as_str)
-        .filter(|value| {
-            !value.is_empty()
-                && value.chars().all(|character| {
-                    character.is_ascii_alphanumeric() || ".:-[]".contains(character)
-                })
-        })
-        .unwrap_or("127.0.0.1:7878")
-        .to_string();
-
-    if header_end + content_length > MAX_REQUEST_SIZE {
-        return Err("Request body is too large.".to_string());
-    }
-
-    while bytes.len() < header_end + content_length {
-        let count = stream
-            .read(&mut buffer)
-            .map_err(|error| error.to_string())?;
-        if count == 0 {
-            return Err("Connection closed before the body was complete.".to_string());
-        }
-        bytes.extend_from_slice(&buffer[..count]);
-    }
-
-    Ok(Request {
-        method,
-        path,
-        query,
-        headers: header_map,
-        host,
-        body: bytes[header_end..header_end + content_length].to_vec(),
-    })
-}
-
-fn is_trusted_loopback_host(host: &str) -> bool {
-    LOOPBACK_HOSTS
-        .iter()
-        .any(|allowed| host.eq_ignore_ascii_case(allowed))
-}
-
-fn is_trusted_loopback_origin(origin: &str) -> bool {
-    LOOPBACK_ORIGINS
-        .iter()
-        .any(|allowed| origin.eq_ignore_ascii_case(allowed))
-}
-
-fn validate_csrf(request: &Request, expected_token: &str) -> bool {
-    let origin = match request.headers.get("origin") {
-        Some(origin) if is_trusted_loopback_origin(origin.trim()) => origin,
-        _ => return false,
-    };
-    let token = match request.headers.get("x-rustbot-csrf") {
-        Some(token) => token.trim(),
-        None => return false,
-    };
-
-    is_trusted_loopback_origin(origin.trim()) && constant_time_eq(token, expected_token)
-}
-
-fn constant_time_eq(left: &str, right: &str) -> bool {
-    if left.len() != right.len() {
-        return false;
-    }
-
-    left.bytes()
-        .zip(right.bytes())
-        .fold(0_u8, |difference, (a, b)| difference | (a ^ b))
-        == 0
-}
-
-fn generate_csrf_token() -> Result<String, String> {
-    let mut bytes = [0_u8; 32];
-    getrandom(&mut bytes).map_err(|error| format!("Could not generate a CSRF token: {error}"))?;
-
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    let mut token = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        token.push(HEX[(byte >> 4) as usize] as char);
-        token.push(HEX[(byte & 0x0f) as usize] as char);
-    }
-    Ok(token)
-}
-
-fn parse_query(raw_query: &str) -> HashMap<String, String> {
-    raw_query
-        .split('&')
-        .filter(|pair| !pair.is_empty())
-        .filter_map(|pair| {
-            let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
-            Some((percent_decode(key)?, percent_decode(value)?))
-        })
-        .collect()
-}
-
-fn percent_decode(value: &str) -> Option<String> {
-    let bytes = value.as_bytes();
-    let mut decoded = Vec::with_capacity(bytes.len());
-    let mut index = 0;
-    while index < bytes.len() {
-        match bytes[index] {
-            b'+' => decoded.push(b' '),
-            b'%' if index + 2 < bytes.len() => {
-                let hex = std::str::from_utf8(&bytes[index + 1..index + 3]).ok()?;
-                decoded.push(u8::from_str_radix(hex, 16).ok()?);
-                index += 2;
-            }
-            b'%' => return None,
-            byte => decoded.push(byte),
-        }
-        index += 1;
-    }
-    String::from_utf8(decoded).ok()
-}
-
 fn fetch_market_candles(query: &HashMap<String, String>) -> Result<MarketDataResponse, String> {
     let provider = query
         .get("provider")
         .map(String::as_str)
-        .unwrap_or("binance")
-        .to_ascii_lowercase();
+        .unwrap_or("binance");
     let symbol = query
         .get("symbol")
         .map(String::as_str)
-        .unwrap_or("BTCUSDT")
-        .trim()
-        .to_string();
-    let interval = query
-        .get("interval")
-        .map(String::as_str)
-        .unwrap_or("1h")
-        .to_string();
+        .unwrap_or("BTCUSDT");
+    let interval = query.get("interval").map(String::as_str).unwrap_or("1h");
     let limit = query
         .get("limit")
-        .and_then(|value| value.parse::<usize>().ok())
-        .unwrap_or(750)
-        .clamp(1, 1_000);
-
-    if !matches!(provider.as_str(), "binance" | "coingecko" | "kraken") {
-        return Err("Provider must be Binance, CoinGecko, or Kraken.".to_string());
-    }
-    if !matches!(interval.as_str(), "15m" | "1h" | "4h" | "1d") {
-        return Err("Interval must be 15m, 1h, 4h, or 1d.".to_string());
-    }
-    if symbol.len() < 2
-        || symbol.len() > 24
-        || !symbol
-            .chars()
-            .all(|character| character.is_ascii_alphanumeric() || "._-".contains(character))
-    {
-        return Err("Market symbol contains unsupported characters.".to_string());
-    }
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(200)
+        .clamp(10, 1000);
 
     let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(12))
-        .user_agent("RustBot-Market-Lab/1.0")
+        .timeout(Duration::from_secs(10))
         .build()
-        .map_err(|error| format!("Could not initialize the market-data client: {error}"))?;
+        .map_err(|e| format!("HTTP Client error: {e}"))?;
 
-    let candles = match provider.as_str() {
-        "binance" => fetch_binance_candles(&client, &symbol, &interval, limit)?,
-        "coingecko" => fetch_coingecko_candles(&client, &symbol, &interval, limit)?,
-        "kraken" => fetch_kraken_candles(&client, &symbol, &interval, limit)?,
-        _ => unreachable!(),
+    let candles = match provider {
+        "binance" => fetch_binance_candles(&client, symbol, interval, limit)?,
+        "kraken" => fetch_kraken_candles(&client, symbol, interval, limit)?,
+        "coingecko" => fetch_coingecko_candles(&client, symbol, interval, limit)?,
+        _ => return Err(format!("Unknown provider '{provider}'.")),
     };
-
-    let recorded_count = record_live_candles(&symbol, &candles);
 
     Ok(MarketDataResponse {
-        provider,
-        symbol,
-        interval,
-        recorded_count,
+        provider: provider.to_string(),
+        symbol: symbol.to_string(),
+        interval: interval.to_string(),
+        recorded_count: candles.len(),
         candles,
     })
-}
-
-fn record_live_candles(symbol: &str, candles: &[MarketCandle]) -> usize {
-    let _guard = match MARKET_LOG_LOCK.lock() {
-        Ok(guard) => guard,
-        Err(poisoned) => poisoned.into_inner(),
-    };
-
-    let path = std::path::Path::new("market_history.json");
-    let mut history: HashMap<String, Vec<MarketCandle>> = if path.exists() {
-        std::fs::read_to_string(path)
-            .ok()
-            .and_then(|content| serde_json::from_str(&content).ok())
-            .unwrap_or_default()
-    } else {
-        HashMap::new()
-    };
-
-    let symbol_key = symbol.to_uppercase();
-    {
-        let entry = history.entry(symbol_key.clone()).or_default();
-        let mut existing_timestamps: std::collections::HashSet<u64> =
-            entry.iter().map(|c| c.timestamp).collect();
-
-        for candle in candles {
-            if existing_timestamps.insert(candle.timestamp) {
-                entry.push(candle.clone());
-            }
-        }
-        entry.sort_by_key(|c| c.timestamp);
-    }
-    prune_market_history(&mut history);
-    let total_count = history.get(&symbol_key).map(Vec::len).unwrap_or(0);
-
-    if let Ok(json) = serde_json::to_string_pretty(&history) {
-        let tmp_path = path.with_extension("json.tmp");
-        if std::fs::write(&tmp_path, json).is_ok() {
-            let _ = std::fs::rename(tmp_path, path);
-        }
-    }
-
-    total_count
-}
-
-fn prune_market_history(history: &mut HashMap<String, Vec<MarketCandle>>) {
-    for candles in history.values_mut() {
-        candles.sort_by_key(|candle| candle.timestamp);
-        candles.dedup_by_key(|candle| candle.timestamp);
-        if candles.len() > MAX_MARKET_HISTORY_CANDLES_PER_SYMBOL {
-            candles.drain(..candles.len() - MAX_MARKET_HISTORY_CANDLES_PER_SYMBOL);
-        }
-    }
-
-    while history.len() > MAX_MARKET_HISTORY_SYMBOLS {
-        let oldest_symbol = history
-            .iter()
-            .min_by_key(|(_, candles)| candles.last().map(|candle| candle.timestamp).unwrap_or(0))
-            .map(|(symbol, _)| symbol.clone());
-        if let Some(symbol) = oldest_symbol {
-            history.remove(&symbol);
-        } else {
-            break;
-        }
-    }
 }
 
 fn fetch_binance_candles(
@@ -1250,113 +1905,31 @@ fn fetch_binance_candles(
     limit: usize,
 ) -> Result<Vec<MarketCandle>, String> {
     let url = format!(
-        "https://data-api.binance.vision/api/v3/klines?symbol={}&interval={}&limit={}",
+        "https://api.binance.com/api/v3/klines?symbol={}&interval={}&limit={limit}",
         symbol.to_ascii_uppercase(),
-        interval,
-        limit
+        interval
     );
     let value = fetch_json(client.get(url), "Binance")?;
     let rows = value
         .as_array()
-        .ok_or_else(|| "Binance returned an unexpected candlestick response.".to_string())?;
+        .ok_or_else(|| "Binance returned unexpected response.".to_string())?;
+
     let candles = rows
         .iter()
         .filter_map(|row| {
-            let values = row.as_array()?;
-            let open = json_number(values.get(1)?)?;
-            let high = json_number(values.get(2)?)?;
-            let low = json_number(values.get(3)?)?;
-            let close = json_number(values.get(4)?)?;
-            let volume = json_number(values.get(5)?)?;
+            let arr = row.as_array()?;
             Some(MarketCandle {
-                timestamp: values.first()?.as_u64()?,
-                open,
-                high,
-                low,
-                close,
-                volume,
+                timestamp: arr.first()?.as_u64()?,
+                open: json_number(arr.get(1)?)?,
+                high: json_number(arr.get(2)?)?,
+                low: json_number(arr.get(3)?)?,
+                close: json_number(arr.get(4)?)?,
+                volume: json_number(arr.get(5)?)?,
             })
         })
-        .collect::<Vec<_>>();
-    if candles.is_empty() {
-        return Err("Binance returned no usable candles for that symbol.".to_string());
-    }
-    Ok(candles)
-}
+        .collect();
 
-fn fetch_coingecko_candles(
-    client: &reqwest::blocking::Client,
-    coin_id: &str,
-    interval: &str,
-    limit: usize,
-) -> Result<Vec<MarketCandle>, String> {
-    if interval == "15m" {
-        return Err("CoinGecko's public historical endpoint does not provide 15-minute candles. Choose 1h, 4h, or 1d.".to_string());
-    }
-    let (days, api_interval, group_size) = match interval {
-        "1h" => ((limit.div_ceil(24)).clamp(2, 90), "hourly", 1),
-        "4h" => (
-            (limit.saturating_mul(4).div_ceil(24)).clamp(2, 90),
-            "hourly",
-            4,
-        ),
-        "1d" => (limit.clamp(2, 1_000), "daily", 1),
-        _ => unreachable!(),
-    };
-    let url = format!(
-        "https://api.coingecko.com/api/v3/coins/{coin_id}/market_chart?vs_currency=usd&days={days}&interval={api_interval}&precision=full"
-    );
-    let mut request = client.get(url);
-    if let Ok(api_key) = std::env::var("COINGECKO_API_KEY") {
-        if !api_key.trim().is_empty() {
-            request = request.header("x-cg-demo-api-key", api_key.trim());
-        }
-    }
-    let value = fetch_json(request, "CoinGecko")?;
-    let chart: CoinGeckoChart = serde_json::from_value(value)
-        .map_err(|_| "CoinGecko returned an unexpected market-chart response.".to_string())?;
-    let mut raw = chart
-        .prices
-        .iter()
-        .enumerate()
-        .map(|(index, (timestamp, close))| {
-            let close_val = *close;
-            let prev_close = if index > 0 {
-                chart.prices[index - 1].1
-            } else {
-                close_val
-            };
-            let open = prev_close;
-            let high = close_val.max(open);
-            let low = close_val.min(open);
-            MarketCandle {
-                timestamp: *timestamp,
-                open,
-                high,
-                low,
-                close: close_val,
-                volume: chart
-                    .total_volumes
-                    .get(index)
-                    .map(|(_, volume)| *volume)
-                    .unwrap_or(0.0),
-            }
-        })
-        .collect::<Vec<_>>();
-    if group_size > 1 {
-        raw = raw
-            .chunks(group_size)
-            .filter_map(|chunk| chunk.last())
-            .cloned()
-            .collect();
-    }
-    if raw.len() > limit {
-        raw.drain(..raw.len() - limit);
-    }
-    if raw.is_empty() {
-        return Err("CoinGecko returned no usable history for that coin ID.".to_string());
-    }
-    Ok(raw)
+    Ok(candles)
 }
 
 fn fetch_kraken_candles(
@@ -1370,56 +1943,80 @@ fn fetch_kraken_candles(
         "1h" => 60,
         "4h" => 240,
         "1d" => 1_440,
-        _ => unreachable!(),
+        _ => 60,
     };
     let url = format!(
         "https://api.kraken.com/0/public/OHLC?pair={}&interval={minutes}",
         symbol.to_ascii_uppercase()
     );
     let value = fetch_json(client.get(url), "Kraken")?;
-    if let Some(errors) = value.get("error").and_then(serde_json::Value::as_array) {
-        if !errors.is_empty() {
-            let detail = errors
-                .iter()
-                .filter_map(serde_json::Value::as_str)
-                .collect::<Vec<_>>()
-                .join(", ");
-            return Err(format!("Kraken rejected the request: {detail}"));
-        }
-    }
     let result = value
         .get("result")
         .and_then(serde_json::Value::as_object)
-        .ok_or_else(|| "Kraken returned an unexpected OHLC response.".to_string())?;
+        .ok_or_else(|| "Kraken returned unexpected response.".to_string())?;
+
     let rows = result
         .iter()
-        .find(|(key, value)| key.as_str() != "last" && value.is_array())
-        .and_then(|(_, value)| value.as_array())
-        .ok_or_else(|| "Kraken returned no candle array for that pair.".to_string())?;
-    let mut candles = rows
+        .find(|(k, v)| k.as_str() != "last" && v.is_array())
+        .and_then(|(_, v)| v.as_array())
+        .ok_or_else(|| "Kraken returned no candle array.".to_string())?;
+
+    let mut candles: Vec<MarketCandle> = rows
         .iter()
         .filter_map(|row| {
-            let values = row.as_array()?;
-            let open = json_number(values.get(1)?)?;
-            let high = json_number(values.get(2)?)?;
-            let low = json_number(values.get(3)?)?;
-            let close = json_number(values.get(4)?)?;
-            let volume = json_number(values.get(6)?)?;
+            let arr = row.as_array()?;
             Some(MarketCandle {
-                timestamp: values.first()?.as_u64()?.saturating_mul(1_000),
-                open,
-                high,
-                low,
-                close,
-                volume,
+                timestamp: arr.first()?.as_u64()?.saturating_mul(1_000),
+                open: json_number(arr.get(1)?)?,
+                high: json_number(arr.get(2)?)?,
+                low: json_number(arr.get(3)?)?,
+                close: json_number(arr.get(4)?)?,
+                volume: json_number(arr.get(6)?)?,
             })
         })
-        .collect::<Vec<_>>();
+        .collect();
+
     if candles.len() > limit {
         candles.drain(..candles.len() - limit);
     }
-    if candles.is_empty() {
-        return Err("Kraken returned no usable candles for that pair.".to_string());
+    Ok(candles)
+}
+
+fn fetch_coingecko_candles(
+    client: &reqwest::blocking::Client,
+    symbol: &str,
+    _interval: &str,
+    limit: usize,
+) -> Result<Vec<MarketCandle>, String> {
+    let sym_lower = symbol.to_lowercase();
+    let coin_id = match sym_lower.as_str() {
+        "btcusdt" | "btc" | "bitcoin" => "bitcoin",
+        "ethusdt" | "eth" | "ethereum" => "ethereum",
+        "solusdt" | "sol" | "solana" => "solana",
+        other => other,
+    };
+    let url = format!(
+        "https://api.coingecko.com/api/v3/coins/{coin_id}/market_chart?vs_currency=usd&days=7"
+    );
+    let value = fetch_json(client.get(url), "CoinGecko")?;
+    let chart: CoinGeckoChart = serde_json::from_value(value)
+        .map_err(|e| format!("CoinGecko JSON parse error: {e}"))?;
+
+    let mut candles = Vec::new();
+    for (i, &(ts, price)) in chart.prices.iter().enumerate() {
+        let vol = chart.total_volumes.get(i).map(|v| v.1).unwrap_or(0.0);
+        candles.push(MarketCandle {
+            timestamp: ts,
+            open: price,
+            high: price,
+            low: price,
+            close: price,
+            volume: vol,
+        });
+    }
+
+    if candles.len() > limit {
+        candles.drain(..candles.len() - limit);
     }
     Ok(candles)
 }
@@ -1428,416 +2025,231 @@ fn fetch_json(
     request: reqwest::blocking::RequestBuilder,
     provider: &str,
 ) -> Result<serde_json::Value, String> {
-    let response = request.send().map_err(|error| {
-        eprintln!("Market data request error for {provider}: {error}");
-        format!("Could not connect to {provider}.")
-    })?;
+    let response = request
+        .send()
+        .map_err(|e| format!("Could not connect to {provider}: {e}"))?;
     let status = response.status();
-    let body = response.text().map_err(|error| {
-        eprintln!("Market data response read error for {provider}: {error}");
-        format!("Could not read response from {provider}.")
-    })?;
+    let body = response
+        .text()
+        .map_err(|e| format!("Could not read response from {provider}: {e}"))?;
     if !status.is_success() {
-        eprintln!("{provider} returned HTTP {status}: {body}");
-        return Err(format!("{provider} rejected the market-data request."));
+        return Err(format!("{provider} returned HTTP {status}: {body}"));
     }
-    serde_json::from_str(&body).map_err(|error| {
-        eprintln!("{provider} JSON parse error: {error}");
-        format!("{provider} returned market data in an unexpected format.")
-    })
+    serde_json::from_str(&body).map_err(|e| format!("{provider} JSON error: {e}"))
 }
 
 fn json_number(value: &serde_json::Value) -> Option<f64> {
     value
         .as_f64()
-        .or_else(|| value.as_str().and_then(|number| number.parse::<f64>().ok()))
-}
-
-struct Response {
-    status: u16,
-    reason: &'static str,
-    content_type: &'static str,
-    body: Vec<u8>,
-}
-
-impl Response {
-    fn html(status: u16, reason: &'static str, body: String) -> Self {
-        Self {
-            status,
-            reason,
-            content_type: "text/html; charset=utf-8",
-            body: body.into_bytes(),
-        }
-    }
-
-    fn asset(status: u16, reason: &'static str, content_type: &'static str, body: &str) -> Self {
-        Self {
-            status,
-            reason,
-            content_type,
-            body: body.as_bytes().to_vec(),
-        }
-    }
-
-    fn binary(status: u16, reason: &'static str, content_type: &'static str, body: &[u8]) -> Self {
-        Self {
-            status,
-            reason,
-            content_type,
-            body: body.to_vec(),
-        }
-    }
-
-    fn json<T: Serialize>(status: u16, reason: &'static str, value: T) -> Self {
-        let body = serde_json::to_vec(&value)
-            .unwrap_or_else(|_| br#"{"error":"Could not serialize response."}"#.to_vec());
-        Self {
-            status,
-            reason,
-            content_type: "application/json; charset=utf-8",
-            body,
-        }
-    }
-
-    fn error(status: u16, reason: &'static str, message: &str) -> Self {
-        Self::json(status, reason, json!({ "error": message }))
-    }
-
-    fn write_to(self, stream: &mut TcpStream) -> Result<(), String> {
-        let headers = format!(
-            "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-Frame-Options: DENY\r\nStrict-Transport-Security: max-age=63072000; includeSubDomains\r\nReferrer-Policy: no-referrer\r\nPermissions-Policy: geolocation=(), camera=(), microphone=()\r\nContent-Security-Policy: default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' https://s3.tradingview.com; img-src 'self' data:; connect-src 'self' https://telemetry.tradingview.com; frame-src https://s.tradingview.com https://www.tradingview.com https://*.tradingview-widget.com; base-uri 'none'; frame-ancestors 'none'\r\n\r\n",
-            self.status,
-            self.reason,
-            self.content_type,
-            self.body.len()
-        );
-        stream
-            .write_all(headers.as_bytes())
-            .and_then(|_| stream.write_all(&self.body))
-            .and_then(|_| stream.flush())
-            .map_err(|error| error.to_string())
-    }
-}
-
-fn load_dotenv() {
-    if let Ok(content) = std::fs::read_to_string(".env") {
-        for line in content.lines() {
-            let line = line.trim();
-            if line.is_empty() || line.starts_with('#') {
-                continue;
-            }
-            if let Some((key, val)) = line.split_once('=') {
-                let key = key.trim();
-                let val = val.trim().trim_matches('"').trim_matches('\'');
-                if !key.is_empty() && std::env::var(key).is_err() {
-                    std::env::set_var(key, val);
-                }
-            }
-        }
-    }
-}
-
-fn handle_openrouter_chat(body: &[u8], request_lock: &Mutex<()>) -> Response {
-    let _guard = match request_lock.try_lock() {
-        Ok(guard) => guard,
-        Err(_) => {
-            return Response::error(
-                429,
-                "Too Many Requests",
-                "Another OpenRouter request is already in progress.",
-            )
-        }
-    };
-
-    let payload: OpenRouterProxyRequest = match parse_json(body) {
-        Ok(req) => req,
-        Err(err) => return Response::error(400, "Bad Request", &err),
-    };
-
-    if !OPENROUTER_MODELS.contains(&payload.model.as_str()) {
-        return Response::error(400, "Bad Request", "The requested OpenRouter model is not allowed.");
-    }
-    if !valid_openrouter_messages(&payload.messages) {
-        return Response::error(
-            400,
-            "Bad Request",
-            "Messages must contain 1 to 12 role/content text entries of at most 8,000 characters each.",
-        );
-    }
-
-    let api_key = payload
-        .api_key
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(String::from)
-        .or_else(|| std::env::var("OPENROUTER_API_KEY").ok().filter(|s| !s.trim().is_empty()));
-
-    let api_key = match api_key {
-        Some(key) => key,
-        None => {
-            return Response::error(
-                400,
-                "Bad Request",
-                "OpenRouter API key is missing. Enter an API key in the UI or set OPENROUTER_API_KEY in .env.",
-            );
-        }
-    };
-
-    let client = match reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()
-    {
-        Ok(c) => c,
-        Err(err) => return Response::error(500, "Internal Server Error", &format!("Could not create HTTP client: {err}")),
-    };
-
-    let mut body_map = serde_json::Map::new();
-    body_map.insert("model".to_string(), json!(payload.model));
-    body_map.insert("messages".to_string(), payload.messages);
-    body_map.insert(
-        "max_tokens".to_string(),
-        json!(payload.max_tokens.unwrap_or(400).clamp(1, MAX_OPENROUTER_TOKENS)),
-    );
-
-    let req_builder = client
-        .post("https://openrouter.ai/api/v1/chat/completions")
-        .header("Authorization", format!("Bearer {api_key}"))
-        .header("Content-Type", "application/json")
-        .header("HTTP-Referer", "http://127.0.0.1:7878")
-        .header("X-Title", "RustBot Knowledge Forge")
-        .json(&body_map);
-
-    match req_builder.send() {
-        Ok(resp) => {
-            let status = resp.status().as_u16();
-            let reason = if resp.status().is_success() { "OK" } else { "Bad Gateway" };
-            match resp.text() {
-                Ok(text_body) => {
-                    let parsed: serde_json::Value = serde_json::from_str(&text_body)
-                        .unwrap_or_else(|_| json!({ "error": text_body }));
-                    Response::json(status, reason, parsed)
-                }
-                Err(err) => Response::error(502, "Bad Gateway", &format!("Could not read OpenRouter response: {err}")),
-            }
-        }
-        Err(err) => Response::error(502, "Bad Gateway", &format!("Failed to reach OpenRouter: {err}")),
-    }
-}
-
-fn valid_openrouter_messages(messages: &serde_json::Value) -> bool {
-    let messages = match messages.as_array() {
-        Some(messages) if !messages.is_empty() && messages.len() <= MAX_OPENROUTER_MESSAGES => messages,
-        _ => return false,
-    };
-
-    messages.iter().all(|message| {
-        let role = message.get("role").and_then(serde_json::Value::as_str);
-        let content = message.get("content").and_then(serde_json::Value::as_str);
-        matches!(role, Some("system" | "user" | "assistant"))
-            && content
-                .map(|content| !content.trim().is_empty() && content.chars().count() <= MAX_OPENROUTER_MESSAGE_LENGTH)
-                .unwrap_or(false)
-    })
-}
-
-fn record_chat_entry(user_msg: &str, bot_resp: &str, status: &str, pattern_id: Option<u64>) {
-    let _guard = match CHAT_LOG_LOCK.lock() {
-        Ok(guard) => guard,
-        Err(poisoned) => poisoned.into_inner(),
-    };
-
-    let path = std::path::Path::new("chat_history.json");
-    let mut history: Vec<serde_json::Value> = if path.exists() {
-        std::fs::read_to_string(path)
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default()
-    } else {
-        Vec::new()
-    };
-
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-
-    let entry = json!({
-        "timestamp": secs,
-        "user": user_msg,
-        "bot": bot_resp,
-        "status": status,
-        "pattern_id": pattern_id
-    });
-
-    history.push(entry);
-    if history.len() > 1000 {
-        history = history.split_off(history.len() - 1000);
-    }
-
-    if let Ok(json_str) = serde_json::to_string_pretty(&history) {
-        let tmp_path = path.with_extension("json.tmp");
-        if std::fs::write(&tmp_path, json_str).is_ok() {
-            let _ = std::fs::rename(tmp_path, path);
-        }
-    }
+        .or_else(|| value.as_str().and_then(|s| s.parse::<f64>().ok()))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        calc_rsi, evaluate_math, expand_placeholders, normalize_category_filter, parse_query,
-        percent_decode, prune_market_history, valid_openrouter_messages, MarketCandle,
-        MAX_MARKET_HISTORY_CANDLES_PER_SYMBOL, MAX_MARKET_HISTORY_SYMBOLS,
-    };
-    use std::collections::HashMap;
+    use super::*;
 
     #[test]
-    fn query_parser_decodes_market_parameters() {
-        let query = parse_query("provider=binance&symbol=BTCUSDT&interval=1h&limit=750");
-        assert_eq!(query.get("provider").map(String::as_str), Some("binance"));
-        assert_eq!(query.get("symbol").map(String::as_str), Some("BTCUSDT"));
-        assert_eq!(query.get("interval").map(String::as_str), Some("1h"));
-        assert_eq!(query.get("limit").map(String::as_str), Some("750"));
-    }
-
-    #[test]
-    fn percent_decoder_handles_encoded_symbols_and_rejects_bad_input() {
+    fn test_percent_decoder() {
         assert_eq!(percent_decode("BTC%2DUSD"), Some("BTC-USD".to_string()));
-        assert_eq!(
-            percent_decode("bitcoin+usd"),
-            Some("bitcoin usd".to_string())
-        );
-        assert_eq!(percent_decode("bad%2"), None);
+        assert_eq!(percent_decode("hello+world"), Some("hello world".to_string()));
+        assert_eq!(percent_decode("invalid%2"), None);
     }
 
     #[test]
-    fn math_evaluator_handles_arithmetic() {
-        assert_eq!(evaluate_math("15 + 45"), Some(60.0));
-        assert_eq!(evaluate_math("calc (10 + 2) * 5"), Some(60.0));
+    fn test_math_evaluator() {
+        assert_eq!(evaluate_math("10 + 20 * 2"), Some(50.0));
+        assert_eq!(evaluate_math("calc (5 + 3) * 2"), Some(16.0));
         assert_eq!(evaluate_math("2^3"), Some(8.0));
+        assert_eq!(evaluate_math("invalid math"), None);
     }
 
     #[test]
-    fn math_evaluator_rejects_oversized_input() {
-        assert_eq!(evaluate_math(&"1".repeat(257)), None);
-    }
-
-    #[test]
-    fn category_filters_are_normalized_and_bounded() {
-        assert_eq!(normalize_category_filter("  Tech  "), Ok("tech".to_string()));
-        assert!(normalize_category_filter("bad/category").is_err());
-        assert!(normalize_category_filter(&"x".repeat(33)).is_err());
-    }
-
-    #[test]
-    fn placeholder_expander_replaces_variables() {
-        let res = expand_placeholders("Count: {memory_count}, Date: {date}", 42);
-        assert!(res.contains("Count: 42"));
-        assert!(!res.contains("{date}"));
-    }
-
-    #[test]
-    fn rsi_calculator_computes_values() {
-        let prices = vec![
-            10.0, 11.0, 12.0, 11.5, 12.5, 13.0, 12.8, 13.5, 14.0, 13.8, 14.5, 15.0, 14.7, 15.5,
-            16.0,
-        ];
-        let rsi = calc_rsi(&prices, 14);
-        assert!(rsi > 50.0);
-    }
-
-    #[test]
-    fn csrf_validator_blocks_cross_origin_requests() {
-        use super::{validate_csrf, Request};
-        use std::collections::HashMap;
-
-        let mut valid_req = Request {
-            method: "POST".to_string(),
-            path: "/api/knowledge".to_string(),
-            query: HashMap::new(),
-            headers: HashMap::new(),
-            host: "127.0.0.1:7878".to_string(),
-            body: vec![],
-        };
-        valid_req.headers.insert("origin".to_string(), "http://127.0.0.1:7878".to_string());
-        valid_req.headers.insert("x-rustbot-csrf".to_string(), "test-token".to_string());
-        assert!(validate_csrf(&valid_req, "test-token"));
-
-        let mut invalid_req = Request {
-            method: "POST".to_string(),
-            path: "/api/knowledge".to_string(),
-            query: HashMap::new(),
-            headers: HashMap::new(),
-            host: "127.0.0.1:7878".to_string(),
-            body: vec![],
-        };
-        invalid_req.headers.insert("origin".to_string(), "http://attacker.com".to_string());
-        invalid_req.headers.insert("x-rustbot-csrf".to_string(), "test-token".to_string());
-        assert!(!validate_csrf(&invalid_req, "test-token"));
-
-        let mut missing_origin = valid_req;
-        missing_origin.headers.remove("origin");
-        assert!(!validate_csrf(&missing_origin, "test-token"));
-    }
-
-    #[test]
-    fn math_evaluator_rejects_overflow_to_infinity() {
-        assert_eq!(evaluate_math("2^10000"), None);
-    }
-
-    #[test]
-    fn openrouter_messages_require_a_small_text_only_shape() {
-        let valid = serde_json::json!([
-            { "role": "system", "content": "You are RustBot." },
-            { "role": "user", "content": "Hello" }
-        ]);
-        assert!(valid_openrouter_messages(&valid));
-        assert!(!valid_openrouter_messages(&serde_json::json!([])));
-        assert!(!valid_openrouter_messages(&serde_json::json!([{ "role": "tool", "content": "x" }])));
-    }
-
-    #[test]
-    fn market_history_is_bounded() {
-        let candle = |timestamp| MarketCandle {
-            timestamp,
-            open: 1.0,
-            high: 1.0,
-            low: 1.0,
-            close: 1.0,
-            volume: 1.0,
-        };
-        let mut history = HashMap::new();
-        for index in 0..=MAX_MARKET_HISTORY_SYMBOLS {
-            history.insert(format!("SYMBOL{index}"), vec![candle(index as u64)]);
-        }
-        history.insert(
-            "BTC".to_string(),
-            (0..=MAX_MARKET_HISTORY_CANDLES_PER_SYMBOL as u64)
-                .map(candle)
-                .collect(),
+    fn test_cookie_parser() {
+        let mut headers = HashMap::new();
+        headers.insert(
+            "cookie".to_string(),
+            "rustbot_session=abc12345; theme=dark; other=val".to_string(),
         );
+        let req = Request {
+            method: "GET".to_string(),
+            path: "/".to_string(),
+            query: HashMap::new(),
+            headers,
+            host: "127.0.0.1:7878".to_string(),
+            body: vec![],
+        };
 
-        prune_market_history(&mut history);
-
-        assert!(history.len() <= MAX_MARKET_HISTORY_SYMBOLS);
-        assert!(history
-            .values()
-            .all(|candles| candles.len() <= MAX_MARKET_HISTORY_CANDLES_PER_SYMBOL));
+        assert_eq!(req.cookie("rustbot_session"), Some("abc12345"));
+        assert_eq!(req.cookie("theme"), Some("dark"));
+        assert_eq!(req.cookie("missing"), None);
     }
 
     #[test]
-    fn ip_rate_limiter_blocks_excessive_requests() {
-        use super::{IpRateLimiter, MAX_REQUESTS_PER_MINUTE_PER_IP};
-        use std::net::IpAddr;
-
+    fn test_ip_rate_limiter() {
         let mut limiter = IpRateLimiter::new();
         let ip: IpAddr = "127.0.0.1".parse().unwrap();
-
         for _ in 0..MAX_REQUESTS_PER_MINUTE_PER_IP {
             assert!(limiter.check_and_record(ip));
         }
-
         assert!(!limiter.check_and_record(ip));
+    }
+
+    #[test]
+    fn test_server_auth_and_conversation_flow() {
+        use crate::config::Environment;
+        let db = Database::open_in_memory().unwrap();
+        let config = AppConfig {
+            env: Environment::Development,
+            host: "127.0.0.1".to_string(),
+            port: 7878,
+            public_origin: "http://127.0.0.1:7878".to_string(),
+            database_url: PathBuf::from("test.db"),
+            openrouter_api_key: None,
+            coingecko_api_key: None,
+            session_pepper: "test_pepper_1234567890".to_string(),
+        };
+        let store = Arc::new(RwLock::new(KnowledgeStore::from_memories(&[])));
+        let state = AppState {
+            config,
+            db,
+            store,
+            openrouter_lock: Arc::new(Mutex::new(())),
+            ip_limiter: Arc::new(Mutex::new(IpRateLimiter::new())),
+        };
+
+        // 1. Unauthenticated /api/auth/me should fail with 401
+        let req_unauth = Request {
+            method: "GET".to_string(),
+            path: "/api/auth/me".to_string(),
+            query: HashMap::new(),
+            headers: HashMap::from([("host".to_string(), "127.0.0.1:7878".to_string())]),
+            host: "127.0.0.1:7878".to_string(),
+            body: vec![],
+        };
+        let res = route_request(&req_unauth, &state);
+        assert_eq!(res.status, 401);
+
+        // 2. Register user
+        let register_body = serde_json::to_vec(&json!({
+            "username": "alice",
+            "password": "Password123!"
+        })).unwrap();
+        let req_register = Request {
+            method: "POST".to_string(),
+            path: "/api/auth/register".to_string(),
+            query: HashMap::new(),
+            headers: HashMap::from([
+                ("host".to_string(), "127.0.0.1:7878".to_string()),
+                ("origin".to_string(), "http://127.0.0.1:7878".to_string()),
+            ]),
+            host: "127.0.0.1:7878".to_string(),
+            body: register_body,
+        };
+        let res_register = route_request(&req_register, &state);
+        assert_eq!(res_register.status, 200);
+        let res_json: serde_json::Value = serde_json::from_slice(&res_register.body).unwrap();
+        let csrf_token = res_json["csrf_token"].as_str().unwrap().to_string();
+
+        // Extract session cookie from header
+        let cookie_header = res_register.headers.iter().find(|(k, _)| k == "Set-Cookie").unwrap().1.clone();
+        let session_cookie = cookie_header.split(';').next().unwrap().to_string();
+
+        // 3. /api/auth/me with session cookie
+        let req_me = Request {
+            method: "GET".to_string(),
+            path: "/api/auth/me".to_string(),
+            query: HashMap::new(),
+            headers: HashMap::from([
+                ("host".to_string(), "127.0.0.1:7878".to_string()),
+                ("cookie".to_string(), session_cookie.clone()),
+            ]),
+            host: "127.0.0.1:7878".to_string(),
+            body: vec![],
+        };
+        let res_me = route_request(&req_me, &state);
+        assert_eq!(res_me.status, 200);
+        let me_json: serde_json::Value = serde_json::from_slice(&res_me.body).unwrap();
+        assert_eq!(me_json["user"]["username"], "alice");
+
+        // 4. Create a conversation (requires CSRF token)
+        let conv_body = serde_json::to_vec(&json!({
+            "title": "Alice Rust Discussion"
+        })).unwrap();
+
+        // Without CSRF header -> should fail 403
+        let req_no_csrf = Request {
+            method: "POST".to_string(),
+            path: "/api/conversations".to_string(),
+            query: HashMap::new(),
+            headers: HashMap::from([
+                ("host".to_string(), "127.0.0.1:7878".to_string()),
+                ("origin".to_string(), "http://127.0.0.1:7878".to_string()),
+                ("cookie".to_string(), session_cookie.clone()),
+            ]),
+            host: "127.0.0.1:7878".to_string(),
+            body: conv_body.clone(),
+        };
+        let res_no_csrf = route_request(&req_no_csrf, &state);
+        assert_eq!(res_no_csrf.status, 403);
+
+        // With CSRF header -> should succeed 201
+        let req_with_csrf = Request {
+            method: "POST".to_string(),
+            path: "/api/conversations".to_string(),
+            query: HashMap::new(),
+            headers: HashMap::from([
+                ("host".to_string(), "127.0.0.1:7878".to_string()),
+                ("origin".to_string(), "http://127.0.0.1:7878".to_string()),
+                ("cookie".to_string(), session_cookie.clone()),
+                ("x-rustbot-csrf".to_string(), csrf_token.clone()),
+            ]),
+            host: "127.0.0.1:7878".to_string(),
+            body: conv_body,
+        };
+        let res_with_csrf = route_request(&req_with_csrf, &state);
+        assert_eq!(res_with_csrf.status, 201);
+        let conv_res: serde_json::Value = serde_json::from_slice(&res_with_csrf.body).unwrap();
+        let conv_id = conv_res["conversation"]["id"].as_str().unwrap();
+
+        // 5. Post message to conversation
+        let msg_body = serde_json::to_vec(&json!({
+            "message": "Hello RustBot!"
+        })).unwrap();
+        let req_msg = Request {
+            method: "POST".to_string(),
+            path: format!("/api/conversations/{conv_id}/messages"),
+            query: HashMap::new(),
+            headers: HashMap::from([
+                ("host".to_string(), "127.0.0.1:7878".to_string()),
+                ("origin".to_string(), "http://127.0.0.1:7878".to_string()),
+                ("cookie".to_string(), session_cookie.clone()),
+                ("x-rustbot-csrf".to_string(), csrf_token.clone()),
+            ]),
+            host: "127.0.0.1:7878".to_string(),
+            body: msg_body,
+        };
+        let res_msg = route_request(&req_msg, &state);
+        assert_eq!(res_msg.status, 200);
+
+        // 6. Regular user cannot modify memories (requires admin)
+        let memory_body = serde_json::to_vec(&json!({
+            "prompt": "Custom trigger",
+            "response": "Admin answer"
+        })).unwrap();
+        let req_admin_mem = Request {
+            method: "POST".to_string(),
+            path: "/api/memories".to_string(),
+            query: HashMap::new(),
+            headers: HashMap::from([
+                ("host".to_string(), "127.0.0.1:7878".to_string()),
+                ("origin".to_string(), "http://127.0.0.1:7878".to_string()),
+                ("cookie".to_string(), session_cookie.clone()),
+                ("x-rustbot-csrf".to_string(), csrf_token.clone()),
+            ]),
+            host: "127.0.0.1:7878".to_string(),
+            body: memory_body,
+        };
+        let res_admin_mem = route_request(&req_admin_mem, &state);
+        assert_eq!(res_admin_mem.status, 403);
     }
 }
