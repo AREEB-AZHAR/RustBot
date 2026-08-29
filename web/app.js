@@ -150,7 +150,8 @@ const elements = {
 };
 
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-const narrowWorkspace = window.matchMedia("(max-width: 1180px)");
+const narrowWorkspace = window.matchMedia("(max-width: 1024px)");
+const mobileWorkspace = window.matchMedia("(max-width: 860px)");
 let csrfToken = document.querySelector('meta[name="rustbot-csrf-token"]')?.getAttribute("content") || "";
 
 document.addEventListener("DOMContentLoaded", initialize);
@@ -211,14 +212,20 @@ function bindEvents() {
     button.addEventListener("click", () => handleNavigation(button.dataset.nav));
   });
 
-  elements.newChatButton.addEventListener("click", startNewConversation);
+  elements.newChatButton.addEventListener("click", () => {
+    startNewConversation();
+    closeRailMobile();
+  });
   elements.workspaceToggle.addEventListener("click", () => {
     handleNavigation(state.workspace === "market" ? "chat" : "market");
   });
   elements.teachButton.addEventListener("click", () => openTeachingForm());
   elements.knowledgeToggle.addEventListener("click", toggleKnowledgePanel);
   elements.knowledgeClose.addEventListener("click", closeKnowledgePanel);
-  elements.panelOverlay.addEventListener("click", closeKnowledgePanel);
+  elements.panelOverlay.addEventListener("click", () => {
+    closeKnowledgePanel();
+    closeRailMobile();
+  });
   elements.addMemoryButton.addEventListener("click", () => toggleAddMemoryForm());
   elements.cancelAddMemory.addEventListener("click", () => toggleAddMemoryForm(false));
   elements.addMemoryForm.addEventListener("submit", saveManualMemory);
@@ -369,17 +376,42 @@ function bindEvents() {
       restorePanelPreference();
     }
   });
+
+  mobileWorkspace.addEventListener("change", () => {
+    restoreRailPreference();
+  });
 }
 
 function toggleRail() {
-  const isCollapsed = elements.appShell.classList.toggle("rail-collapsed");
-  if (elements.railExpandBtn) {
-    elements.railExpandBtn.hidden = !isCollapsed;
+  if (mobileWorkspace.matches) {
+    const isOpen = elements.appShell.classList.toggle("rail-open");
+    elements.panelOverlay.classList.toggle("is-visible", isOpen);
+    document.body.classList.toggle("panel-open", isOpen);
+  } else {
+    const isCollapsed = elements.appShell.classList.toggle("rail-collapsed");
+    if (elements.railExpandBtn) {
+      elements.railExpandBtn.hidden = !isCollapsed;
+    }
+    localStorage.setItem("rustbot-rail-collapsed", isCollapsed ? "true" : "false");
   }
-  localStorage.setItem("rustbot-rail-collapsed", isCollapsed ? "true" : "false");
+}
+
+function closeRailMobile() {
+  if (mobileWorkspace.matches && elements.appShell.classList.contains("rail-open")) {
+    elements.appShell.classList.remove("rail-open");
+    elements.panelOverlay.classList.remove("is-visible");
+    document.body.classList.remove("panel-open");
+  }
 }
 
 function restoreRailPreference() {
+  if (mobileWorkspace.matches) {
+    elements.appShell.classList.remove("rail-open");
+    if (elements.railExpandBtn) {
+      elements.railExpandBtn.hidden = false;
+    }
+    return;
+  }
   const isCollapsed = localStorage.getItem("rustbot-rail-collapsed") === "true";
   elements.appShell.classList.toggle("rail-collapsed", isCollapsed);
   if (elements.railExpandBtn) {
@@ -896,7 +928,10 @@ function renderConversationsList() {
     });
 
     item.append(title, delBtn);
-    item.addEventListener("click", () => selectConversation(conv.id));
+    item.addEventListener("click", () => {
+      selectConversation(conv.id);
+      closeRailMobile();
+    });
     elements.railConversationsList.append(item);
   });
 }
@@ -1193,6 +1228,7 @@ function scrollConversation() {
 }
 
 function handleNavigation(destination) {
+  closeRailMobile();
   document.querySelectorAll("[data-nav]").forEach((button) => {
     const active = button.dataset.nav === destination;
     button.classList.toggle("is-active", active);
