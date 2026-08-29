@@ -10,6 +10,14 @@
 # Local data & database runtime files
 chat_history.json
 market_history.json
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+rustbot.db
+
+# Documentation / specs
+implementation.md
 
 # IDE and OS metadata
 .vscode/
