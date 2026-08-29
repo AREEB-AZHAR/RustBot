@@ -527,6 +527,8 @@ button:disabled {
 .chat-panel {
   display: flex;
   flex-direction: column;
+  flex: 1 1 0;
+  width: 100%;
   height: 100%;
   min-width: 0;
   min-height: 0;
@@ -693,7 +695,7 @@ button:disabled {
   letter-spacing: -0.045em;
 }
 
-.market-hero > div > p:last-child {
+.market-hero>div>p:last-child {
   max-width: 690px;
   margin: 13px 0 0;
   color: var(--muted);
@@ -714,7 +716,7 @@ button:disabled {
   box-shadow: 0 9px 24px rgba(85, 53, 29, 0.06);
 }
 
-.research-badge > span {
+.research-badge>span {
   display: grid;
   width: 30px;
   height: 30px;
@@ -764,7 +766,7 @@ button:disabled {
 
 .market-card-heading,
 .report-heading,
-.chart-card > div:first-child {
+.chart-card>div:first-child {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -805,7 +807,7 @@ button:disabled {
   min-width: 0;
 }
 
-.market-fields label > span {
+.market-fields label>span {
   display: block;
   margin: 0 0 6px 2px;
   color: #777b73;
@@ -1070,7 +1072,7 @@ button:disabled {
   font-size: 25px;
 }
 
-.market-empty > p:not(.header-eyebrow) {
+.market-empty>p:not(.header-eyebrow) {
   max-width: 390px;
   margin: 9px 0 0;
   color: var(--muted);
@@ -1156,7 +1158,7 @@ button:disabled {
   border-radius: 15px;
 }
 
-.probability-card > div:first-child {
+.probability-card>div:first-child {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -1254,7 +1256,7 @@ button:disabled {
   font-size: 9px;
 }
 
-.chart-card > div span {
+.chart-card>div span {
   color: #7e8982;
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   font-size: 7px;
@@ -1279,7 +1281,7 @@ button:disabled {
   gap: 9px;
 }
 
-.model-note > span {
+.model-note>span {
   display: grid;
   width: 19px;
   height: 19px;
@@ -1502,7 +1504,7 @@ button:disabled {
   letter-spacing: 0.08em;
 }
 
-.starter-card > span:nth-child(2) {
+.starter-card>span:nth-child(2) {
   display: flex;
   min-width: 0;
   grid-column: 1 / -1;
@@ -2021,7 +2023,9 @@ button:disabled {
 .knowledge-panel {
   position: relative;
   display: flex;
-  min-width: 0;
+  flex: 0 0 332px;
+  width: 332px;
+  min-width: 332px;
   min-height: 0;
   height: 100%;
   max-height: 100%;
@@ -2071,7 +2075,7 @@ button:disabled {
   gap: 13px;
 }
 
-.knowledge-summary > div {
+.knowledge-summary>div {
   display: flex;
   min-width: 58px;
   flex-direction: column;
@@ -2155,7 +2159,7 @@ button:disabled {
   font-size: 18px;
 }
 
-.add-memory-form label + label {
+.add-memory-form label+label {
   margin-top: 12px;
 }
 
@@ -2552,6 +2556,7 @@ button:disabled {
     opacity: 0;
     transform: translateY(7px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -2559,12 +2564,14 @@ button:disabled {
 }
 
 @keyframes thinking {
+
   0%,
   60%,
   100% {
     opacity: 0.32;
     transform: translateY(0);
   }
+
   30% {
     opacity: 1;
     transform: translateY(-3px);
@@ -2584,6 +2591,7 @@ button:disabled {
     box-shadow: 0 0 0 6px rgba(228, 98, 50, 0.11);
     transform: translateY(5px);
   }
+
   100% {
     background: var(--surface);
     border-color: rgba(202, 192, 175, 0.72);
@@ -2597,6 +2605,7 @@ button:disabled {
     opacity: 0;
     transform: translateY(12px) scale(0.98);
   }
+
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
@@ -2604,14 +2613,10 @@ button:disabled {
 }
 
 @media (max-width: 1180px) {
-  .app-shell,
-  .app-shell.knowledge-collapsed {
-    grid-template-columns: 220px minmax(0, 1fr);
-  }
-
-  .app-shell.knowledge-collapsed .knowledge-panel {
-    display: flex;
-    padding: 24px 20px 18px;
+  .left-rail {
+    flex: 0 0 220px;
+    width: 220px;
+    min-width: 220px;
   }
 
   .knowledge-panel {
@@ -2632,6 +2637,7 @@ button:disabled {
 
   .knowledge-panel.is-open {
     transform: translateX(0);
+    display: flex !important;
   }
 
   .panel-overlay {
@@ -2868,7 +2874,7 @@ button:disabled {
     font-size: 34px;
   }
 
-  .market-hero > div > p:last-child {
+  .market-hero>div>p:last-child {
     font-size: 11px;
   }
 
@@ -2911,7 +2917,7 @@ button:disabled {
     grid-template-columns: 1fr 1fr;
   }
 
-  .chart-card > div:first-child {
+  .chart-card>div:first-child {
     align-items: flex-start;
     flex-direction: column;
     gap: 2px;
@@ -3056,6 +3062,7 @@ button:disabled {
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   *,
   *::before,
   *::after {
@@ -3133,6 +3140,7 @@ button:disabled {
     opacity: 0;
     transform: scale(0.84) translateY(24px);
   }
+
   100% {
     opacity: 1;
     transform: scale(1) translateY(0);
@@ -3479,8 +3487,8 @@ button:disabled {
 
 /* Security Hardening - Extracted Inline Styles */
 .market-api-key-input {
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(228,98,50,0.4);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(228, 98, 50, 0.4);
   color: #fff;
   padding: 8px 12px;
   border-radius: 8px;
@@ -3488,8 +3496,8 @@ button:disabled {
 }
 
 .analysis-breakdown-card {
-  background: rgba(255,255,255,0.03);
-  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 8px;
   padding: 12px;
   margin: 12px 0;
@@ -3528,7 +3536,7 @@ button:disabled {
   border: 1px solid rgba(52, 211, 153, 0.3);
   border-radius: 16px;
   padding: 16px;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
 }
 
 .bot-chart-header {
@@ -3563,8 +3571,8 @@ button:disabled {
 }
 
 .bot-metric-card {
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   padding: 10px;
   border-radius: 10px;
 }
@@ -3609,8 +3617,8 @@ button:disabled {
 }
 
 .memory-category-select {
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   color: #fff;
   padding: 6px 10px;
   border-radius: 6px;
@@ -3650,7 +3658,7 @@ button:disabled {
 }
 
 .clear-history-danger-btn {
-  border-color: rgba(220,38,38,0.4);
+  border-color: rgba(220, 38, 38, 0.4);
   color: #f87171;
 }
 
@@ -3661,7 +3669,7 @@ button:disabled {
 }
 
 .code-block-pre {
-  background: rgba(0,0,0,0.3);
+  background: rgba(0, 0, 0, 0.3);
   padding: 10px;
   border-radius: 6px;
   overflow-x: auto;
@@ -3670,7 +3678,7 @@ button:disabled {
 }
 
 .inline-code-badge {
-  background: rgba(255,255,255,0.1);
+  background: rgba(255, 255, 255, 0.1);
   padding: 2px 6px;
   border-radius: 4px;
 }
@@ -3810,6 +3818,7 @@ button:disabled {
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 12px;
   margin-bottom: 12px;
+  margin-top: 5px;
 }
 
 .user-badge {
@@ -4124,6 +4133,7 @@ button:disabled {
     transform: scale(0.92);
     opacity: 0.75;
   }
+
   to {
     transform: scale(1.1);
     opacity: 1;
@@ -4200,4 +4210,3 @@ button:disabled {
 .conv-item-del-btn:active {
   transform: scale(0.95);
 }
-
