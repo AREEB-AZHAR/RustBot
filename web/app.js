@@ -532,6 +532,11 @@ async function sendMessage(rawMessage) {
       save: false,
     });
 
+    if (result.status === "unknown") {
+      row.querySelector(".message-body").append(createTeachCard(message));
+      announce("RustBot does not know that answer yet. A teaching form is ready.");
+    }
+
     // Update conversation title if needed
     const convObj = state.conversations.find((c) => c.id === state.activeConversationId);
     if (convObj && (!convObj.title || convObj.title === "New Conversation" || convObj.title === "New Chat")) {

@@ -34,8 +34,15 @@ const MAX_AI_REQUESTS_PER_HOUR_PER_USER: i64 = 60;
 const SESSION_TTL_SECONDS: i64 = 7 * 86400; // 7 days
 
 const OPENROUTER_MODELS: &[&str] = &[
+    "openrouter/free",
     "google/gemma-4-26b-a4b-it:free",
     "google/gemma-4-31b-it:free",
+    "liquid/lfm-2.5-2.6b:free",
+    "z-ai/glm-5.2:free",
+    "minimax/minimax-m3:free",
+    "nvidia/nemotron-3.5-lightning:free",
+    "cohere/north-mini-code:free",
+    "nvidia/nemotron-3-super-120b-a12b:free",
 ];
 
 #[derive(Clone)]
@@ -733,16 +740,25 @@ fn handle_post_message(request: &Request, state: &AppState, conv_id: &str) -> Re
     } else if let Some((_sym, price_resp)) = check_market_intent(msg) {
         (price_resp, "market_matched")
     } else {
-        let store_guard = state.store.read().unwrap();
-        match store_guard.find_best_match(msg) {
-            Some(pattern) => {
-                let expanded = expand_placeholders(&pattern.response, store_guard.patterns().len());
-                (expanded, "memory_matched")
+        let match_result = {
+            let store_guard = state.store.read().unwrap();
+            store_guard.find_best_match(msg).map(|pattern| {
+                expand_placeholders(&pattern.response, store_guard.patterns().len())
+            })
+        };
+
+        match match_result {
+            Some(expanded) => (expanded, "memory_matched"),
+            None => {
+                if let Some(ai_response) = call_openrouter_fallback(state, &user.id, conv_id, msg) {
+                    (ai_response, "openrouter_ai")
+                } else {
+                    (
+                        "That isn't in my memory yet. Feel free to teach me using the Teach button!".to_string(),
+                        "unknown",
+                    )
+                }
             }
-            None => (
-                "That isn't in my memory yet. Feel free to ask another question!".to_string(),
-                "unknown",
-            ),
         }
     };
 
@@ -767,6 +783,109 @@ fn handle_post_message(request: &Request, state: &AppState, conv_id: &str) -> Re
             "status": bot_status
         }),
     )
+}
+
+fn call_openrouter_fallback(
+    state: &AppState,
+    user_id: &str,
+    conv_id: &str,
+    msg: &str,
+) -> Option<String> {
+    let server_key = match &state.config.openrouter_api_key {
+        Some(k) if !k.trim().is_empty() => k.trim(),
+        _ => return None,
+    };
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    let recent_usage = state
+        .db
+        .count_user_requests_since(user_id, now - 3600)
+        .unwrap_or(0);
+    if recent_usage >= MAX_AI_REQUESTS_PER_HOUR_PER_USER {
+        return None;
+    }
+
+    let _guard = state.openrouter_lock.lock().ok()?;
+
+    let history_messages = state
+        .db
+        .list_messages_for_conversation(conv_id, user_id)
+        .unwrap_or_default();
+
+    let mut messages_json = Vec::new();
+    messages_json.push(json!({
+        "role": "system",
+        "content": "You are RustBot, a concise, high-performance, and helpful AI assistant built in Rust. Format responses with clean Markdown when helpful."
+    }));
+
+    let start_idx = history_messages.len().saturating_sub(8);
+    for m in &history_messages[start_idx..] {
+        messages_json.push(json!({
+            "role": if m.role == "assistant" { "assistant" } else { "user" },
+            "content": m.content
+        }));
+    }
+
+    if history_messages.last().map(|m| m.content.as_str()) != Some(msg) {
+        messages_json.push(json!({
+            "role": "user",
+            "content": msg
+        }));
+    }
+
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(35))
+        .build()
+        .ok()?;
+
+    for &model in OPENROUTER_MODELS {
+        let body = json!({
+            "model": model,
+            "messages": messages_json,
+            "max_tokens": 1000
+        });
+
+        let resp = client
+            .post("https://openrouter.ai/api/v1/chat/completions")
+            .header("Authorization", format!("Bearer {server_key}"))
+            .header("Content-Type", "application/json")
+            .header("HTTP-Referer", &state.config.public_origin)
+            .header("X-Title", "RustBot Knowledge Forge")
+            .json(&body)
+            .send();
+
+        match resp {
+            Ok(r) => {
+                let status = r.status();
+                if status.is_success() {
+                    if let Ok(parsed) = r.json::<serde_json::Value>() {
+                        let in_tok = parsed["usage"]["prompt_tokens"].as_i64();
+                        let out_tok = parsed["usage"]["completion_tokens"].as_i64();
+                        let _ = state.db.record_ai_usage(user_id, model, in_tok, out_tok, "success");
+
+                        if let Some(content) = parsed["choices"][0]["message"]["content"].as_str() {
+                            let trimmed = content.trim();
+                            if !trimmed.is_empty() {
+                                return Some(trimmed.to_string());
+                            }
+                        }
+                    }
+                } else {
+                    let err_text = r.text().unwrap_or_default();
+                    eprintln!("OpenRouter fallback error (model: {model}, status: {status}): {err_text}");
+                    let _ = state.db.record_ai_usage(user_id, model, None, None, "provider_error");
+                }
+            }
+            Err(err) => {
+                eprintln!("OpenRouter request failed: {err}");
+            }
+        }
+    }
+
+    None
 }
 
 fn handle_delete_conversation(
