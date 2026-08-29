@@ -879,7 +879,7 @@ fn call_openrouter_fallback(
     let mut messages_json = Vec::new();
     messages_json.push(json!({
         "role": "system",
-        "content": "You are RustBot, a concise, high-performance, and helpful AI assistant built in Rust. Format responses with clean Markdown when helpful."
+        "content": "You are RustBot, an intelligent, analytical, and helpful AI assistant built in pure Rust. Always provide constructive, detailed, and insightful answers. When asked for market scenarios, price projections, weather, or current events, provide analytical breakdowns, price ranges, historical trends, and key risk factors instead of issuing generic refusal disclaimers. Format responses with clean, readable Markdown."
     }));
 
     let start_idx = history_messages.len().saturating_sub(8);
@@ -1866,9 +1866,26 @@ fn check_market_intent(prompt: &str) -> Option<(String, String)> {
         || lower.contains("forecast")
         || lower.contains("signal")
         || lower.contains("analysis")
-        || lower.contains("technical");
+        || lower.contains("technical")
+        || lower.contains("reach")
+        || lower.contains("how high")
+        || lower.contains("how low")
+        || lower.contains("target")
+        || lower.contains("going up")
+        || lower.contains("going down")
+        || lower.contains("up or down")
+        || lower.contains("market conditions")
+        || lower.contains("support")
+        || lower.contains("resistance")
+        || lower.contains("bullish")
+        || lower.contains("bearish")
+        || lower.contains("rally")
+        || lower.contains("dump")
+        || lower.contains("pump");
 
-    if !is_price && !is_prediction {
+    let is_market_query = is_price || is_prediction || lower.contains("market");
+
+    if !is_market_query {
         return None;
     }
 
@@ -1888,6 +1905,12 @@ fn check_market_intent(prompt: &str) -> Option<(String, String)> {
         ("ADAUSDT", "Cardano (ADA)")
     } else if lower.contains("avax") || lower.contains("avalanche") {
         ("AVAXUSDT", "Avalanche (AVAX)")
+    } else if lower.contains("link") || lower.contains("chainlink") {
+        ("LINKUSDT", "Chainlink (LINK)")
+    } else if lower.contains("sui") {
+        ("SUIUSDT", "Sui (SUI)")
+    } else if lower.contains("near") {
+        ("NEARUSDT", "NEAR Protocol (NEAR)")
     } else {
         return None;
     };
