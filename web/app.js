@@ -529,6 +529,7 @@ async function sendMessage(rawMessage) {
     const botText = result.assistant_message?.content || "Message received.";
     const row = appendMessage("bot", botText, {
       responseTimeMs,
+      status: result.status,
       save: false,
     });
 
@@ -588,6 +589,23 @@ function appendMessage(role, text, options = {}) {
     meta.append(responseTime);
   }
 
+  if (role === "bot" && options.status) {
+    const badge = document.createElement("span");
+    badge.className = `engine-badge badge-${options.status}`;
+    if (options.status === "openrouter_ai" || options.status === "ai_learned_and_cached") {
+      badge.innerHTML = `🌐 Web AI · Learned to memory`;
+      badge.title = "Answer retrieved from Web AI models and auto-cached into local Knowledge Forge for instant future answers.";
+    } else if (options.status === "memory_matched") {
+      badge.innerHTML = `⚡ Knowledge Forge (<1ms)`;
+      badge.title = "Direct instant match from local memory forge.";
+    } else if (options.status === "math_matched") {
+      badge.innerHTML = `🧮 Math Engine`;
+    } else if (options.status === "market_matched") {
+      badge.innerHTML = `📈 Market Engine`;
+    }
+    meta.append(badge);
+  }
+
   const bubble = document.createElement("div");
   bubble.className = `message-bubble${options.error ? " is-error" : ""}`;
   if (role === "bot" && !options.error) {
@@ -609,8 +627,8 @@ function appendMessage(role, text, options = {}) {
 function appendLoadingMessage() {
   ensureMessageList();
   const row = document.createElement("article");
-  row.className = "message-row bot";
-  row.setAttribute("aria-label", "RustBot is thinking");
+  row.className = "message-row bot is-loading";
+  row.setAttribute("aria-label", "RustBot is searching the web and knowledge base");
 
   const avatar = document.createElement("div");
   avatar.className = "message-avatar";
@@ -621,7 +639,12 @@ function appendLoadingMessage() {
   body.className = "message-body";
   const meta = document.createElement("div");
   meta.className = "message-meta";
-  meta.textContent = "RustBot · thinking";
+
+  const searchStatus = document.createElement("span");
+  searchStatus.className = "searching-indicator";
+  searchStatus.innerHTML = `<span class="search-globe">🌐</span> Searching the web & AI knowledge base…`;
+  meta.append(searchStatus);
+
   const bubble = document.createElement("div");
   bubble.className = "message-bubble typing-bubble";
   for (let dotIndex = 0; dotIndex < 3; dotIndex += 1) {

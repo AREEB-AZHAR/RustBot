@@ -3894,3 +3894,68 @@ button:disabled {
   font-weight: 700;
   border-radius: 10px;
 }
+
+/* Engine Badges & Web Search Indicators */
+.engine-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+.engine-badge.badge-openrouter_ai,
+.engine-badge.badge-ai_learned_and_cached {
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.engine-badge.badge-memory_matched {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.engine-badge.badge-math_matched {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.engine-badge.badge-market_matched {
+  background: rgba(228, 98, 50, 0.15);
+  color: #f97316;
+  border: 1px solid rgba(228, 98, 50, 0.3);
+}
+
+.searching-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: #60a5fa;
+  font-size: 11px;
+}
+
+.search-globe {
+  display: inline-block;
+  animation: pulse-globe 1.4s ease-in-out infinite alternate;
+}
+
+@keyframes pulse-globe {
+  from {
+    transform: scale(0.92);
+    opacity: 0.75;
+  }
+  to {
+    transform: scale(1.1);
+    opacity: 1;
+    filter: drop-shadow(0 0 6px rgba(96, 165, 250, 0.6));
+  }
+}

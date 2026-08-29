@@ -35,6 +35,10 @@ const SESSION_TTL_SECONDS: i64 = 7 * 86400; // 7 days
 
 const OPENROUTER_MODELS: &[&str] = &[
     "openrouter/free",
+    "openrouter/auto",
+    "openrouter/pareto-code-router",
+    "openrouter/body-builder",
+    "openrouter/flavor-fusion",
     "google/gemma-4-26b-a4b-it:free",
     "google/gemma-4-31b-it:free",
     "liquid/lfm-2.5-2.6b:free",
@@ -751,6 +755,18 @@ fn handle_post_message(request: &Request, state: &AppState, conv_id: &str) -> Re
             Some(expanded) => (expanded, "memory_matched"),
             None => {
                 if let Some(ai_response) = call_openrouter_fallback(state, &user.id, conv_id, msg) {
+                    // Auto-cache learned question & answer into memory store for future instant retrieval
+                    let tokens = crate::knowledge::tokenize(msg);
+                    if !tokens.is_empty() && ai_response.len() <= 4000 {
+                        let _ = state.db.insert_memory(
+                            &tokens,
+                            &ai_response,
+                            "phrase",
+                            "web_learned",
+                            Some(&user.id),
+                        );
+                        let _ = state.store.write().unwrap().reload_from_db(&state.db);
+                    }
                     (ai_response, "openrouter_ai")
                 } else {
                     (
