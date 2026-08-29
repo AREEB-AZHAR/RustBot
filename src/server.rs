@@ -2307,7 +2307,7 @@ mod tests {
         let res_register = route_request(&req_register, &state);
         assert_eq!(res_register.status, 200);
         let res_json: serde_json::Value = serde_json::from_slice(&res_register.body).unwrap();
-        let csrf_token = res_json["csrf_token"].as_str().unwrap().to_string();
+        let _reg_csrf_token = res_json["csrf_token"].as_str().unwrap().to_string();
 
         // Extract session cookie from header
         let cookie_header = res_register.headers.iter().find(|(k, _)| k == "Set-Cookie").unwrap().1.clone();
@@ -2329,6 +2329,7 @@ mod tests {
         assert_eq!(res_me.status, 200);
         let me_json: serde_json::Value = serde_json::from_slice(&res_me.body).unwrap();
         assert_eq!(me_json["user"]["username"], "alice");
+        let csrf_token = me_json["csrf_token"].as_str().unwrap().to_string();
 
         // 4. Create a conversation (requires CSRF token)
         let conv_body = serde_json::to_vec(&json!({
