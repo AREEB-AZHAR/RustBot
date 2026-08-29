@@ -837,6 +837,7 @@ function renderConversationsList() {
     delBtn.title = "Delete chat";
     delBtn.textContent = "✕";
     delBtn.addEventListener("click", (e) => {
+      e.preventDefault();
       e.stopPropagation();
       deleteConversation(conv.id);
     });
@@ -899,7 +900,6 @@ async function startNewConversation() {
 }
 
 async function deleteConversation(convId) {
-  if (!confirm("Are you sure you want to delete this conversation?")) return;
   try {
     await api(`/api/conversations/${convId}`, { method: "DELETE" });
     state.conversations = state.conversations.filter((c) => c.id !== convId);
@@ -915,7 +915,8 @@ async function deleteConversation(convId) {
     }
     showToast("Conversation deleted.");
   } catch (err) {
-    showToast("Failed to delete conversation.");
+    console.error("Delete conversation error:", err);
+    showToast(`Could not delete: ${err.message}`);
   }
 }
 
