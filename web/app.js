@@ -2213,6 +2213,10 @@ function renderMarkdown(text) {
   });
 
   escaped = escaped.replace(/`([^`]+)`/g, "<code style='background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:4px;'>$1</code>");
+
+  // Clean # at start of line/sentence only, rendering as clean bold heading
+  escaped = escaped.replace(/^#{1,6}\s*(.+)$/gm, "<strong style='display:block;margin:6px 0 2px;color:var(--text-bright,#ffffff);font-size:1.05em;'>$1</strong>");
+
   escaped = escaped.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
   escaped = escaped.replace(/\*([^*]+)\*/g, "<em>$1</em>");
   return escaped.replace(/\n/g, "<br>");
