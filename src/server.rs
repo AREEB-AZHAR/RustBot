@@ -906,7 +906,7 @@ fn call_openrouter_fallback(
         let body = json!({
             "model": model,
             "messages": messages_json,
-            "max_tokens": 1000
+            "max_tokens": 2500
         });
 
         let resp = client
@@ -1865,7 +1865,7 @@ fn check_market_intent(prompt: &str) -> Option<(String, String)> {
     let is_prediction = lower.contains("predict")
         || lower.contains("forecast")
         || lower.contains("signal")
-        || lower.contains("analysis")
+        || lower.contains("analy")
         || lower.contains("technical")
         || lower.contains("reach")
         || lower.contains("how high")
@@ -1881,7 +1881,13 @@ fn check_market_intent(prompt: &str) -> Option<(String, String)> {
         || lower.contains("bearish")
         || lower.contains("rally")
         || lower.contains("dump")
-        || lower.contains("pump");
+        || lower.contains("pump")
+        || lower.contains("moment")
+        || lower.contains("trend")
+        || lower.contains("chart")
+        || lower.contains("outlook")
+        || lower.contains("levels")
+        || lower.contains("rsi");
 
     let is_market_query = is_price || is_prediction || lower.contains("market");
 
