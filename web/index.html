@@ -645,6 +645,20 @@
       </form>
     </dialog>
 
+    <!-- Custom Delete Conversation Dialog -->
+    <dialog class="forget-dialog delete-chat-dialog" id="delete-chat-dialog" aria-labelledby="delete-chat-title">
+      <form method="dialog">
+        <div class="dialog-mark danger-mark" aria-hidden="true">🗑</div>
+        <p class="header-eyebrow">Delete Chat</p>
+        <h2 id="delete-chat-title">Delete this conversation?</h2>
+        <p class="dialog-copy" id="delete-chat-copy">Are you sure you want to delete this conversation? Any knowledge learned in the Knowledge Forge will be preserved.</p>
+        <div class="dialog-actions">
+          <button class="secondary-button" value="cancel">Keep Conversation</button>
+          <button class="danger-button" id="confirm-delete-chat" value="confirm">Delete</button>
+        </div>
+      </form>
+    </dialog>
+
     <dialog class="card-zoom-modal" id="chat-history-modal" aria-labelledby="history-modal-title">
       <div class="card-zoom-content history-modal-card">
         <header class="zoom-header">

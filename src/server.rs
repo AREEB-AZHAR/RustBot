@@ -725,6 +725,21 @@ fn handle_list_messages(request: &Request, state: &AppState, conv_id: &str) -> R
     }
 }
 
+pub fn is_temporal_or_dynamic_query(prompt: &str) -> bool {
+    let lower = prompt.trim().to_lowercase();
+    let dynamic_tokens = [
+        "weather", "forecast", "temperature", "temp in", "humidity", "rain",
+        "score", "match", "live score", "who won", "game today", "fixtures", "standings",
+        "price", "crypto", "bitcoin", "btc", "ethereum", "eth", "solana", "sol", "doge",
+        "currency", "exchange rate", "stock", "usd to", "eur to", "pkr to", "inr to", "gbp to",
+        "current", "today", "right now", "latest", "breaking news", "live",
+        "what time is it", "current time", "current date", "what is today's date",
+        "who is currently", "who is the current", "president right now", "prime minister of",
+        "market cap", "inflation rate"
+    ];
+    dynamic_tokens.iter().any(|k| lower.contains(k))
+}
+
 fn handle_post_message(request: &Request, state: &AppState, conv_id: &str) -> Response {
     let (session, user) = match authenticate(request, state) {
         Ok(res) => res,
@@ -757,6 +772,8 @@ fn handle_post_message(request: &Request, state: &AppState, conv_id: &str) -> Re
         Err(e) => return Response::error(404, "Not Found", &e),
     };
 
+    let is_temporal = is_temporal_or_dynamic_query(msg);
+
     // 2. Generate bot response
     let (bot_response_text, bot_status) = if let Some(result) = evaluate_math(msg) {
         let formatted = if (result.fract()).abs() < 1e-9 {
@@ -768,7 +785,9 @@ fn handle_post_message(request: &Request, state: &AppState, conv_id: &str) -> Re
     } else if let Some((_sym, price_resp)) = check_market_intent(msg) {
         (price_resp, "market_matched")
     } else {
-        let match_result = {
+        let match_result = if is_temporal {
+            None
+        } else {
             let store_guard = state.store.read().unwrap();
             store_guard.find_best_match(msg).map(|pattern| {
                 expand_placeholders(&pattern.response, store_guard.patterns().len())
@@ -779,19 +798,21 @@ fn handle_post_message(request: &Request, state: &AppState, conv_id: &str) -> Re
             Some(expanded) => (expanded, "memory_matched"),
             None => {
                 if let Some(ai_response) = call_openrouter_fallback(state, &user.id, conv_id, msg) {
-                    // Auto-cache learned question & answer into memory store for future instant retrieval
-                    let tokens = crate::knowledge::tokenize(msg);
-                    if !tokens.is_empty() && ai_response.len() <= 4000 {
-                        let _ = state.db.insert_memory(
-                            &tokens,
-                            &ai_response,
-                            "phrase",
-                            "web_learned",
-                            Some(&user.id),
-                        );
-                        let _ = state.store.write().unwrap().reload_from_db(&state.db);
+                    // Auto-cache learned question & answer into memory store ONLY if it's NOT dynamic/temporal!
+                    if !is_temporal {
+                        let tokens = crate::knowledge::tokenize(msg);
+                        if !tokens.is_empty() && ai_response.len() <= 4000 {
+                            let _ = state.db.insert_memory(
+                                &tokens,
+                                &ai_response,
+                                "phrase",
+                                "web_learned",
+                                Some(&user.id),
+                            );
+                            let _ = state.store.write().unwrap().reload_from_db(&state.db);
+                        }
                     }
-                    (ai_response, "openrouter_ai")
+                    (ai_response, if is_temporal { "openrouter_live" } else { "openrouter_ai" })
                 } else {
                     (
                         "That isn't in my memory yet. Feel free to teach me using the Teach button!".to_string(),

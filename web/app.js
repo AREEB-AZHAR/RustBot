@@ -9,6 +9,8 @@ const state = {
   query: "",
   sending: false,
   pendingDelete: null,
+  pendingChatDeleteId: null,
+  pendingChatDeletions: new Map(),
   newPatternId: null,
   toastTimer: null,
   workspace: "chat",
@@ -93,6 +95,8 @@ const elements = {
   memoryFormError: document.querySelector("#memory-form-error"),
   forgetDialog: document.querySelector("#forget-dialog"),
   forgetCopy: document.querySelector("#forget-copy"),
+  deleteChatDialog: document.querySelector("#delete-chat-dialog"),
+  deleteChatCopy: document.querySelector("#delete-chat-copy"),
   toast: document.querySelector("#toast"),
   toastMessage: document.querySelector("#toast-message"),
   toastAction: document.querySelector("#toast-action"),
@@ -265,6 +269,15 @@ function bindEvents() {
     }
     state.pendingDelete = null;
   });
+
+  if (elements.deleteChatDialog) {
+    elements.deleteChatDialog.addEventListener("close", () => {
+      if (elements.deleteChatDialog.returnValue === "confirm" && state.pendingChatDeleteId) {
+        executeDeleteConversationWithUndo(state.pendingChatDeleteId);
+      }
+      state.pendingChatDeleteId = null;
+    });
+  }
 
   elements.toastClose.addEventListener("click", hideToast);
 
@@ -839,7 +852,7 @@ function renderConversationsList() {
     delBtn.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
-      deleteConversation(conv.id);
+      promptDeleteConversation(conv.id);
     });
 
     item.append(title, delBtn);
@@ -899,25 +912,69 @@ async function startNewConversation() {
   elements.composerInput.focus();
 }
 
-async function deleteConversation(convId) {
-  try {
-    await api(`/api/conversations/${convId}`, { method: "DELETE" });
-    state.conversations = state.conversations.filter((c) => c.id !== convId);
-    if (state.activeConversationId === convId) {
-      state.activeConversationId = null;
-      if (state.conversations.length > 0) {
-        await selectConversation(state.conversations[0].id);
-      } else {
-        await startNewConversation();
-      }
-    } else {
-      renderConversationsList();
-    }
-    showToast("Conversation deleted.");
-  } catch (err) {
-    console.error("Delete conversation error:", err);
-    showToast(`Could not delete: ${err.message}`);
+function promptDeleteConversation(convId) {
+  const conv = state.conversations.find((c) => c.id === convId);
+  state.pendingChatDeleteId = convId;
+  if (elements.deleteChatCopy) {
+    elements.deleteChatCopy.textContent = conv
+      ? `Are you sure you want to delete "${conv.title || "New Chat"}"? Learned knowledge in the Knowledge Forge will be preserved.`
+      : "Are you sure you want to delete this conversation?";
   }
+  if (elements.deleteChatDialog) {
+    elements.deleteChatDialog.showModal();
+  } else {
+    executeDeleteConversationWithUndo(convId);
+  }
+}
+
+function executeDeleteConversationWithUndo(convId) {
+  const convIndex = state.conversations.findIndex((c) => c.id === convId);
+  if (convIndex === -1) return;
+  const deletedConvObj = state.conversations[convIndex];
+
+  // 1. Remove from local list immediately
+  state.conversations.splice(convIndex, 1);
+  if (state.activeConversationId === convId) {
+    state.activeConversationId = null;
+    if (state.conversations.length > 0) {
+      selectConversation(state.conversations[0].id);
+    } else {
+      startNewConversation();
+    }
+  } else {
+    renderConversationsList();
+  }
+
+  // 2. Schedule backend deletion in 5 seconds
+  const timerId = window.setTimeout(async () => {
+    try {
+      await api(`/api/conversations/${convId}`, { method: "DELETE" });
+    } catch (err) {
+      console.error("Backend delete conversation error:", err);
+    }
+    state.pendingChatDeletions.delete(convId);
+  }, 5000);
+
+  state.pendingChatDeletions.set(convId, { timerId, convObj: deletedConvObj });
+
+  // 3. Show Undo Toast for 5 seconds
+  showToast(
+    "Conversation deleted.",
+    () => {
+      const pending = state.pendingChatDeletions.get(convId);
+      if (pending) {
+        window.clearTimeout(pending.timerId);
+        state.pendingChatDeletions.delete(convId);
+        if (!state.conversations.some((c) => c.id === convId)) {
+          state.conversations.unshift(pending.convObj);
+          selectConversation(convId);
+          showToast("Conversation restored.");
+        }
+      }
+    },
+    null,
+    5000
+  );
 }
 
 function createWelcomeState() {
@@ -1069,12 +1126,9 @@ async function exportHistoryLogs() {
 }
 
 async function clearHistoryLogs() {
-  if (confirm("Are you sure you want to delete your active conversation?")) {
-    if (state.activeConversationId) {
-      await deleteConversation(state.activeConversationId);
-    }
-    await renderHistoryModal();
-    updateHistoryCount();
+  if (state.activeConversationId) {
+    closeHistoryModal();
+    promptDeleteConversation(state.activeConversationId);
   }
 }
 
@@ -2207,17 +2261,17 @@ async function importKnowledge(e) {
 
 function createEmptyMemories(query) {
   const empty = document.createElement("div");
-  empty.className = "empty-memories";
+  empty.className = "empty-knowledge-state";
   const mark = document.createElement("div");
-  mark.className = "empty-memory-mark";
+  mark.className = "empty-icon";
   mark.setAttribute("aria-hidden", "true");
-  mark.textContent = query ? "⌕" : "＋";
-  const title = document.createElement("strong");
-  title.textContent = query ? "No memories found" : "The forge is empty";
+  mark.textContent = query ? "🔍" : "🧠";
+  const title = document.createElement("h4");
+  title.textContent = query ? "No memories match query" : "No memory learned yet";
   const copy = document.createElement("p");
   copy.textContent = query
     ? `Nothing matches “${elements.memorySearch.value.trim()}”.`
-    : "Teach RustBot its first response to get started.";
+    : "Ask RustBot questions to auto-learn from Web AI, or teach it your own custom facts.";
   empty.append(mark, title, copy);
 
   const action = document.createElement("button");
@@ -2232,7 +2286,7 @@ function createEmptyMemories(query) {
       elements.memorySearch.focus();
     });
   } else {
-    action.textContent = "Forge first memory";
+    action.textContent = "+ Add First Memory";
     action.addEventListener("click", () => openTeachingForm());
   }
   empty.append(action);
@@ -2242,8 +2296,8 @@ function createEmptyMemories(query) {
 function renderKnowledgeError(message) {
   elements.memoryList.replaceChildren();
   const empty = document.createElement("div");
-  empty.className = "empty-memories";
-  const title = document.createElement("strong");
+  empty.className = "empty-knowledge-state";
+  const title = document.createElement("h4");
   title.textContent = "Could not open the forge";
   const copy = document.createElement("p");
   copy.textContent = message;
@@ -2293,19 +2347,39 @@ async function restoreMemory(pattern) {
   }
 }
 
-function showToast(message, actionLabel, action) {
+function showToast(message, actionOrLabel, maybeAction, customTimeout) {
   window.clearTimeout(state.toastTimer);
   elements.toastMessage.textContent = message;
-  elements.toastAction.hidden = !actionLabel;
-  elements.toastAction.textContent = actionLabel || "";
-  elements.toastAction.onclick = action
-    ? () => {
-        hideToast();
-        action();
-      }
-    : null;
+
+  let label = "Undo";
+  let actionFn = null;
+  let duration = 4000;
+
+  if (typeof actionOrLabel === "function") {
+    actionFn = actionOrLabel;
+    label = "Undo";
+    duration = customTimeout || 5000;
+  } else if (typeof actionOrLabel === "string" && typeof maybeAction === "function") {
+    label = actionOrLabel;
+    actionFn = maybeAction;
+    duration = customTimeout || 5000;
+  }
+
+  if (actionFn) {
+    elements.toastAction.hidden = false;
+    elements.toastAction.textContent = label;
+    elements.toastAction.onclick = () => {
+      hideToast();
+      actionFn();
+    };
+  } else {
+    elements.toastAction.hidden = true;
+    elements.toastAction.textContent = "";
+    elements.toastAction.onclick = null;
+  }
+
   elements.toast.hidden = false;
-  state.toastTimer = window.setTimeout(hideToast, action ? 7000 : 4200);
+  state.toastTimer = window.setTimeout(hideToast, actionFn ? duration : 4000);
 }
 
 function hideToast() {
