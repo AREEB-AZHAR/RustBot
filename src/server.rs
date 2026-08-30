@@ -352,6 +352,7 @@ fn validate_session_csrf(
                 || clean_o.eq_ignore_ascii_case("http://rustbot.duckdns.org")
                 || clean_o.eq_ignore_ascii_case("https://rustbot.duckdns.org:7878")
                 || clean_o.eq_ignore_ascii_case("http://rustbot.duckdns.org:7878")
+                || clean_o.ends_with(".trycloudflare.com")
                 || is_trusted_loopback_origin(clean_o)
         }
         None => !state.config.is_production(),
@@ -445,6 +446,7 @@ fn handle_connection(mut stream: TcpStream, state: &AppState) -> Result<(), Stri
 
         clean_host.eq_ignore_ascii_case(expected_host)
             || clean_host.eq_ignore_ascii_case("rustbot.duckdns.org")
+            || clean_host.ends_with(".trycloudflare.com")
             || is_trusted_loopback_host(&request.host)
     };
 
