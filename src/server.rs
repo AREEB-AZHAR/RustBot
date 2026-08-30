@@ -345,11 +345,17 @@ fn validate_session_csrf(
 
     let origin_valid = match origin {
         Some(o) => {
+            let clean_o = o.trim_end_matches('/');
+            let clean_public = state.config.public_origin.trim_end_matches('/');
             if state.config.is_production() {
-                o.eq_ignore_ascii_case(&state.config.public_origin)
+                clean_o.eq_ignore_ascii_case(clean_public)
+                    || clean_o.eq_ignore_ascii_case("https://rustbot.duckdns.org")
+                    || clean_o.eq_ignore_ascii_case("http://rustbot.duckdns.org")
             } else {
-                is_trusted_loopback_origin(o)
-                    || o.eq_ignore_ascii_case(&state.config.public_origin)
+                is_trusted_loopback_origin(clean_o)
+                    || clean_o.eq_ignore_ascii_case(clean_public)
+                    || clean_o.eq_ignore_ascii_case("https://rustbot.duckdns.org")
+                    || clean_o.eq_ignore_ascii_case("http://rustbot.duckdns.org")
             }
         }
         None => !state.config.is_production(),
@@ -427,19 +433,28 @@ fn handle_connection(mut stream: TcpStream, state: &AppState) -> Result<(), Stri
 
     let request = read_request(&mut stream)?;
 
-    let is_host_allowed = if state.config.is_production() {
+    let is_host_allowed = {
         let clean_host = request.host.split(':').next().unwrap_or(&request.host);
         let expected_host = state
             .config
             .public_origin
             .trim_start_matches("https://")
             .trim_start_matches("http://")
+            .split('/')
+            .next()
+            .unwrap_or("")
             .split(':')
             .next()
             .unwrap_or("");
-        clean_host.eq_ignore_ascii_case(expected_host)
-    } else {
-        is_trusted_loopback_host(&request.host)
+
+        if state.config.is_production() {
+            clean_host.eq_ignore_ascii_case(expected_host)
+                || clean_host.eq_ignore_ascii_case("rustbot.duckdns.org")
+        } else {
+            is_trusted_loopback_host(&request.host)
+                || clean_host.eq_ignore_ascii_case(expected_host)
+                || clean_host.eq_ignore_ascii_case("rustbot.duckdns.org")
+        }
     };
 
     if !is_host_allowed {
@@ -2482,5 +2497,68 @@ mod tests {
         };
         let res_admin_mem = route_request(&req_admin_mem, &state);
         assert_eq!(res_admin_mem.status, 403);
+    }
+
+    #[test]
+    fn test_production_duckdns_domain_flow() {
+        use crate::config::Environment;
+        let db = Database::open_in_memory().unwrap();
+        let config = AppConfig {
+            env: Environment::Production,
+            host: "0.0.0.0".to_string(),
+            port: 7878,
+            public_origin: "https://rustbot.duckdns.org".to_string(),
+            database_url: PathBuf::from("test_duckdns.db"),
+            openrouter_api_key: None,
+            coingecko_api_key: None,
+            session_pepper: "secure_pepper_for_duckdns_prod_123".to_string(),
+        };
+        let store = Arc::new(RwLock::new(KnowledgeStore::from_memories(&[])));
+        let state = AppState {
+            config,
+            db,
+            store,
+            openrouter_lock: Arc::new(Mutex::new(())),
+            ip_limiter: Arc::new(Mutex::new(IpRateLimiter::new())),
+        };
+
+        // 1. Index page replaces __ORIGIN__ with https://rustbot.duckdns.org
+        let req_index = Request {
+            method: "GET".to_string(),
+            path: "/".to_string(),
+            query: HashMap::new(),
+            headers: HashMap::from([("host".to_string(), "rustbot.duckdns.org".to_string())]),
+            host: "rustbot.duckdns.org".to_string(),
+            body: vec![],
+        };
+        let res_index = route_request(&req_index, &state);
+        assert_eq!(res_index.status, 200);
+        let index_html = String::from_utf8(res_index.body).unwrap();
+        assert!(index_html.contains("https://rustbot.duckdns.org/"));
+
+        // 2. Register user on public domain
+        let register_body = serde_json::to_vec(&json!({
+            "username": "bob",
+            "password": "Password123!"
+        })).unwrap();
+        let req_register = Request {
+            method: "POST".to_string(),
+            path: "/api/auth/register".to_string(),
+            query: HashMap::new(),
+            headers: HashMap::from([
+                ("host".to_string(), "rustbot.duckdns.org".to_string()),
+                ("origin".to_string(), "https://rustbot.duckdns.org".to_string()),
+            ]),
+            host: "rustbot.duckdns.org".to_string(),
+            body: register_body,
+        };
+        let res_register = route_request(&req_register, &state);
+        assert_eq!(res_register.status, 200);
+
+        // Verify Secure and __Host- cookie flags in production
+        let cookie_header = res_register.headers.iter().find(|(k, _)| k == "Set-Cookie").unwrap().1.clone();
+        assert!(cookie_header.starts_with("__Host-rustbot_session="));
+        assert!(cookie_header.contains("; Secure"));
+        assert!(cookie_header.contains("; SameSite=Strict"));
     }
 }

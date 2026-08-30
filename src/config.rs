@@ -195,9 +195,9 @@ mod tests {
     fn test_production_accepts_valid_config() {
         let config = AppConfig {
             env: Environment::Production,
-            host: "127.0.0.1".to_string(),
+            host: "0.0.0.0".to_string(),
             port: 7878,
-            public_origin: "https://chat.example.com".to_string(),
+            public_origin: "https://rustbot.duckdns.org".to_string(),
             database_url: PathBuf::from("rustbot.db"),
             openrouter_api_key: Some("key".to_string()),
             coingecko_api_key: None,
