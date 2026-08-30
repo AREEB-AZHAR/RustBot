@@ -146,6 +146,7 @@ impl KnowledgeStore {
         &self.knowledge.patterns
     }
 
+    #[allow(dead_code)]
     pub fn patterns_by_category(&self, category: Option<&str>) -> Vec<&Pattern> {
         match category {
             Some(cat) if !cat.trim().is_empty() && cat != "all" => self
@@ -354,11 +355,13 @@ impl KnowledgeStore {
         Ok(pattern)
     }
 
+    #[allow(dead_code)]
     pub fn export_json(&self) -> Result<String, String> {
         serde_json::to_string_pretty(&self.knowledge)
             .map_err(|error| format!("Could not export knowledge: {error}"))
     }
 
+    #[allow(dead_code)]
     pub fn import_json(&mut self, json_str: &str) -> Result<usize, String> {
         let imported: Knowledge = serde_json::from_str(json_str)
             .map_err(|error| format!("Invalid knowledge JSON format: {error}"))?;

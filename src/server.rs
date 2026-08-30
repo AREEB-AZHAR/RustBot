@@ -347,16 +347,12 @@ fn validate_session_csrf(
         Some(o) => {
             let clean_o = o.trim_end_matches('/');
             let clean_public = state.config.public_origin.trim_end_matches('/');
-            if state.config.is_production() {
-                clean_o.eq_ignore_ascii_case(clean_public)
-                    || clean_o.eq_ignore_ascii_case("https://rustbot.duckdns.org")
-                    || clean_o.eq_ignore_ascii_case("http://rustbot.duckdns.org")
-            } else {
-                is_trusted_loopback_origin(clean_o)
-                    || clean_o.eq_ignore_ascii_case(clean_public)
-                    || clean_o.eq_ignore_ascii_case("https://rustbot.duckdns.org")
-                    || clean_o.eq_ignore_ascii_case("http://rustbot.duckdns.org")
-            }
+            clean_o.eq_ignore_ascii_case(clean_public)
+                || clean_o.eq_ignore_ascii_case("https://rustbot.duckdns.org")
+                || clean_o.eq_ignore_ascii_case("http://rustbot.duckdns.org")
+                || clean_o.eq_ignore_ascii_case("https://rustbot.duckdns.org:7878")
+                || clean_o.eq_ignore_ascii_case("http://rustbot.duckdns.org:7878")
+                || is_trusted_loopback_origin(clean_o)
         }
         None => !state.config.is_production(),
     };
@@ -447,14 +443,9 @@ fn handle_connection(mut stream: TcpStream, state: &AppState) -> Result<(), Stri
             .next()
             .unwrap_or("");
 
-        if state.config.is_production() {
-            clean_host.eq_ignore_ascii_case(expected_host)
-                || clean_host.eq_ignore_ascii_case("rustbot.duckdns.org")
-        } else {
-            is_trusted_loopback_host(&request.host)
-                || clean_host.eq_ignore_ascii_case(expected_host)
-                || clean_host.eq_ignore_ascii_case("rustbot.duckdns.org")
-        }
+        clean_host.eq_ignore_ascii_case(expected_host)
+            || clean_host.eq_ignore_ascii_case("rustbot.duckdns.org")
+            || is_trusted_loopback_host(&request.host)
     };
 
     if !is_host_allowed {
