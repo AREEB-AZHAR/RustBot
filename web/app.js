@@ -341,6 +341,50 @@ function bindEvents() {
       }
     });
   }
+
+  // Delegated safe copy handler for code blocks (zero-XSS: pure textContent extraction)
+  document.addEventListener("click", async (event) => {
+    const copyBtn = event.target.closest(".code-copy-btn");
+    if (!copyBtn) return;
+
+    const wrapper = copyBtn.closest(".code-block-wrapper");
+    if (!wrapper) return;
+
+    const codeEl = wrapper.querySelector("pre code");
+    if (!codeEl) return;
+
+    const rawCode = codeEl.textContent || "";
+    if (!rawCode) return;
+
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(rawCode);
+      } else {
+        const textarea = document.createElement("textarea");
+        textarea.value = rawCode;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+      }
+
+      const iconEl = copyBtn.querySelector(".copy-icon");
+      const labelEl = copyBtn.querySelector(".copy-label");
+      if (iconEl) iconEl.textContent = "✓";
+      if (labelEl) labelEl.textContent = "Copied!";
+      copyBtn.classList.add("is-copied");
+
+      setTimeout(() => {
+        if (iconEl) iconEl.textContent = "📋";
+        if (labelEl) labelEl.textContent = "Copy";
+        copyBtn.classList.remove("is-copied");
+      }, 2000);
+    } catch {
+      showToast("Failed to copy code to clipboard.");
+    }
+  });
   if (elements.zoomForgetBtn) {
     elements.zoomForgetBtn.addEventListener("click", () => {
       if (state.activeZoomPattern) {
@@ -2343,8 +2387,10 @@ function renderMarkdown(text) {
   src = src.replace(/```([a-zA-Z0-9_-]*)\n?([\s\S]*?)```/g, (_, lang, code) => {
     const placeholder = `@@CODEBLOCK${codeBlocks.length}@@`;
     const escapedCode = escapeHtml(code.trim());
+    const cleanLang = (lang || "").trim();
+    const displayLang = cleanLang ? cleanLang.toUpperCase() : "CODE";
     codeBlocks.push(
-      `<pre class="code-block" data-lang="${escapeHtml(lang || '')}"><code>${escapedCode}</code></pre>`
+      `<div class="code-block-wrapper"><div class="code-block-header"><span class="code-lang">${escapeHtml(displayLang)}</span><button type="button" class="code-copy-btn" aria-label="Copy code to clipboard"><span class="copy-icon" aria-hidden="true">📋</span><span class="copy-label">Copy</span></button></div><pre class="code-block" data-lang="${escapeHtml(cleanLang)}"><code>${escapedCode}</code></pre></div>`
     );
     return placeholder;
   });

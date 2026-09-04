@@ -1714,7 +1714,70 @@ button:disabled {
   color: inherit;
 }
 
-/* Preformatted Code Blocks in Messages */
+/* Preformatted Code Blocks in Messages with Header & Copy */
+.code-block-wrapper {
+  margin: 0.85em 0;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #191e1b;
+  border: 1px solid rgba(0, 0, 0, 0.22);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+.code-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: #141715;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.code-lang {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  font-weight: 700;
+  color: #8c9b91;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.code-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #c4d1c8;
+  border-radius: 5px;
+  padding: 3px 9px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  line-height: 1.2;
+}
+
+.code-copy-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+}
+
+.code-copy-btn.is-copied {
+  background: rgba(46, 125, 50, 0.25);
+  border-color: rgba(76, 175, 80, 0.5);
+  color: #a5d6a7;
+}
+
+.code-block-wrapper pre.code-block {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  padding: 12px 14px;
+  background: transparent;
+}
+
 pre.code-block {
   background: #191e1b;
   color: #e6ede8;

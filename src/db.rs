@@ -597,6 +597,18 @@ impl Database {
         Ok(())
     }
 
+    pub fn prune_expired_and_revoked_sessions(&self) -> Result<usize, String> {
+        let now = now_timestamp();
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let affected = conn
+            .execute(
+                "DELETE FROM sessions WHERE expires_at < ?1 OR revoked_at IS NOT NULL",
+                params![now],
+            )
+            .map_err(|e| format!("Failed to prune sessions: {e}"))?;
+        Ok(affected)
+    }
+
     // ==========================================
     // CONVERSATIONS & MESSAGES
     // ==========================================
@@ -1217,6 +1229,12 @@ mod tests {
         db.revoke_session(&session.id).unwrap();
         let after_revocation = db.get_valid_session_by_token_digest(&token_digest).unwrap();
         assert!(after_revocation.is_none());
+
+        // Pruning removes the revoked session from the table
+        let pruned = db.prune_expired_and_revoked_sessions().unwrap();
+        assert_eq!(pruned, 1);
+        let pruned_again = db.prune_expired_and_revoked_sessions().unwrap();
+        assert_eq!(pruned_again, 0);
     }
 
     #[test]

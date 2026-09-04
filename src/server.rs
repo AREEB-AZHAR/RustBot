@@ -56,6 +56,7 @@ pub struct AppState {
     pub store: Arc<RwLock<KnowledgeStore>>,
     pub openrouter_lock: Arc<Mutex<()>>,
     pub ip_limiter: Arc<Mutex<IpRateLimiter>>,
+    pub http_client: reqwest::blocking::Client,
 }
 
 pub struct IpRateLimiter {
@@ -234,6 +235,13 @@ pub fn run(config: AppConfig, db: Database, knowledge_path: PathBuf) -> Result<(
         KnowledgeStore::load(knowledge_path)?
     };
 
+    let http_client = reqwest::blocking::Client::builder()
+        .connect_timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(30))
+        .pool_idle_timeout(Duration::from_secs(60))
+        .build()
+        .unwrap_or_else(|_| reqwest::blocking::Client::new());
+
     let bind_addr = config.bind_address();
     let state = AppState {
         config,
@@ -241,7 +249,11 @@ pub fn run(config: AppConfig, db: Database, knowledge_path: PathBuf) -> Result<(
         store: Arc::new(RwLock::new(store)),
         openrouter_lock: Arc::new(Mutex::new(())),
         ip_limiter: Arc::new(Mutex::new(IpRateLimiter::new())),
+        http_client,
     };
+
+    // Clean up any stale, expired, or revoked sessions from previous runs
+    let _ = state.db.prune_expired_and_revoked_sessions();
 
     let listener = TcpListener::bind(&bind_addr)
         .map_err(|error| format!("Could not listen on http://{bind_addr}: {error}"))?;
@@ -930,10 +942,7 @@ fn call_openrouter_fallback(
         }));
     }
 
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(35))
-        .build()
-        .ok()?;
+    let client = &state.http_client;
 
     for &model in OPENROUTER_MODELS {
         let body = json!({
@@ -2378,6 +2387,7 @@ mod tests {
             store,
             openrouter_lock: Arc::new(Mutex::new(())),
             ip_limiter: Arc::new(Mutex::new(IpRateLimiter::new())),
+            http_client: reqwest::blocking::Client::new(),
         };
 
         // 1. Unauthenticated /api/auth/me should fail with 401
@@ -2538,6 +2548,7 @@ mod tests {
             store,
             openrouter_lock: Arc::new(Mutex::new(())),
             ip_limiter: Arc::new(Mutex::new(IpRateLimiter::new())),
+            http_client: reqwest::blocking::Client::new(),
         };
 
         // 1. Index page replaces __ORIGIN__ with https://rustbot.duckdns.org
