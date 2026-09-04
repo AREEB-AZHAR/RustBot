@@ -137,10 +137,11 @@ pub struct MemoryRecord {
     pub updated_by_user_id: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ImportStats {
     pub total_read: usize,
     pub inserted: usize,
+    pub skipped: usize,
     pub rejected: usize,
 }
 
@@ -942,11 +943,14 @@ impl Database {
     }
 
     /// Import memories from an existing `knowledge.json` file in one atomic transaction.
+    /// Supports both wrapped `{"patterns": [...]}` and raw list `[...]` formats,
+    /// and avoids inserting duplicates if a pattern with matching normalized keywords already exists.
     pub fn import_memories_from_json(&self, path: &Path) -> Result<ImportStats, String> {
         if !path.exists() {
             return Ok(ImportStats {
                 total_read: 0,
                 inserted: 0,
+                skipped: 0,
                 rejected: 0,
             });
         }
@@ -971,27 +975,71 @@ impl Database {
             "general".to_string()
         }
 
-        let patterns: Vec<RawPattern> = serde_json::from_str(&raw)
-            .map_err(|e| format!("Failed to parse knowledge json: {e}"))?;
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum RawKnowledgePayload {
+            Wrapped { patterns: Vec<RawPattern> },
+            List(Vec<RawPattern>),
+        }
+
+        let patterns = match serde_json::from_str::<RawKnowledgePayload>(&raw) {
+            Ok(RawKnowledgePayload::Wrapped { patterns }) => patterns,
+            Ok(RawKnowledgePayload::List(patterns)) => patterns,
+            Err(e) => return Err(format!("Failed to parse knowledge json: {e}")),
+        };
 
         let total_read = patterns.len();
         let mut inserted = 0;
+        let mut skipped = 0;
         let mut rejected = 0;
         let now = now_timestamp();
 
         let mut conn = self.conn.lock().map_err(|e| e.to_string())?;
         let tx = conn.transaction().map_err(|e| e.to_string())?;
 
+        // Query existing keyword sets from memories table to prevent duplicate insertion
+        let mut existing_keyword_sets: std::collections::HashSet<Vec<String>> =
+            std::collections::HashSet::new();
+        {
+            let mut stmt = tx
+                .prepare("SELECT keywords FROM memories")
+                .map_err(|e| format!("Failed to query existing memories: {e}"))?;
+            let rows = stmt
+                .query_map([], |row| {
+                    let kw_raw: String = row.get(0)?;
+                    let mut kws: Vec<String> = serde_json::from_str(&kw_raw).unwrap_or_default();
+                    kws.sort();
+                    Ok(kws)
+                })
+                .map_err(|e| e.to_string())?;
+
+            for r in rows {
+                if let Ok(kws) = r {
+                    if !kws.is_empty() {
+                        existing_keyword_sets.insert(kws);
+                    }
+                }
+            }
+        }
+
         for p in patterns {
-            let clean_keywords: Vec<String> = p
-                .keywords
-                .into_iter()
-                .map(|k| k.trim().to_lowercase())
-                .filter(|k| !k.is_empty())
-                .collect();
+            let mut clean_keywords: Vec<String> = Vec::new();
+            for k in p.keywords {
+                let norm = k.trim().to_lowercase();
+                if !norm.is_empty() && !clean_keywords.contains(&norm) {
+                    clean_keywords.push(norm);
+                }
+            }
 
             if clean_keywords.is_empty() || p.response.trim().is_empty() {
                 rejected += 1;
+                continue;
+            }
+
+            let mut sort_key = clean_keywords.clone();
+            sort_key.sort();
+            if existing_keyword_sets.contains(&sort_key) {
+                skipped += 1;
                 continue;
             }
 
@@ -1003,14 +1051,29 @@ impl Database {
                 }
             };
 
+            let match_mode = if p.match_mode.trim().is_empty() {
+                "phrase"
+            } else {
+                p.match_mode.trim()
+            };
+
+            let category = if p.category.trim().is_empty() {
+                "general"
+            } else {
+                p.category.trim()
+            };
+
             let res = tx.execute(
                 "INSERT INTO memories (keywords, response, match_mode, category, created_at, updated_at, updated_by_user_id)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?5, NULL)",
-                params![kw_json, p.response.trim(), p.match_mode.trim(), p.category.trim(), now],
+                params![kw_json, p.response.trim(), match_mode, category, now],
             );
 
             match res {
-                Ok(_) => inserted += 1,
+                Ok(_) => {
+                    existing_keyword_sets.insert(sort_key);
+                    inserted += 1;
+                }
                 Err(_) => rejected += 1,
             }
         }
@@ -1020,6 +1083,7 @@ impl Database {
         Ok(ImportStats {
             total_read,
             inserted,
+            skipped,
             rejected,
         })
     }
@@ -1230,5 +1294,62 @@ mod tests {
         let deleted = db.delete_memory(memory.id).unwrap();
         assert!(deleted);
         assert_eq!(db.list_memories().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn test_import_memories_from_json_wrapped_and_deduplication() {
+        let db = Database::open_in_memory().unwrap();
+        db.insert_memory(
+            &["rust".to_string()],
+            "Rust language original response",
+            "phrase",
+            "general",
+            None,
+        )
+        .unwrap();
+
+        let temp_dir = std::env::temp_dir();
+        let json_path = temp_dir.join(format!("test_knowledge_{}.json", now_timestamp()));
+
+        let test_json = r#"{
+            "patterns": [
+                {
+                    "id": 1,
+                    "keywords": ["rust"],
+                    "response": "Duplicate rust definition that should be skipped",
+                    "match_mode": "all",
+                    "category": "general"
+                },
+                {
+                    "id": 2,
+                    "keywords": ["cargo", "build"],
+                    "response": "Cargo is the Rust package manager.",
+                    "match_mode": "all",
+                    "category": "tooling"
+                },
+                {
+                    "id": 3,
+                    "keywords": [],
+                    "response": "Should be rejected because keywords are empty",
+                    "match_mode": "all",
+                    "category": "tooling"
+                }
+            ]
+        }"#;
+
+        std::fs::write(&json_path, test_json).unwrap();
+        let stats = db.import_memories_from_json(&json_path).unwrap();
+        let _ = std::fs::remove_file(&json_path);
+
+        assert_eq!(stats.total_read, 3);
+        assert_eq!(stats.inserted, 1);
+        assert_eq!(stats.skipped, 1);
+        assert_eq!(stats.rejected, 1);
+
+        let all = db.list_memories().unwrap();
+        assert_eq!(all.len(), 2);
+        // Ensure existing memory was preserved and not overwritten
+        let rust_mem = all.iter().find(|m| m.keywords == vec!["rust"]).unwrap();
+        assert_eq!(rust_mem.response, "Rust language original response");
     }
 }

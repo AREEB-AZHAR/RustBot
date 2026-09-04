@@ -106,8 +106,8 @@ fn run_import_knowledge(db: &Database, knowledge_path: &PathBuf) -> Result<(), S
     println!("Importing knowledge from {:?} into SQLite...", knowledge_path);
     let stats = db.import_memories_from_json(knowledge_path)?;
     println!(
-        "Import summary: Total read: {}, Inserted: {}, Rejected: {}",
-        stats.total_read, stats.inserted, stats.rejected
+        "Import summary: Total read: {}, Inserted: {}, Skipped: {}, Rejected: {}",
+        stats.total_read, stats.inserted, stats.skipped, stats.rejected
     );
     Ok(())
 }
