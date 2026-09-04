@@ -258,15 +258,33 @@ impl KnowledgeStore {
                 MatchMode::All => matched_pattern_keywords_count == pattern.keywords.len(),
             };
 
-            if qualifies && matched_pattern_keywords_count > 0 {
-                let score = bm25_score
-                    + (exact_matches as f64 * 3.0)
-                    + (matched_pattern_keywords_count as f64 * 0.5)
-                    + (pattern.keywords.len() as f64 * 0.1);
-                if score > best_score {
-                    best_score = score;
-                    best_pattern = Some(pattern);
-                }
+            if !qualifies || matched_pattern_keywords_count == 0 {
+                continue;
+            }
+
+            // Precision check: A memory pattern should only match if the query is specifically about that topic.
+            // If the user's query introduces substantive domain words (e.g. "merkle", "tree", "future", "plans")
+            // that this pattern's keywords do not cover, the pattern is NOT answering the user's question and
+            // must not intercept it.
+            let has_unmatched_substantive = raw_tokens.iter().any(|qt| {
+                let is_matched = pattern
+                    .keywords
+                    .iter()
+                    .any(|kw| keyword_matches_fuzzy(kw, qt));
+                !is_matched && !is_conversational_or_framing_word(qt)
+            });
+
+            if has_unmatched_substantive {
+                continue;
+            }
+
+            let score = bm25_score
+                + (exact_matches as f64 * 3.0)
+                + (matched_pattern_keywords_count as f64 * 0.5)
+                + (pattern.keywords.len() as f64 * 0.1);
+            if score > best_score {
+                best_score = score;
+                best_pattern = Some(pattern);
             }
         }
 
@@ -591,6 +609,48 @@ fn is_stopword(word: &str) -> bool {
     )
 }
 
+/// Identifies grammatical particles, auxiliaries, common wh-question words,
+/// and conversational framing fillers so that true substantive domain words can be distinguished.
+pub fn is_conversational_or_framing_word(word: &str) -> bool {
+    matches!(
+        word,
+        // Articles & demonstratives
+        "a" | "an" | "the" | "this" | "that" | "these" | "those"
+        // Pronouns
+        | "i" | "me" | "my" | "myself"
+        | "you" | "your" | "yours" | "yourself"
+        | "he" | "him" | "his" | "himself"
+        | "she" | "her" | "hers" | "herself"
+        | "it" | "its" | "itself"
+        | "we" | "us" | "our" | "ours" | "ourselves"
+        | "they" | "them" | "their" | "theirs" | "themselves"
+        | "one" | "ones" | "someone" | "anyone" | "everyone"
+        // Prepositions
+        | "in" | "on" | "at" | "to" | "for" | "of" | "with" | "by"
+        | "from" | "up" | "down" | "about" | "into" | "over" | "after"
+        | "before" | "under" | "between" | "through" | "during" | "without"
+        | "within" | "across" | "along" | "behind" | "beyond" | "around"
+        // Conjunctions & Connectors
+        | "and" | "or" | "but" | "if" | "because" | "as" | "until"
+        | "while" | "so" | "than" | "either" | "neither" | "nor"
+        | "though" | "although" | "then" | "yet"
+        // Copulas, Auxiliaries, & Modals
+        | "is" | "am" | "are" | "was" | "were" | "be" | "been" | "being"
+        | "do" | "does" | "did" | "done" | "doing"
+        | "have" | "has" | "had" | "having"
+        | "can" | "could" | "will" | "would" | "shall" | "should" | "may" | "might" | "must"
+        // Question markers
+        | "what" | "which" | "who" | "whom" | "whose" | "when" | "where" | "why" | "how"
+        // Common conversational fillers, polite request wrappers, and bot identity terms
+        | "please" | "tell" | "explaining" | "explain" | "giving" | "give" | "show" | "showing"
+        | "know" | "knowing" | "think" | "thinking" | "say" | "saying" | "ask" | "asking"
+        | "see" | "seeing" | "mean" | "meaning"
+        | "okay" | "ok" | "well" | "hey" | "hello" | "hi" | "yeah" | "yes" | "no" | "nope"
+        | "just" | "also" | "now" | "today" | "there" | "here" | "something" | "anything"
+        | "like" | "want" | "need" | "rustbot" | "bot"
+    )
+}
+
 #[allow(clippy::needless_range_loop)]
 fn damerau_levenshtein(s1: &str, s2: &str) -> usize {
     let a: Vec<char> = s1.chars().collect();
@@ -899,5 +959,62 @@ mod tests {
             vec!["hello"]
         );
         assert!(normalize_stored_keywords(&[("x".repeat(MAX_KEYWORD_LENGTH + 1))]).is_err());
+    }
+
+    #[test]
+    fn test_unmatched_substantive_queries_do_not_falsely_match() {
+        let store = test_store();
+
+        // 1. Unrelated queries containing generic words like 'how', 'work', 'okay', 'rust', 'help'
+        assert!(store
+            .find_best_match("what is merkle tree about and how does it work?")
+            .is_none());
+        assert!(store
+            .find_best_match("okay and what are the future plans?")
+            .is_none());
+        assert!(store
+            .find_best_match("how do I write a web server in rust?")
+            .is_none());
+        assert!(store
+            .find_best_match("can you help me with my math homework?")
+            .is_none());
+        assert!(store
+            .find_best_match("can you teach me how to drive a car?")
+            .is_none());
+        assert!(store
+            .find_best_match("hello, can you write a python script for scraping?")
+            .is_none());
+
+        // 2. Legitimate matches must still succeed
+        assert!(store.find_best_match("what is rust?").is_some());
+        assert!(store.find_best_match("can you tell me what rust is?").is_some());
+        assert!(store.find_best_match("hello").is_some());
+        assert!(store.find_best_match("your name").is_some());
+        assert!(store.find_best_match("what can you do?").is_some());
+    }
+
+    #[test]
+    fn test_sqlite_memories_screenshot_queries_fall_back() {
+        if let Ok(db) = crate::db::Database::open(std::path::Path::new("rustbot.db")) {
+            if let Ok(memories) = db.list_memories() {
+                if !memories.is_empty() {
+                    let store = KnowledgeStore::from_memories(&memories);
+                    assert!(
+                        store
+                            .find_best_match("what is merkle tree about and how does it work?")
+                            .is_none(),
+                        "Merkle tree query should NOT match pattern ['how', 'work']"
+                    );
+                    assert!(
+                        store
+                            .find_best_match("okay and what are the future plans?")
+                            .is_none(),
+                        "Future plans query should NOT match pattern ['okay']"
+                    );
+                    assert!(store.find_best_match("what is rust?").is_some());
+                    assert!(store.find_best_match("hello").is_some());
+                }
+            }
+        }
     }
 }
