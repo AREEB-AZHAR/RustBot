@@ -464,15 +464,30 @@ fn route_request(request: &Request, state: &AppState) -> Response {
 
     match (method, path) {
         ("GET", "/") | ("GET", "/index.html") => {
-            let html = INDEX_HTML
+            let base_html = if cfg!(debug_assertions) {
+                std::fs::read_to_string("web/index.html").unwrap_or_else(|_| INDEX_HTML.to_string())
+            } else {
+                INDEX_HTML.to_string()
+            };
+            let html = base_html
                 .replace("__ORIGIN__", &state.config.public_origin)
                 .replace("__CSRF_TOKEN__", "");
             Response::html(200, "OK", html)
         }
         ("GET", "/styles.css") => {
+            if cfg!(debug_assertions) {
+                if let Ok(css) = std::fs::read_to_string("web/styles.css") {
+                    return Response::asset(200, "OK", "text/css; charset=utf-8", &css);
+                }
+            }
             Response::asset(200, "OK", "text/css; charset=utf-8", STYLES_CSS)
         }
         ("GET", "/app.js") => {
+            if cfg!(debug_assertions) {
+                if let Ok(js) = std::fs::read_to_string("web/app.js") {
+                    return Response::asset(200, "OK", "text/javascript; charset=utf-8", &js);
+                }
+            }
             Response::asset(200, "OK", "text/javascript; charset=utf-8", APP_JS)
         }
         ("GET", "/og.png") => Response::binary(200, "OK", "image/png", OG_IMAGE),

@@ -1001,9 +1001,9 @@ mod tests {
                     let store = KnowledgeStore::from_memories(&memories);
                     assert!(
                         store
-                            .find_best_match("what is merkle tree about and how does it work?")
+                            .find_best_match("how does quantum teleportation work in physics?")
                             .is_none(),
-                        "Merkle tree query should NOT match pattern ['how', 'work']"
+                        "Quantum teleportation query should NOT match pattern ['how', 'work']"
                     );
                     assert!(
                         store

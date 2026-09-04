@@ -2304,25 +2304,219 @@ function closeCardZoomModal() {
   state.activeZoomPattern = null;
 }
 
-function renderMarkdown(text) {
-  if (!text) return "";
-  let escaped = text
+function escapeHtml(str) {
+  return str
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
 
-  escaped = escaped.replace(/```([\s\S]*?)```/g, (_, code) => {
-    return `<pre class="code-block" style="background:rgba(0,0,0,0.3);padding:10px;border-radius:6px;overflow-x:auto;position:relative;margin:8px 0;"><code>${code.trim()}</code></pre>`;
+function formatMarkdownInline(str) {
+  if (!str) return "";
+  let s = escapeHtml(str);
+
+  // Links: [text](url) - strictly allow http, https, relative, or anchor links
+  s = s.replace(/\[([^\]]+)\]\(((?:https?:\/\/|\/|#)[^\s)"]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="md-link">$1</a>');
+
+  // Bold: **text** or __text__
+  s = s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  s = s.replace(/__([^_]+)__/g, "<strong>$1</strong>");
+
+  // Italic: *text* or _text_
+  s = s.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+  s = s.replace(/_([^_]+)_/g, "<em>$1</em>");
+
+  return s;
+}
+
+function renderMarkdown(text) {
+  if (!text) return "";
+
+  // 1. Normalize line endings and collapse excessive blank lines (3+ newlines -> 2)
+  let src = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  src = src.replace(/\n{3,}/g, "\n\n").trim();
+
+  // 2. Extract code blocks so their contents remain untouched (NO UNDERSCORES in placeholder)
+  const codeBlocks = [];
+  src = src.replace(/```([a-zA-Z0-9_-]*)\n?([\s\S]*?)```/g, (_, lang, code) => {
+    const placeholder = `@@CODEBLOCK${codeBlocks.length}@@`;
+    const escapedCode = escapeHtml(code.trim());
+    codeBlocks.push(
+      `<pre class="code-block" data-lang="${escapeHtml(lang || '')}"><code>${escapedCode}</code></pre>`
+    );
+    return placeholder;
   });
 
-  escaped = escaped.replace(/`([^`]+)`/g, "<code style='background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:4px;'>$1</code>");
+  // 3. Extract inline code (NO UNDERSCORES in placeholder)
+  const inlineCodes = [];
+  src = src.replace(/`([^`\n]+)`/g, (_, code) => {
+    const placeholder = `@@INLINECODE${inlineCodes.length}@@`;
+    inlineCodes.push(`<code class="inline-code">${escapeHtml(code)}</code>`);
+    return placeholder;
+  });
 
-  // Clean # at start of line/sentence only, rendering as clean bold heading
-  escaped = escaped.replace(/^#{1,6}\s*(.+)$/gm, "<strong style='display:block;margin:6px 0 2px;color:var(--text-bright,#ffffff);font-size:1.05em;'>$1</strong>");
+  // 4. Parse Tables
+  const lines = src.split("\n");
+  const processedLines = [];
+  let i = 0;
 
-  escaped = escaped.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-  escaped = escaped.replace(/\*([^*]+)\*/g, "<em>$1</em>");
-  return escaped.replace(/\n/g, "<br>");
+  while (i < lines.length) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    if (trimmed.includes("|") && i + 1 < lines.length) {
+      const nextLine = lines[i + 1].trim();
+      // Delimiter row e.g. |---|---| or |:---|---:|
+      const isDelimiter = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$/.test(nextLine);
+
+      if (isDelimiter) {
+        const tableLines = [trimmed, nextLine];
+        i += 2;
+        while (i < lines.length) {
+          const rowLine = lines[i].trim();
+          if (rowLine.includes("|")) {
+            tableLines.push(rowLine);
+            i++;
+          } else {
+            break;
+          }
+        }
+
+        const splitRow = (rowStr) => {
+          let s = rowStr;
+          if (s.startsWith("|")) s = s.slice(1);
+          if (s.endsWith("|")) s = s.slice(0, -1);
+          return s.split("|").map(c => c.trim());
+        };
+
+        const headers = splitRow(tableLines[0]);
+        const delimiters = splitRow(tableLines[1]);
+        const alignments = delimiters.map(d => {
+          if (d.startsWith(":") && d.endsWith(":")) return "center";
+          if (d.endsWith(":")) return "right";
+          return "left";
+        });
+
+        let html = '<div class="table-wrapper"><table class="markdown-table"><thead><tr>';
+        headers.forEach((h, idx) => {
+          html += `<th style="text-align:${alignments[idx] || 'left'}">${formatMarkdownInline(h)}</th>`;
+        });
+        html += '</tr></thead><tbody>';
+
+        for (let r = 2; r < tableLines.length; r++) {
+          const cells = splitRow(tableLines[r]);
+          html += '<tr>';
+          headers.forEach((_, idx) => {
+            html += `<td style="text-align:${alignments[idx] || 'left'}">${formatMarkdownInline(cells[idx] || '')}</td>`;
+          });
+          html += '</tr>';
+        }
+        html += '</tbody></table></div>';
+        processedLines.push("\n\n" + html + "\n\n");
+        continue;
+      }
+    }
+    processedLines.push(line);
+    i++;
+  }
+
+  src = processedLines.join("\n");
+
+  // Ensure headings have blank lines around them
+  src = src.replace(/(^|\n)(#{1,6}\s+[^\n]+)/g, "$1\n$2\n");
+  // Ensure horizontal rules have blank lines around them
+  src = src.replace(/(^|\n)((?:---|\*\*\*|___)\s*)($|\n)/g, "$1\n$2\n$3");
+
+  // 5. Split by double-newlines into blocks
+  const rawBlocks = src.split(/\n\n+/);
+  const renderedBlocks = [];
+
+  for (let block of rawBlocks) {
+    block = block.trim();
+    if (!block) continue;
+
+    if (block.startsWith("@@CODEBLOCK") && block.endsWith("@@") && !block.includes("\n")) {
+      renderedBlocks.push(block);
+      continue;
+    }
+    if (block.startsWith('<div class="table-wrapper">')) {
+      renderedBlocks.push(block);
+      continue;
+    }
+
+    if (/^(?:---|\*\*\*|___)\s*$/.test(block)) {
+      renderedBlocks.push('<hr class="markdown-hr">');
+      continue;
+    }
+
+    if (/^#{1,6}\s+/.test(block)) {
+      const headingHtml = block.replace(/^(#{1,6})\s+(.+)$/gm, (_, hashes, title) => {
+        const level = Math.min(6, hashes.length + 1);
+        return `<h${level} class="md-heading md-h${hashes.length}">${formatMarkdownInline(title)}</h${level}>`;
+      });
+      renderedBlocks.push(headingHtml);
+      continue;
+    }
+
+    if (block.startsWith(">")) {
+      const quoteText = block
+        .split("\n")
+        .map(l => l.replace(/^>\s?/, ""))
+        .join("<br>");
+      renderedBlocks.push(`<blockquote class="md-blockquote">${formatMarkdownInline(quoteText)}</blockquote>`);
+      continue;
+    }
+
+    // Handle lists even if mixed with preceding introductory text
+    const bLines = block.split("\n");
+    let intro = [];
+    let listItems = [];
+    let listType = null; // 'ul' or 'ol'
+    let inList = false;
+
+    for (const line of bLines) {
+      const isUl = /^\s*[-*+]\s+/.test(line);
+      const isOl = /^\s*\d+\.\s+/.test(line);
+
+      if (isUl || isOl) {
+        inList = true;
+        listType = isUl ? "ul" : "ol";
+        const content = line.replace(/^\s*(?:[-*+]|\d+\.)\s+/, "");
+        listItems.push(`<li>${formatMarkdownInline(content)}</li>`);
+      } else if (inList) {
+        listItems.push(`<li>${formatMarkdownInline(line)}</li>`);
+      } else {
+        intro.push(line);
+      }
+    }
+
+    if (listItems.length > 0) {
+      if (intro.length > 0) {
+        renderedBlocks.push(`<p>${intro.map(formatMarkdownInline).join("<br>")}</p>`);
+      }
+      renderedBlocks.push(`<${listType} class="md-list">${listItems.join("")}</${listType}>`);
+      continue;
+    }
+
+    // Regular paragraph
+    renderedBlocks.push(`<p>${bLines.map(formatMarkdownInline).join("<br>")}</p>`);
+  }
+
+  let finalHtml = renderedBlocks.join("");
+
+  // Restore inline codes
+  inlineCodes.forEach((codeHtml, idx) => {
+    finalHtml = finalHtml.replace(`@@INLINECODE${idx}@@`, codeHtml);
+  });
+
+  // Restore code blocks
+  codeBlocks.forEach((codeHtml, idx) => {
+    finalHtml = finalHtml.replace(`@@CODEBLOCK${idx}@@`, codeHtml);
+  });
+
+  return finalHtml;
 }
 
 async function exportKnowledge() {
