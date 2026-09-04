@@ -115,6 +115,19 @@ const elements = {
   zoomCopyBtn: document.querySelector("#zoom-copy-btn"),
   zoomTestBtn: document.querySelector("#zoom-test-btn"),
   zoomForgetBtn: document.querySelector("#zoom-forget-btn"),
+  zoomCardReadonly: document.querySelector("#zoom-card-readonly"),
+  zoomViewBody: document.querySelector("#zoom-view-body"),
+  zoomEditBody: document.querySelector("#zoom-edit-body"),
+  zoomEditKeywords: document.querySelector("#zoom-edit-keywords"),
+  zoomEditCategory: document.querySelector("#zoom-edit-category"),
+  zoomEditMode: document.querySelector("#zoom-edit-mode"),
+  zoomEditResponse: document.querySelector("#zoom-edit-response"),
+  zoomEditError: document.querySelector("#zoom-edit-error"),
+  zoomViewFooter: document.querySelector("#zoom-view-footer"),
+  zoomEditFooter: document.querySelector("#zoom-edit-footer"),
+  zoomEditBtn: document.querySelector("#zoom-edit-btn"),
+  zoomEditCancelBtn: document.querySelector("#zoom-edit-cancel-btn"),
+  zoomEditSaveBtn: document.querySelector("#zoom-edit-save-btn"),
   historyNavBtn: document.querySelector("#history-nav-btn"),
   railHistoryCount: document.querySelector("#rail-history-count"),
   chatHistoryModal: document.querySelector("#chat-history-modal"),
@@ -393,6 +406,33 @@ function bindEvents() {
         openForgetDialog(pattern);
       }
     });
+  }
+
+  if (elements.zoomEditBtn) {
+    elements.zoomEditBtn.addEventListener("click", () => {
+      if (!state.activeZoomPattern) return;
+      const pattern = state.activeZoomPattern;
+      if (pattern.id <= 258) {
+        showToast("System seed memories are read-only.");
+        return;
+      }
+      setZoomModalMode("edit");
+      if (elements.zoomEditKeywords) elements.zoomEditKeywords.value = pattern.keywords.join(", ");
+      if (elements.zoomEditCategory) elements.zoomEditCategory.value = pattern.category || "general";
+      if (elements.zoomEditMode) elements.zoomEditMode.value = pattern.match_mode || "phrase";
+      if (elements.zoomEditResponse) elements.zoomEditResponse.value = pattern.response;
+      if (elements.zoomEditKeywords) elements.zoomEditKeywords.focus();
+    });
+  }
+
+  if (elements.zoomEditCancelBtn) {
+    elements.zoomEditCancelBtn.addEventListener("click", () => {
+      setZoomModalMode("view");
+    });
+  }
+
+  if (elements.zoomEditSaveBtn) {
+    elements.zoomEditSaveBtn.addEventListener("click", saveZoomMemoryEdit);
   }
 
   document.addEventListener("keydown", (event) => {
@@ -2286,6 +2326,16 @@ function createMemoryCard(pattern) {
     event.stopPropagation();
     openForgetDialog(pattern);
   });
+
+  const isSeed = pattern.id <= 258;
+  const isOwnerOrAdmin =
+    (pattern.owner_user_id && pattern.owner_user_id === state.currentUser?.id) ||
+    state.currentUser?.role === "admin";
+  if (isSeed || !isOwnerOrAdmin) {
+    forget.hidden = true;
+    forget.style.display = "none";
+  }
+
   top.append(index, forget);
 
   const trigger = document.createElement("h3");
@@ -2318,12 +2368,44 @@ function createMemoryCard(pattern) {
   return card;
 }
 
+function setZoomModalMode(mode) {
+  const isEdit = mode === "edit";
+  if (elements.zoomViewBody) elements.zoomViewBody.style.display = isEdit ? "none" : "flex";
+  if (elements.zoomViewFooter) elements.zoomViewFooter.style.display = isEdit ? "none" : "flex";
+  if (elements.zoomEditBody) elements.zoomEditBody.style.display = isEdit ? "flex" : "none";
+  if (elements.zoomEditFooter) elements.zoomEditFooter.style.display = isEdit ? "flex" : "none";
+  if (elements.zoomEditError) {
+    elements.zoomEditError.textContent = "";
+    elements.zoomEditError.style.display = "none";
+  }
+}
+
 function openCardZoomModal(pattern) {
   if (!elements.cardZoomModal) return;
   state.activeZoomPattern = pattern;
+  setZoomModalMode("view");
+
+  const isSeed = pattern.id <= 258;
+  const isOwnerOrAdmin =
+    (pattern.owner_user_id && pattern.owner_user_id === state.currentUser?.id) ||
+    state.currentUser?.role === "admin";
+  const canEdit = !isSeed && isOwnerOrAdmin;
+  const canForget = !isSeed && isOwnerOrAdmin;
+
+  if (elements.zoomCardReadonly) {
+    elements.zoomCardReadonly.style.display = isSeed ? "inline-block" : "none";
+  }
+  if (elements.zoomEditBtn) {
+    elements.zoomEditBtn.style.display = canEdit ? "inline-flex" : "none";
+  }
+  if (elements.zoomForgetBtn) {
+    elements.zoomForgetBtn.style.display = canForget ? "inline-flex" : "none";
+  }
+
   elements.zoomCardId.textContent = `Memory #${String(pattern.id).padStart(2, "0")}`;
   elements.zoomCardCategory.textContent = pattern.category || "General";
-  elements.zoomCardMode.textContent = pattern.match_mode === "any" ? "Matches any keyword" : "Matches complete phrase";
+  elements.zoomCardMode.textContent =
+    pattern.match_mode === "any" ? "Matches any keyword" : "Matches complete phrase";
 
   const triggerText = pattern.keywords.join(pattern.match_mode === "any" ? " · " : " ");
   elements.zoomCardTrigger.textContent = triggerText;
@@ -2345,7 +2427,98 @@ function closeCardZoomModal() {
   if (elements.cardZoomModal?.open) {
     elements.cardZoomModal.close();
   }
+  setZoomModalMode("view");
   state.activeZoomPattern = null;
+}
+
+async function saveZoomMemoryEdit() {
+  if (!state.activeZoomPattern) return;
+  const pattern = state.activeZoomPattern;
+  if (pattern.id <= 258) {
+    showToast("System seed memories are immutable and cannot be modified.");
+    return;
+  }
+
+  const rawKeywords = elements.zoomEditKeywords?.value || "";
+  const keywords = rawKeywords
+    .split(",")
+    .map((k) => k.trim().toLowerCase())
+    .filter((k) => k.length > 0);
+
+  if (keywords.length === 0) {
+    if (elements.zoomEditError) {
+      elements.zoomEditError.textContent = "Please provide at least one valid keyword.";
+      elements.zoomEditError.style.display = "block";
+    }
+    return;
+  }
+
+  const responseText = (elements.zoomEditResponse?.value || "").trim();
+  if (!responseText) {
+    if (elements.zoomEditError) {
+      elements.zoomEditError.textContent = "Saved response cannot be empty.";
+      elements.zoomEditError.style.display = "block";
+    }
+    return;
+  }
+
+  const category = (elements.zoomEditCategory?.value?.trim() || "general").toLowerCase();
+  const matchMode = elements.zoomEditMode?.value || "phrase";
+
+  elements.zoomEditSaveBtn.disabled = true;
+  elements.zoomEditSaveBtn.textContent = "Saving...";
+
+  try {
+    const res = await api(`/api/memories/${pattern.id}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        keywords,
+        response: responseText,
+        category,
+        match_mode: matchMode,
+      }),
+    });
+
+    const updated = res.memory || res.pattern;
+    Object.assign(pattern, updated);
+    state.activeZoomPattern = pattern;
+
+    // Update pattern in state.patterns
+    const idx = state.patterns.findIndex((p) => p.id === pattern.id);
+    if (idx !== -1) {
+      state.patterns[idx] = pattern;
+    }
+
+    // Refresh view mode fields
+    elements.zoomCardCategory.textContent = pattern.category || "General";
+    elements.zoomCardMode.textContent =
+      pattern.match_mode === "any" ? "Matches any keyword" : "Matches complete phrase";
+    const triggerText = pattern.keywords.join(pattern.match_mode === "any" ? " · " : " ");
+    elements.zoomCardTrigger.textContent = triggerText;
+    elements.zoomKeywordRow.replaceChildren();
+    pattern.keywords.forEach((keyword) => {
+      const chip = document.createElement("span");
+      chip.className = "keyword-chip";
+      chip.textContent = keyword;
+      elements.zoomKeywordRow.append(chip);
+    });
+    elements.zoomCardResponse.innerHTML = renderMarkdown(pattern.response);
+
+    // Re-render Knowledge Forge cards
+    renderKnowledge();
+
+    setZoomModalMode("view");
+    showToast(`Memory #${pattern.id} updated successfully.`);
+    announce(`Memory #${pattern.id} updated.`);
+  } catch (err) {
+    if (elements.zoomEditError) {
+      elements.zoomEditError.textContent = err.message || "Failed to update memory.";
+      elements.zoomEditError.style.display = "block";
+    }
+  } finally {
+    elements.zoomEditSaveBtn.disabled = false;
+    elements.zoomEditSaveBtn.innerHTML = '<span aria-hidden="true">💾</span> Save Changes';
+  }
 }
 
 function escapeHtml(str) {

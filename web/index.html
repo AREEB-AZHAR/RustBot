@@ -27,8 +27,8 @@
     />
     <meta name="twitter:image" content="__ORIGIN__/og.png" />
     <title>RustBot — Knowledge Forge</title>
-    <link rel="stylesheet" href="/styles.css?v=7" />
-    <script src="/app.js?v=7" defer></script>
+    <link rel="stylesheet" href="/styles.css?v=8" />
+    <script src="/app.js?v=8" defer></script>
   </head>
   <body>
     <a class="skip-link" href="#composer-input">Skip to message composer</a>
@@ -609,11 +609,13 @@
             <span class="zoom-badge-id" id="zoom-card-id">Memory #00</span>
             <span class="zoom-badge-category" id="zoom-card-category">General</span>
             <span class="zoom-badge-mode" id="zoom-card-mode">Matches phrase</span>
+            <span class="zoom-badge-readonly" id="zoom-card-readonly" style="display: none;">🔒 System Memory (Read-Only)</span>
           </div>
           <button class="zoom-close-btn" id="zoom-close-btn" type="button" aria-label="Close detail modal">×</button>
         </header>
 
-        <div class="zoom-body">
+        <!-- View Mode Body -->
+        <div class="zoom-body" id="zoom-view-body">
           <div class="zoom-section">
             <p class="zoom-label">Trigger Prompt / Keywords</p>
             <h3 class="zoom-trigger-text" id="zoom-card-trigger"></h3>
@@ -626,15 +628,59 @@
           </div>
         </div>
 
-        <footer class="zoom-footer">
+        <!-- Edit Mode Body -->
+        <form class="zoom-body" id="zoom-edit-body" style="display: none;" onsubmit="return false;">
+          <div class="zoom-section">
+            <label class="zoom-label" for="zoom-edit-keywords">Keywords (comma-separated)</label>
+            <input type="text" id="zoom-edit-keywords" class="text-input zoom-input" placeholder="e.g. solana, tps, speed" required />
+          </div>
+
+          <div class="zoom-edit-grid">
+            <div class="zoom-section">
+              <label class="zoom-label" for="zoom-edit-category">Category</label>
+              <input type="text" id="zoom-edit-category" class="text-input zoom-input" placeholder="e.g. general, crypto, rust" />
+            </div>
+            <div class="zoom-section">
+              <label class="zoom-label" for="zoom-edit-mode">Match Mode</label>
+              <select id="zoom-edit-mode" class="select-input zoom-select">
+                <option value="phrase">Matches phrase</option>
+                <option value="all">Matches all keywords</option>
+                <option value="any">Matches any keyword</option>
+                <option value="exact">Exact match</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="zoom-section">
+            <label class="zoom-label" for="zoom-edit-response">Saved Response (Markdown supported)</label>
+            <textarea id="zoom-edit-response" class="textarea-input zoom-textarea" rows="7" placeholder="Enter response..." required></textarea>
+          </div>
+          <div id="zoom-edit-error" class="form-error" style="display: none;"></div>
+        </form>
+
+        <!-- View Mode Footer -->
+        <footer class="zoom-footer" id="zoom-view-footer">
           <button class="zoom-action-btn secondary" id="zoom-copy-btn" type="button">
             <span aria-hidden="true">📋</span> Copy Response
+          </button>
+          <button class="zoom-action-btn secondary" id="zoom-edit-btn" type="button">
+            <span aria-hidden="true">✏️</span> Edit Pattern
           </button>
           <button class="zoom-action-btn primary" id="zoom-test-btn" type="button">
             <span aria-hidden="true">💬</span> Test in Chat
           </button>
           <button class="zoom-action-btn danger" id="zoom-forget-btn" type="button">
             <span aria-hidden="true">🗑</span> Forget
+          </button>
+        </footer>
+
+        <!-- Edit Mode Footer -->
+        <footer class="zoom-footer" id="zoom-edit-footer" style="display: none;">
+          <button class="zoom-action-btn secondary" id="zoom-edit-cancel-btn" type="button">
+            Cancel
+          </button>
+          <button class="zoom-action-btn primary" id="zoom-edit-save-btn" type="button">
+            <span aria-hidden="true">💾</span> Save Changes
           </button>
         </footer>
       </div>

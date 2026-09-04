@@ -134,6 +134,7 @@ pub struct MemoryRecord {
     pub category: String,
     pub created_at: i64,
     pub updated_at: i64,
+    pub owner_user_id: Option<String>,
     pub updated_by_user_id: Option<String>,
 }
 
@@ -290,6 +291,13 @@ impl Database {
                     request_status TEXT NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS idx_ai_usage_user_time ON ai_usage(user_id, occurred_at DESC);",
+            ),
+            (
+                6,
+                "006_memory_ownership",
+                "ALTER TABLE memories ADD COLUMN owner_user_id TEXT REFERENCES users(id);
+                UPDATE memories SET owner_user_id = updated_by_user_id WHERE owner_user_id IS NULL AND updated_by_user_id IS NOT NULL;
+                CREATE INDEX IF NOT EXISTS idx_memories_owner ON memories(owner_user_id);",
             ),
         ];
 
@@ -822,7 +830,7 @@ impl Database {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let mut stmt = conn
             .prepare(
-                "SELECT id, keywords, response, match_mode, category, created_at, updated_at, updated_by_user_id
+                "SELECT id, keywords, response, match_mode, category, created_at, updated_at, owner_user_id, updated_by_user_id
                  FROM memories
                  ORDER BY id ASC",
             )
@@ -840,7 +848,8 @@ impl Database {
                     category: row.get(4)?,
                     created_at: row.get(5)?,
                     updated_at: row.get(6)?,
-                    updated_by_user_id: row.get(7)?,
+                    owner_user_id: row.get(7)?,
+                    updated_by_user_id: row.get(8)?,
                 })
             })
             .map_err(|e| e.to_string())?;
@@ -850,6 +859,39 @@ impl Database {
             results.push(r.map_err(|e| e.to_string())?);
         }
         Ok(results)
+    }
+
+    pub fn get_memory_by_id(&self, id: i64) -> Result<Option<MemoryRecord>, String> {
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, keywords, response, match_mode, category, created_at, updated_at, owner_user_id, updated_by_user_id
+                 FROM memories
+                 WHERE id = ?1
+                 LIMIT 1",
+            )
+            .map_err(|e| e.to_string())?;
+
+        let res = stmt
+            .query_row(params![id], |row| {
+                let keywords_raw: String = row.get(1)?;
+                let keywords: Vec<String> = serde_json::from_str(&keywords_raw).unwrap_or_default();
+                Ok(MemoryRecord {
+                    id: row.get(0)?,
+                    keywords,
+                    response: row.get(2)?,
+                    match_mode: row.get(3)?,
+                    category: row.get(4)?,
+                    created_at: row.get(5)?,
+                    updated_at: row.get(6)?,
+                    owner_user_id: row.get(7)?,
+                    updated_by_user_id: row.get(8)?,
+                })
+            })
+            .optional()
+            .map_err(|e| e.to_string())?;
+
+        Ok(res)
     }
 
     pub fn insert_memory(
@@ -873,8 +915,8 @@ impl Database {
 
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         conn.execute(
-            "INSERT INTO memories (keywords, response, match_mode, category, created_at, updated_at, updated_by_user_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?6)",
+            "INSERT INTO memories (keywords, response, match_mode, category, created_at, updated_at, owner_user_id, updated_by_user_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?6, ?6)",
             params![keywords_json, response, match_mode, category, now, user_id],
         )
         .map_err(|e| format!("Failed to insert memory: {e}"))?;
@@ -889,6 +931,48 @@ impl Database {
             category: category.to_string(),
             created_at: now,
             updated_at: now,
+            owner_user_id: user_id.map(|u| u.to_string()),
+            updated_by_user_id: user_id.map(|u| u.to_string()),
+        })
+    }
+
+    pub fn insert_memory_with_id(
+        &self,
+        id: i64,
+        keywords: &[String],
+        response: &str,
+        match_mode: &str,
+        category: &str,
+        user_id: Option<&str>,
+    ) -> Result<MemoryRecord, String> {
+        if keywords.is_empty() {
+            return Err("Memory must contain at least one keyword.".to_string());
+        }
+        if response.trim().is_empty() {
+            return Err("Memory response cannot be empty.".to_string());
+        }
+
+        let keywords_json = serde_json::to_string(keywords)
+            .map_err(|e| format!("Failed to serialize keywords: {e}"))?;
+        let now = now_timestamp();
+
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        conn.execute(
+            "INSERT INTO memories (id, keywords, response, match_mode, category, created_at, updated_at, owner_user_id, updated_by_user_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6, ?7, ?7)",
+            params![id, keywords_json, response, match_mode, category, now, user_id],
+        )
+        .map_err(|e| format!("Failed to insert memory #{id}: {e}"))?;
+
+        Ok(MemoryRecord {
+            id,
+            keywords: keywords.to_vec(),
+            response: response.to_string(),
+            match_mode: match_mode.to_string(),
+            category: category.to_string(),
+            created_at: now,
+            updated_at: now,
+            owner_user_id: user_id.map(|u| u.to_string()),
             updated_by_user_id: user_id.map(|u| u.to_string()),
         })
     }
@@ -927,11 +1011,13 @@ impl Database {
             return Err(format!("Memory #{id} not found."));
         }
 
-        // Fetch created_at
-        let created_at: i64 = conn
-            .query_row("SELECT created_at FROM memories WHERE id = ?1", params![id], |row| {
-                row.get(0)
-            })
+        // Fetch created_at and owner_user_id
+        let (created_at, owner_user_id): (i64, Option<String>) = conn
+            .query_row(
+                "SELECT created_at, owner_user_id FROM memories WHERE id = ?1",
+                params![id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
             .map_err(|e| e.to_string())?;
 
         Ok(MemoryRecord {
@@ -942,6 +1028,7 @@ impl Database {
             category: category.to_string(),
             created_at,
             updated_at: now,
+            owner_user_id,
             updated_by_user_id: user_id.map(|u| u.to_string()),
         })
     }
@@ -1282,19 +1369,30 @@ mod tests {
     #[test]
     fn test_memory_crud_and_import() {
         let db = Database::open_in_memory().unwrap();
+        let pass_hash = hash_password("PassWord123!").unwrap();
+        let alice = db.create_user("alice", None, &pass_hash, "user").unwrap();
+        let bob = db.create_user("bob", None, &pass_hash, "admin").unwrap();
+
         let memory = db
             .insert_memory(
                 &["hello".to_string(), "hi".to_string()],
                 "Greetings human!",
                 "phrase",
                 "general",
-                None,
+                Some(&alice.id),
             )
             .unwrap();
         assert_eq!(memory.keywords, vec!["hello", "hi"]);
+        assert_eq!(memory.owner_user_id.as_deref(), Some(alice.id.as_str()));
+        assert_eq!(memory.updated_by_user_id.as_deref(), Some(alice.id.as_str()));
+
+        let found = db.get_memory_by_id(memory.id).unwrap();
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().owner_user_id.as_deref(), Some(alice.id.as_str()));
 
         let all = db.list_memories().unwrap();
         assert_eq!(all.len(), 1);
+        assert_eq!(all[0].owner_user_id.as_deref(), Some(alice.id.as_str()));
 
         let updated = db
             .update_memory(
@@ -1303,15 +1401,18 @@ mod tests {
                 "Updated greeting",
                 "phrase",
                 "greetings",
-                None,
+                Some(&bob.id),
             )
             .unwrap();
         assert_eq!(updated.response, "Updated greeting");
         assert_eq!(updated.category, "greetings");
+        assert_eq!(updated.owner_user_id.as_deref(), Some(alice.id.as_str()));
+        assert_eq!(updated.updated_by_user_id.as_deref(), Some(bob.id.as_str()));
 
         let deleted = db.delete_memory(memory.id).unwrap();
         assert!(deleted);
         assert_eq!(db.list_memories().unwrap().len(), 0);
+        assert!(db.get_memory_by_id(memory.id).unwrap().is_none());
     }
 
     #[test]

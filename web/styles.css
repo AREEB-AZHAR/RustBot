@@ -3570,6 +3570,65 @@ pre.code-block code {
   transform: translateY(-1px);
 }
 
+.zoom-action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.zoom-badge-readonly {
+  font-size: 10px;
+  font-weight: 700;
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.12);
+  border: 1px solid rgba(251, 191, 36, 0.28);
+  padding: 3px 9px;
+  border-radius: 6px;
+  letter-spacing: 0.02em;
+}
+
+.zoom-edit-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 480px) {
+  .zoom-edit-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.zoom-input,
+.zoom-select,
+.zoom-textarea {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 10px 14px;
+  color: #f1f5f9;
+  font-size: 13px;
+  font-family: inherit;
+  box-sizing: border-box;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.zoom-input:focus,
+.zoom-select:focus,
+.zoom-textarea:focus {
+  outline: none;
+  border-color: var(--ember);
+  box-shadow: 0 0 0 2px rgba(228, 98, 50, 0.2);
+}
+
+.zoom-textarea {
+  resize: vertical;
+  line-height: 1.55;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 12.5px;
+}
+
 /* ==========================================================================
    KNOWLEDGE TOOLBAR & CATEGORIES STYLING
    ========================================================================== */

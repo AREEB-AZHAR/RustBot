@@ -13,7 +13,7 @@ use std::io::{Read, Write};
 use std::net::{IpAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Condvar, Mutex, RwLock};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -49,12 +49,75 @@ const OPENROUTER_MODELS: &[&str] = &[
     "nvidia/nemotron-3-super-120b-a12b:free",
 ];
 
+pub struct Semaphore {
+    permits: Mutex<usize>,
+    cvar: Condvar,
+    max_permits: usize,
+}
+
+pub struct SemaphoreGuard {
+    sem: Arc<Semaphore>,
+}
+
+impl Semaphore {
+    pub fn new(permits: usize) -> Self {
+        Self {
+            permits: Mutex::new(permits),
+            cvar: Condvar::new(),
+            max_permits: permits,
+        }
+    }
+
+    pub fn acquire_timeout(self: &Arc<Self>, timeout: Duration) -> Option<SemaphoreGuard> {
+        let mut available = self.permits.lock().ok()?;
+        let deadline = Instant::now() + timeout;
+
+        while *available == 0 {
+            let now = Instant::now();
+            if now >= deadline {
+                return None;
+            }
+            let remaining = deadline - now;
+            let (next_guard, wait_res) = self.cvar.wait_timeout(available, remaining).ok()?;
+            available = next_guard;
+            if wait_res.timed_out() && *available == 0 {
+                return None;
+            }
+        }
+
+        *available -= 1;
+        Some(SemaphoreGuard {
+            sem: Arc::clone(self),
+        })
+    }
+
+    #[allow(dead_code)]
+    pub fn available_permits(&self) -> usize {
+        self.permits.lock().map(|p| *p).unwrap_or(0)
+    }
+
+    fn release(&self) {
+        if let Ok(mut available) = self.permits.lock() {
+            if *available < self.max_permits {
+                *available += 1;
+                self.cvar.notify_one();
+            }
+        }
+    }
+}
+
+impl Drop for SemaphoreGuard {
+    fn drop(&mut self) {
+        self.sem.release();
+    }
+}
+
 #[derive(Clone)]
 pub struct AppState {
     pub config: AppConfig,
     pub db: Database,
     pub store: Arc<RwLock<KnowledgeStore>>,
-    pub openrouter_lock: Arc<Mutex<()>>,
+    pub openrouter_semaphore: Arc<Semaphore>,
     pub ip_limiter: Arc<Mutex<IpRateLimiter>>,
     pub http_client: reqwest::blocking::Client,
 }
@@ -247,7 +310,7 @@ pub fn run(config: AppConfig, db: Database, knowledge_path: PathBuf) -> Result<(
         config,
         db,
         store: Arc::new(RwLock::new(store)),
-        openrouter_lock: Arc::new(Mutex::new(())),
+        openrouter_semaphore: Arc::new(Semaphore::new(3)),
         ip_limiter: Arc::new(Mutex::new(IpRateLimiter::new())),
         http_client,
     };
@@ -555,6 +618,14 @@ fn route_request(request: &Request, state: &AppState) -> Response {
         }
         ("POST", "/api/memories/import") | ("POST", "/api/knowledge/import") => {
             handle_import_memories(request, state)
+        }
+        ("PUT", path) if path.starts_with("/api/memories/") || path.starts_with("/api/knowledge/") => {
+            let raw_id = if path.starts_with("/api/memories/") {
+                path.trim_start_matches("/api/memories/")
+            } else {
+                path.trim_start_matches("/api/knowledge/")
+            };
+            handle_update_memory(request, state, raw_id)
         }
         ("DELETE", path) if path.starts_with("/api/memories/") || path.starts_with("/api/knowledge/") => {
             let raw_id = if path.starts_with("/api/memories/") {
@@ -914,7 +985,9 @@ fn call_openrouter_fallback(
         return None;
     }
 
-    let _guard = state.openrouter_lock.lock().ok()?;
+    let _guard = state
+        .openrouter_semaphore
+        .acquire_timeout(Duration::from_secs(2))?;
 
     let history_messages = state
         .db
@@ -1107,19 +1180,11 @@ fn handle_save_memory(request: &Request, state: &AppState) -> Response {
     }
 }
 
-fn handle_delete_memory(request: &Request, state: &AppState, raw_id: &str) -> Response {
+fn handle_update_memory(request: &Request, state: &AppState, raw_id: &str) -> Response {
     let (session, user) = match authenticate(request, state) {
         Ok(res) => res,
         Err(err_resp) => return err_resp,
     };
-
-    if user.role != "admin" {
-        return Response::error(
-            403,
-            "Forbidden",
-            "Memory management is restricted to administrators.",
-        );
-    }
 
     if !validate_session_csrf(request, &session, state) {
         return Response::error(403, "Forbidden", "Invalid CSRF token.");
@@ -1129,6 +1194,113 @@ fn handle_delete_memory(request: &Request, state: &AppState, raw_id: &str) -> Re
         Ok(i) => i,
         Err(_) => return Response::error(400, "Bad Request", "Invalid memory ID."),
     };
+
+    // Explicit check for seed-memory immutability (id <= 258)
+    if id <= 258 {
+        return Response::error(
+            403,
+            "Forbidden",
+            "System seed memories are immutable and cannot be modified.",
+        );
+    }
+
+    // Fetch memory to verify existence and check ownership
+    let memory = match state.db.get_memory_by_id(id) {
+        Ok(Some(m)) => m,
+        Ok(None) => return Response::error(404, "Not Found", "Memory not found."),
+        Err(e) => return Response::error(500, "Internal Server Error", &e),
+    };
+
+    // Ownership check: must be the creator (owner) or an administrator
+    if memory.owner_user_id.as_deref() != Some(&user.id) && user.role != "admin" {
+        return Response::error(
+            403,
+            "Forbidden",
+            "You do not have permission to modify this memory.",
+        );
+    }
+
+    let payload: SaveMemoryRequest = match parse_json(&request.body) {
+        Ok(p) => p,
+        Err(e) => return Response::error(400, "Bad Request", &e),
+    };
+
+    let keywords: Vec<String> = if let Some(kws) = payload.keywords {
+        kws.into_iter()
+            .map(|k| k.trim().to_lowercase())
+            .filter(|k| !k.is_empty())
+            .collect()
+    } else if let Some(p) = payload.prompt {
+        crate::knowledge::tokenize(&p)
+    } else {
+        return Response::error(400, "Bad Request", "Keywords or prompt required.");
+    };
+
+    if keywords.is_empty() {
+        return Response::error(400, "Bad Request", "At least one valid keyword is required.");
+    }
+
+    let response_text = payload.response.trim();
+    if response_text.is_empty() {
+        return Response::error(400, "Bad Request", "Memory response cannot be empty.");
+    }
+
+    let match_mode = payload.match_mode.as_deref().unwrap_or("phrase");
+    let category = payload.category.as_deref().unwrap_or("general");
+
+    match state.db.update_memory(
+        id,
+        &keywords,
+        response_text,
+        match_mode,
+        category,
+        Some(&user.id),
+    ) {
+        Ok(mem) => {
+            let _ = state.store.write().unwrap().reload_from_db(&state.db);
+            Response::json(200, "OK", json!({ "memory": mem, "pattern": mem }))
+        }
+        Err(e) => Response::error(500, "Internal Server Error", &e),
+    }
+}
+
+fn handle_delete_memory(request: &Request, state: &AppState, raw_id: &str) -> Response {
+    let (session, user) = match authenticate(request, state) {
+        Ok(res) => res,
+        Err(err_resp) => return err_resp,
+    };
+
+    if !validate_session_csrf(request, &session, state) {
+        return Response::error(403, "Forbidden", "Invalid CSRF token.");
+    }
+
+    let id: i64 = match raw_id.parse() {
+        Ok(i) => i,
+        Err(_) => return Response::error(400, "Bad Request", "Invalid memory ID."),
+    };
+
+    // Explicit check for seed-memory immutability (id <= 258)
+    if id <= 258 {
+        return Response::error(
+            403,
+            "Forbidden",
+            "System seed memories are immutable and cannot be deleted.",
+        );
+    }
+
+    let memory = match state.db.get_memory_by_id(id) {
+        Ok(Some(m)) => m,
+        Ok(None) => return Response::error(404, "Not Found", "Memory not found."),
+        Err(e) => return Response::error(500, "Internal Server Error", &e),
+    };
+
+    if memory.owner_user_id.as_deref() != Some(&user.id) && user.role != "admin" {
+        return Response::error(
+            403,
+            "Forbidden",
+            "You do not have permission to delete this memory.",
+        );
+    }
 
     match state.db.delete_memory(id) {
         Ok(true) => {
@@ -1281,14 +1453,17 @@ fn handle_openrouter_chat(request: &Request, state: &AppState) -> Response {
         );
     }
 
-    let _guard = match state.openrouter_lock.try_lock() {
-        Ok(guard) => guard,
-        Err(_) => {
+    let _guard = match state
+        .openrouter_semaphore
+        .acquire_timeout(Duration::from_secs(2))
+    {
+        Some(guard) => guard,
+        None => {
             return Response::error(
-                429,
-                "Too Many Requests",
-                "Another AI request is currently in progress. Please wait a moment.",
-            )
+                503,
+                "Service Unavailable",
+                "AI capacity is currently fully utilized. Please retry in a few seconds.",
+            );
         }
     };
 
@@ -2385,7 +2560,7 @@ mod tests {
             config,
             db,
             store,
-            openrouter_lock: Arc::new(Mutex::new(())),
+            openrouter_semaphore: Arc::new(Semaphore::new(3)),
             ip_limiter: Arc::new(Mutex::new(IpRateLimiter::new())),
             http_client: reqwest::blocking::Client::new(),
         };
@@ -2546,7 +2721,7 @@ mod tests {
             config,
             db,
             store,
-            openrouter_lock: Arc::new(Mutex::new(())),
+            openrouter_semaphore: Arc::new(Semaphore::new(3)),
             ip_limiter: Arc::new(Mutex::new(IpRateLimiter::new())),
             http_client: reqwest::blocking::Client::new(),
         };
@@ -2589,5 +2764,274 @@ mod tests {
         assert!(cookie_header.starts_with("__Host-rustbot_session="));
         assert!(cookie_header.contains("; Secure"));
         assert!(cookie_header.contains("; SameSite=Strict"));
+    }
+
+    #[test]
+    fn test_semaphore_concurrency_and_timeout() {
+        let sem = Arc::new(Semaphore::new(3));
+        assert_eq!(sem.available_permits(), 3);
+
+        let g1 = sem.acquire_timeout(Duration::from_millis(50));
+        assert!(g1.is_some());
+        assert_eq!(sem.available_permits(), 2);
+
+        let g2 = sem.acquire_timeout(Duration::from_millis(50));
+        assert!(g2.is_some());
+        assert_eq!(sem.available_permits(), 1);
+
+        let g3 = sem.acquire_timeout(Duration::from_millis(50));
+        assert!(g3.is_some());
+        assert_eq!(sem.available_permits(), 0);
+
+        // 4th acquisition should time out
+        let g4 = sem.acquire_timeout(Duration::from_millis(40));
+        assert!(g4.is_none());
+
+        // Drop one permit
+        drop(g1);
+        assert_eq!(sem.available_permits(), 1);
+
+        // Now acquisition succeeds
+        let g5 = sem.acquire_timeout(Duration::from_millis(50));
+        assert!(g5.is_some());
+        assert_eq!(sem.available_permits(), 0);
+    }
+
+    #[test]
+    fn test_memory_edit_permissions_and_seed_immutability() {
+        use crate::config::Environment;
+        use crate::db::hash_password;
+
+        let db = Database::open_in_memory().unwrap();
+        let config = AppConfig {
+            env: Environment::Development,
+            host: "127.0.0.1".to_string(),
+            port: 7878,
+            public_origin: "http://127.0.0.1:7878".to_string(),
+            database_url: PathBuf::from("test_mem.db"),
+            openrouter_api_key: None,
+            coingecko_api_key: None,
+            session_pepper: "test_pepper_mem_12345".to_string(),
+        };
+        let store = Arc::new(RwLock::new(KnowledgeStore::from_memories(&[])));
+        let state = AppState {
+            config,
+            db,
+            store,
+            openrouter_semaphore: Arc::new(Semaphore::new(3)),
+            ip_limiter: Arc::new(Mutex::new(IpRateLimiter::new())),
+            http_client: reqwest::blocking::Client::new(),
+        };
+
+        // Insert a seed memory #1 directly into DB (table is empty, so id is 1)
+        let seed_mem = state.db.insert_memory(
+            &["seed".to_string(), "test".to_string()],
+            "Seed answer",
+            "phrase",
+            "general",
+            None,
+        ).unwrap();
+        assert_eq!(seed_mem.id, 1);
+
+        // 1. Create Alice, Bob (regular users), and Charlie (admin user)
+        let pass = hash_password("AlicePass123!").unwrap();
+        let alice = state.db.create_user("alice", None, &pass, "user").unwrap();
+        let _bob = state.db.create_user("bob", None, &pass, "user").unwrap();
+        let charlie = state.db.create_user("charlie", None, &pass, "admin").unwrap();
+
+        let login_helper = |uname: &str| -> (String, String) {
+            let body = serde_json::to_vec(&json!({
+                "username": uname,
+                "password": "AlicePass123!"
+            })).unwrap();
+            let req = Request {
+                method: "POST".to_string(),
+                path: "/api/auth/login".to_string(),
+                query: HashMap::new(),
+                headers: HashMap::from([
+                    ("host".to_string(), "127.0.0.1:7878".to_string()),
+                    ("origin".to_string(), "http://127.0.0.1:7878".to_string()),
+                ]),
+                host: "127.0.0.1:7878".to_string(),
+                body,
+            };
+            let res = route_request(&req, &state);
+            assert_eq!(res.status, 200);
+            let cookie = res.headers.iter().find(|(k, _)| k == "Set-Cookie").unwrap().1.split(';').next().unwrap().to_string();
+            let res_json: serde_json::Value = serde_json::from_slice(&res.body).unwrap();
+            let csrf = res_json["csrf_token"].as_str().unwrap().to_string();
+            (cookie, csrf)
+        };
+
+        let (alice_cookie, alice_csrf) = login_helper("alice");
+        let (bob_cookie, bob_csrf) = login_helper("bob");
+        let (charlie_cookie, charlie_csrf) = login_helper("charlie");
+
+        // 4. Alice inserts custom memory #300
+        let alice_mem = state.db.insert_memory_with_id(
+            300,
+            &["solana".to_string(), "tps".to_string()],
+            "Solana TPS is high.",
+            "phrase",
+            "crypto",
+            Some(&alice.id),
+        ).unwrap();
+        let alice_mem_id = alice_mem.id;
+        assert_eq!(alice_mem_id, 300);
+
+        // Verify unauthenticated PUT -> 401
+        let req_unauth = Request {
+            method: "PUT".to_string(),
+            path: format!("/api/memories/{alice_mem_id}"),
+            query: HashMap::new(),
+            headers: HashMap::from([
+                ("host".to_string(), "127.0.0.1:7878".to_string()),
+                ("origin".to_string(), "http://127.0.0.1:7878".to_string()),
+            ]),
+            host: "127.0.0.1:7878".to_string(),
+            body: serde_json::to_vec(&json!({
+                "keywords": ["solana", "tps"],
+                "response": "Hacked response"
+            })).unwrap(),
+        };
+        let res_unauth = route_request(&req_unauth, &state);
+        assert_eq!(res_unauth.status, 401);
+
+        // Alice attempts to edit seed memory #1 -> 403 Forbidden (Seed immutability)
+        let req_seed_edit = Request {
+            method: "PUT".to_string(),
+            path: "/api/memories/1".to_string(),
+            query: HashMap::new(),
+            headers: HashMap::from([
+                ("host".to_string(), "127.0.0.1:7878".to_string()),
+                ("origin".to_string(), "http://127.0.0.1:7878".to_string()),
+                ("cookie".to_string(), alice_cookie.clone()),
+                ("x-rustbot-csrf".to_string(), alice_csrf.clone()),
+            ]),
+            host: "127.0.0.1:7878".to_string(),
+            body: serde_json::to_vec(&json!({
+                "keywords": ["seed", "modified"],
+                "response": "Malicious override"
+            })).unwrap(),
+        };
+        let res_seed_edit = route_request(&req_seed_edit, &state);
+        assert_eq!(res_seed_edit.status, 403);
+        let err_json: serde_json::Value = serde_json::from_slice(&res_seed_edit.body).unwrap();
+        assert!(err_json["error"].as_str().unwrap().contains("immutable"));
+
+        // Admin Charlie attempts to edit seed memory #1 -> also 403 Forbidden!
+        let req_admin_seed_edit = Request {
+            method: "PUT".to_string(),
+            path: "/api/memories/1".to_string(),
+            query: HashMap::new(),
+            headers: HashMap::from([
+                ("host".to_string(), "127.0.0.1:7878".to_string()),
+                ("origin".to_string(), "http://127.0.0.1:7878".to_string()),
+                ("cookie".to_string(), charlie_cookie.clone()),
+                ("x-rustbot-csrf".to_string(), charlie_csrf.clone()),
+            ]),
+            host: "127.0.0.1:7878".to_string(),
+            body: serde_json::to_vec(&json!({
+                "keywords": ["seed", "modified"],
+                "response": "Admin override"
+            })).unwrap(),
+        };
+        let res_admin_seed_edit = route_request(&req_admin_seed_edit, &state);
+        assert_eq!(res_admin_seed_edit.status, 403);
+
+        // Seed memory deletion attempt -> 403 Forbidden
+        let req_seed_del = Request {
+            method: "DELETE".to_string(),
+            path: "/api/memories/1".to_string(),
+            query: HashMap::new(),
+            headers: HashMap::from([
+                ("host".to_string(), "127.0.0.1:7878".to_string()),
+                ("origin".to_string(), "http://127.0.0.1:7878".to_string()),
+                ("cookie".to_string(), charlie_cookie.clone()),
+                ("x-rustbot-csrf".to_string(), charlie_csrf.clone()),
+            ]),
+            host: "127.0.0.1:7878".to_string(),
+            body: vec![],
+        };
+        let res_seed_del = route_request(&req_seed_del, &state);
+        assert_eq!(res_seed_del.status, 403);
+
+        // Bob attempts to edit Alice's memory -> 403 Forbidden (IDOR prevention)
+        let req_bob_edit = Request {
+            method: "PUT".to_string(),
+            path: format!("/api/memories/{alice_mem_id}"),
+            query: HashMap::new(),
+            headers: HashMap::from([
+                ("host".to_string(), "127.0.0.1:7878".to_string()),
+                ("origin".to_string(), "http://127.0.0.1:7878".to_string()),
+                ("cookie".to_string(), bob_cookie.clone()),
+                ("x-rustbot-csrf".to_string(), bob_csrf.clone()),
+            ]),
+            host: "127.0.0.1:7878".to_string(),
+            body: serde_json::to_vec(&json!({
+                "keywords": ["solana", "tps"],
+                "response": "Bob hijacking Alice's memory"
+            })).unwrap(),
+        };
+        let res_bob_edit = route_request(&req_bob_edit, &state);
+        assert_eq!(res_bob_edit.status, 403);
+        let bob_err: serde_json::Value = serde_json::from_slice(&res_bob_edit.body).unwrap();
+        assert!(bob_err["error"].as_str().unwrap().contains("permission"));
+
+        // Alice (owner) edits her own memory -> 200 OK
+        let req_alice_edit = Request {
+            method: "PUT".to_string(),
+            path: format!("/api/memories/{alice_mem_id}"),
+            query: HashMap::new(),
+            headers: HashMap::from([
+                ("host".to_string(), "127.0.0.1:7878".to_string()),
+                ("origin".to_string(), "http://127.0.0.1:7878".to_string()),
+                ("cookie".to_string(), alice_cookie.clone()),
+                ("x-rustbot-csrf".to_string(), alice_csrf.clone()),
+            ]),
+            host: "127.0.0.1:7878".to_string(),
+            body: serde_json::to_vec(&json!({
+                "keywords": ["solana", "throughput"],
+                "response": "Solana processes ~3,000 user TPS.",
+                "category": "blockchain",
+                "match_mode": "phrase"
+            })).unwrap(),
+        };
+        let res_alice_edit = route_request(&req_alice_edit, &state);
+        assert_eq!(res_alice_edit.status, 200);
+        let alice_updated_json: serde_json::Value = serde_json::from_slice(&res_alice_edit.body).unwrap();
+        assert_eq!(alice_updated_json["memory"]["response"], "Solana processes ~3,000 user TPS.");
+        assert_eq!(alice_updated_json["memory"]["category"], "blockchain");
+
+        // Verify in DB that owner_user_id is still Alice and updated_by_user_id is Alice
+        let rec = state.db.get_memory_by_id(alice_mem_id).unwrap().unwrap();
+        assert_eq!(rec.owner_user_id.as_deref(), Some(alice.id.as_str()));
+        assert_eq!(rec.updated_by_user_id.as_deref(), Some(alice.id.as_str()));
+
+        // Admin Charlie edits Alice's memory -> 200 OK, preserves owner, updates updated_by
+        let req_admin_edit = Request {
+            method: "PUT".to_string(),
+            path: format!("/api/memories/{alice_mem_id}"),
+            query: HashMap::new(),
+            headers: HashMap::from([
+                ("host".to_string(), "127.0.0.1:7878".to_string()),
+                ("origin".to_string(), "http://127.0.0.1:7878".to_string()),
+                ("cookie".to_string(), charlie_cookie.clone()),
+                ("x-rustbot-csrf".to_string(), charlie_csrf.clone()),
+            ]),
+            host: "127.0.0.1:7878".to_string(),
+            body: serde_json::to_vec(&json!({
+                "keywords": ["solana", "throughput"],
+                "response": "Admin verified Solana throughput.",
+                "category": "crypto",
+                "match_mode": "phrase"
+            })).unwrap(),
+        };
+        let res_admin_edit = route_request(&req_admin_edit, &state);
+        assert_eq!(res_admin_edit.status, 200);
+
+        let rec_after_admin = state.db.get_memory_by_id(alice_mem_id).unwrap().unwrap();
+        assert_eq!(rec_after_admin.owner_user_id.as_deref(), Some(alice.id.as_str()));
+        assert_eq!(rec_after_admin.updated_by_user_id.as_deref(), Some(charlie.id.as_str()));
     }
 }
