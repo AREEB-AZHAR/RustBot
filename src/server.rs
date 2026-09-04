@@ -475,20 +475,30 @@ fn route_request(request: &Request, state: &AppState) -> Response {
             Response::html(200, "OK", html)
         }
         ("GET", "/styles.css") => {
-            if cfg!(debug_assertions) {
+            let mut res = if cfg!(debug_assertions) {
                 if let Ok(css) = std::fs::read_to_string("web/styles.css") {
-                    return Response::asset(200, "OK", "text/css; charset=utf-8", &css);
+                    Response::asset(200, "OK", "text/css; charset=utf-8", &css)
+                } else {
+                    Response::asset(200, "OK", "text/css; charset=utf-8", STYLES_CSS)
                 }
-            }
-            Response::asset(200, "OK", "text/css; charset=utf-8", STYLES_CSS)
+            } else {
+                Response::asset(200, "OK", "text/css; charset=utf-8", STYLES_CSS)
+            };
+            res.headers.push(("Cache-Control".to_string(), "no-cache, no-store, must-revalidate".to_string()));
+            res
         }
         ("GET", "/app.js") => {
-            if cfg!(debug_assertions) {
+            let mut res = if cfg!(debug_assertions) {
                 if let Ok(js) = std::fs::read_to_string("web/app.js") {
-                    return Response::asset(200, "OK", "text/javascript; charset=utf-8", &js);
+                    Response::asset(200, "OK", "text/javascript; charset=utf-8", &js)
+                } else {
+                    Response::asset(200, "OK", "text/javascript; charset=utf-8", APP_JS)
                 }
-            }
-            Response::asset(200, "OK", "text/javascript; charset=utf-8", APP_JS)
+            } else {
+                Response::asset(200, "OK", "text/javascript; charset=utf-8", APP_JS)
+            };
+            res.headers.push(("Cache-Control".to_string(), "no-cache, no-store, must-revalidate".to_string()));
+            res
         }
         ("GET", "/og.png") => Response::binary(200, "OK", "image/png", OG_IMAGE),
         ("GET", "/api/health") => Response::json(200, "OK", json!({ "status": "ready" })),
