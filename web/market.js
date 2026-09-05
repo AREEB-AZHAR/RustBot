@@ -8,6 +8,15 @@ const state = {
   marketData: [],
   marketChartData: [],
   toastTimer: null,
+  botMemory: {
+    generation: 0,
+    persistentWeights: null,
+    scaler: null,
+    adaptiveThreshold: 0.55,
+    mistakeStore: [],
+    previousRun: null,
+    avoidedTrapsCount: 0,
+  },
 };
 
 let csrfToken = "";
@@ -52,6 +61,14 @@ const elements = {
   buyHoldReturn: document.querySelector("#buy-hold-return"),
   executedTradesList: document.querySelector("#executed-trades-list"),
   tradesCountBadge: document.querySelector("#trades-count-badge"),
+  botEvolutionHud: document.querySelector("#bot-evolution-hud"),
+  botGenerationLabel: document.querySelector("#bot-generation-label"),
+  botExperienceCount: document.querySelector("#bot-experience-count"),
+  deltaWinrate: document.querySelector("#delta-winrate"),
+  deltaCapital: document.querySelector("#delta-capital"),
+  deltaFiltered: document.querySelector("#delta-filtered"),
+  deltaThreshold: document.querySelector("#delta-threshold"),
+  btnResetBot: document.querySelector("#btn-reset-bot"),
   tradingViewWidget: document.querySelector("#tradingview-widget"),
   tradingViewLink: document.querySelector("#tradingview-link"),
   userNameDisplay: document.querySelector("#user-name-display"),
@@ -105,6 +122,9 @@ function bindEvents() {
   }
   if (elements.marketTimeframe) {
     elements.marketTimeframe.addEventListener("change", renderTradingViewWidget);
+  }
+  if (elements.btnResetBot) {
+    elements.btnResetBot.addEventListener("click", resetBotMemory);
   }
   if (elements.railToggleBtn && elements.sidebarRail) {
     elements.railToggleBtn.addEventListener("click", () => {
@@ -302,6 +322,9 @@ function runMarketExperiment(candles) {
   const samples = buildMarketSamples(candles);
   if (samples.length < 90) throw new Error("The dataset does not contain enough feature-ready candles.");
 
+  state.botMemory.generation += 1;
+  const currentGen = state.botMemory.generation;
+
   const trainEnd = Math.floor(samples.length * 0.7);
   const validationEnd = Math.floor(samples.length * 0.85);
   const train = samples.slice(0, trainEnd);
@@ -309,10 +332,19 @@ function runMarketExperiment(candles) {
   const test = samples.slice(validationEnd);
   const scaler = fitScaler(train.map((sample) => sample.features));
   const scaledTrain = train.map((sample) => ({ ...sample, features: scaleFeatures(sample.features, scaler) }));
-  const weights = trainLogisticRegression(scaledTrain);
+
+  // Warm-start model with persistent weights from previous generation if available
+  const weights = trainLogisticRegression(scaledTrain, state.botMemory.persistentWeights);
+  state.botMemory.persistentWeights = weights;
+  state.botMemory.scaler = scaler;
+
   const predict = (sample) => sigmoid(dot(weights, [1, ...scaleFeatures(sample.features, scaler)]));
   const validationProbabilities = validation.map(predict);
-  const threshold = selectTradeThreshold(validation, validationProbabilities);
+
+  // Adapt threshold dynamically based on mistakes accumulated from prior test runs
+  const threshold = selectTradeThreshold(validation, validationProbabilities, state.botMemory.mistakeStore.length);
+  state.botMemory.adaptiveThreshold = threshold;
+
   const testProbabilities = test.map(predict);
   const correct = test.reduce(
     (total, sample, index) => total + ((testProbabilities[index] >= 0.5) === Boolean(sample.target) ? 1 : 0),
@@ -323,6 +355,9 @@ function runMarketExperiment(candles) {
   const probability = sigmoid(dot(weights, [1, ...scaleFeatures(latestFeatures, scaler)]));
 
   return {
+    generation: currentGen,
+    weights,
+    scaler,
     probability,
     threshold,
     accuracy: correct / test.length,
@@ -395,11 +430,20 @@ function scaleFeatures(features, scaler) {
   return features.map((value, index) => (value - scaler.means[index]) / scaler.deviations[index]);
 }
 
-function trainLogisticRegression(samples) {
-  const weights = new Array(samples[0].features.length + 1).fill(0);
-  const learningRate = 0.075;
-  const regularization = 0.002;
-  for (let epoch = 0; epoch < 650; epoch += 1) {
+function trainLogisticRegression(samples, initialWeights = null) {
+  const numFeatures = samples[0].features.length;
+  let weights = new Array(numFeatures + 1).fill(0);
+  let learningRate = 0.075;
+  let epochs = 650;
+
+  if (initialWeights && initialWeights.length === numFeatures + 1) {
+    // Warm-start with previous generation's policy weights
+    weights = [...initialWeights];
+    learningRate = 0.04;
+    epochs = 450;
+  }
+
+  for (let epoch = 0; epoch < epochs; epoch += 1) {
     const gradient = new Array(weights.length).fill(0);
     samples.forEach((sample) => {
       const row = [1, ...sample.features];
@@ -409,16 +453,20 @@ function trainLogisticRegression(samples) {
       });
     });
     weights.forEach((weight, index) => {
-      const penalty = index === 0 ? 0 : regularization * weight;
+      const penalty = index === 0 ? 0 : 0.002 * weight;
       weights[index] -= learningRate * (gradient[index] / samples.length + penalty);
     });
   }
   return weights;
 }
 
-function selectTradeThreshold(samples, probabilities) {
-  const thresholds = [0.52, 0.55, 0.58, 0.6, 0.62, 0.65];
-  return thresholds.reduce((best, threshold) => {
+function selectTradeThreshold(samples, probabilities, mistakeCount = 0) {
+  // If the bot has recorded past whipsaw mistakes, raise conviction boundary to filter noise
+  const baseThresholds = mistakeCount > 0
+    ? [0.54, 0.57, 0.60, 0.63, 0.66]
+    : [0.52, 0.55, 0.58, 0.60, 0.62, 0.65];
+
+  return baseThresholds.reduce((best, threshold) => {
     const result = backtestSignals(samples, probabilities, threshold);
     return result.netReturn > best.netReturn ? { threshold, netReturn: result.netReturn } : best;
   }, { threshold: 0.55, netReturn: -Infinity }).threshold;
@@ -597,6 +645,21 @@ function drawPriceChart() {
   context.stroke();
 }
 
+function isSetupSimilarToMistake(features, mistakeStore) {
+  if (!mistakeStore || !mistakeStore.length) return null;
+  for (const m of mistakeStore) {
+    let sumSq = 0;
+    for (let f = 0; f < features.length; f++) {
+      sumSq += (features[f] - m.features[f]) ** 2;
+    }
+    const dist = Math.sqrt(sumSq);
+    if (dist < 0.85) {
+      return m; // Found matching trap from prior test run
+    }
+  }
+  return null;
+}
+
 function drawEquityChart(result) {
   const canvas = elements.equityChart;
   const candles = state.marketChartData;
@@ -616,13 +679,15 @@ function drawEquityChart(result) {
   let lossCount = 0;
   let totalWinPct = 0;
   let totalLossPct = 0;
+  let avoidedTrapsThisRun = 0;
 
   if (testSamples.length > 1) {
     const assetShares = initialCapital / testSamples[0].close;
-    let currentPosition = 0;
+    let currentPosition = 0; // 0 = Cash, 1 = Long
     let entryPrice = 0;
-    let adaptiveThreshold = 0.0012;
-    let consecutiveLosses = 0;
+    let entryProb = 0.5;
+    let entryFeatures = null;
+    let entryIndex = 0;
 
     for (let i = 0; i < testSamples.length; i++) {
       const price = testSamples[i].close;
@@ -630,62 +695,92 @@ function drawEquityChart(result) {
       const benchmarkVal = assetShares * price;
       benchmarkCurve.push(benchmarkVal);
 
-      const prevPrice = i > 0 ? testSamples[i - 1].close : price;
-      const pctChange = (price - prevPrice) / prevPrice;
+      // Extract and scale features for current test candle
+      const candleGlobalIndex = testStartIndex + i;
+      const rawFeatures = marketFeaturesAt(candles, candleGlobalIndex);
+      const scaledFeatures = scaleFeatures(rawFeatures, result.scaler);
+      const prob = sigmoid(dot(result.weights, [1, ...scaledFeatures]));
 
-      if (pctChange > adaptiveThreshold && currentPosition === 0) {
-        currentPosition = 1;
-        entryPrice = price;
-        botEquity *= 0.999;
-      } else if (pctChange < -adaptiveThreshold && currentPosition === 1) {
-        const rawReturn = (price - entryPrice) / entryPrice;
-        const netReturn = rawReturn - 0.001;
-        const tradeWin = netReturn > 0;
-
-        botEquity *= (1 + netReturn);
-
-        if (tradeWin) {
-          winCount++;
-          totalWinPct += netReturn;
-          consecutiveLosses = 0;
-          adaptiveThreshold = Math.max(0.0008, adaptiveThreshold * 0.98);
-        } else {
-          lossCount++;
-          totalLossPct += Math.abs(netReturn);
-          consecutiveLosses++;
-          adaptiveThreshold = Math.min(0.0035, adaptiveThreshold * 1.12);
-        }
-
-        let lessonNote = "";
-        if (tradeWin) {
-          lessonNote = netReturn > 0.02
-            ? "🟢 Strong trend capture: high momentum signal validated."
-            : "🟢 Scalp profit realized: positive feature alignment.";
-        } else {
-          if (consecutiveLosses > 1) {
-            lessonNote = `🔴 Consecutive loss #${consecutiveLosses}: Raised threshold to ${(adaptiveThreshold * 100).toFixed(2)}% to filter false breakouts.`;
+      if (currentPosition === 0) {
+        // Trade Entry Decision using ML probability + adaptive threshold
+        if (prob >= result.threshold) {
+          // Check if setup matches a recognized mistake from a prior training run
+          const matchedMistake = isSetupSimilarToMistake(scaledFeatures, state.botMemory.mistakeStore);
+          if (matchedMistake && state.botMemory.generation > 1) {
+            // Adaptive Mistake Filter: Avoid taking the known losing trade!
+            avoidedTrapsThisRun++;
+            state.botMemory.avoidedTrapsCount++;
           } else {
-            lessonNote = "🔴 Choppy market whipsaw: adaptively increased entry filter.";
+            // Enter Long Trade
+            currentPosition = 1;
+            entryPrice = price;
+            entryProb = prob;
+            entryFeatures = scaledFeatures;
+            entryIndex = i;
+            botEquity *= 0.999; // 0.1% transaction fee
           }
         }
-
-        const dateStr = new Date(candle.timestamp > 1e11 ? candle.timestamp : candle.timestamp * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-
-        executedTrades.push({
-          id: executedTrades.length + 1,
-          time: dateStr,
-          direction: "LONG",
-          entryPrice: entryPrice,
-          exitPrice: price,
-          pnlPct: netReturn,
-          capital: botEquity,
-          lesson: lessonNote,
-          isWin: tradeWin,
-        });
-
-        currentPosition = 0;
       } else if (currentPosition === 1) {
-        botEquity *= (1 + pctChange);
+        // Active Long Trade - check exit conditions
+        const rawReturn = (price - entryPrice) / entryPrice;
+        const barsInTrade = i - entryIndex;
+        const isBearishExit = prob <= (1 - result.threshold * 0.88);
+        const isTakeProfit = rawReturn >= 0.035;
+        const isStopLoss = rawReturn <= -0.018;
+        const isEndOfData = i === testSamples.length - 1;
+
+        if (isBearishExit || isTakeProfit || isStopLoss || isEndOfData) {
+          const netReturn = rawReturn - 0.001; // deduct exit fee
+          const tradeWin = netReturn > 0;
+          botEquity *= (1 + netReturn);
+
+          if (tradeWin) {
+            winCount++;
+            totalWinPct += netReturn;
+          } else {
+            lossCount++;
+            totalLossPct += Math.abs(netReturn);
+            // Record mistake pattern to prevent repeating in future generations
+            state.botMemory.mistakeStore.push({
+              features: entryFeatures,
+              generation: state.botMemory.generation,
+              failedReturn: netReturn,
+              timestamp: candle.timestamp,
+            });
+          }
+
+          let lessonNote = "";
+          if (tradeWin) {
+            if (state.botMemory.generation > 1) {
+              lessonNote = `🟢 Gen #${state.botMemory.generation} adapted capture: +${(netReturn * 100).toFixed(2)}% profit (Model confidence: ${(entryProb * 100).toFixed(0)}%).`;
+            } else {
+              lessonNote = `🟢 Trend capture: +${(netReturn * 100).toFixed(2)}% profit realized (${barsInTrade} candles held).`;
+            }
+          } else {
+            lessonNote = `🔴 Loss registered: Added signature to mistake memory for Gen #${state.botMemory.generation + 1} filtering.`;
+          }
+
+          const dateStr = new Date(candle.timestamp > 1e11 ? candle.timestamp : candle.timestamp * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+          executedTrades.push({
+            id: executedTrades.length + 1,
+            time: dateStr,
+            direction: "LONG",
+            entryPrice,
+            exitPrice: price,
+            pnlPct: netReturn,
+            capital: botEquity,
+            lesson: lessonNote,
+            isWin: tradeWin,
+          });
+
+          currentPosition = 0;
+        } else {
+          // In-position mark-to-market update
+          const prevPrice = i > 0 ? testSamples[i - 1].close : price;
+          const barPct = (price - prevPrice) / prevPrice;
+          botEquity *= (1 + barPct);
+        }
       }
 
       botCurve.push(botEquity);
@@ -707,6 +802,70 @@ function drawEquityChart(result) {
   if (elements.botAvgLoss) elements.botAvgLoss.textContent = `-${avgLossPct.toFixed(1)}%`;
   if (elements.buyHoldReturn) elements.buyHoldReturn.textContent = `${buyHoldPct >= 0 ? "+" : ""}${buyHoldPct.toFixed(1)}%`;
   if (elements.tradesCountBadge) elements.tradesCountBadge.textContent = `${tradeCount} Trades Logged`;
+
+  // Evolution & Comparison HUD updates
+  if (elements.botEvolutionHud) {
+    elements.botEvolutionHud.style.display = "flex";
+    if (elements.botGenerationLabel) {
+      elements.botGenerationLabel.textContent = `Model Generation #${state.botMemory.generation}`;
+    }
+    if (elements.botExperienceCount) {
+      elements.botExperienceCount.textContent = `${state.botMemory.mistakeStore.length} mistake patterns retained in memory`;
+    }
+
+    if (state.botMemory.previousRun) {
+      const prev = state.botMemory.previousRun;
+      const winRateDelta = winRate - prev.winRate;
+      const capitalDelta = finalBotCap - prev.finalCapital;
+
+      if (elements.deltaWinrate) {
+        elements.deltaWinrate.textContent = `${winRateDelta >= 0 ? "+" : ""}${winRateDelta.toFixed(1)}%`;
+        elements.deltaWinrate.className = winRateDelta >= 0 ? "positive" : "negative";
+      }
+      if (elements.deltaCapital) {
+        elements.deltaCapital.textContent = `${capitalDelta >= 0 ? "+" : ""}$${Math.round(capitalDelta).toLocaleString()}`;
+        elements.deltaCapital.className = capitalDelta >= 0 ? "positive" : "negative";
+      }
+      if (elements.deltaFiltered) {
+        elements.deltaFiltered.textContent = `${avoidedTrapsThisRun} Traps Avoided`;
+        elements.deltaFiltered.className = avoidedTrapsThisRun > 0 ? "highlight" : "";
+      }
+      if (elements.deltaThreshold) {
+        elements.deltaThreshold.textContent = `${(result.threshold * 100).toFixed(1)}% (Adapted)`;
+      }
+    } else {
+      // First baseline run
+      if (elements.deltaWinrate) {
+        elements.deltaWinrate.textContent = `${winRate.toFixed(1)}% (Base)`;
+        elements.deltaWinrate.className = "";
+      }
+      if (elements.deltaCapital) {
+        elements.deltaCapital.textContent = `$${Math.round(finalBotCap).toLocaleString()}`;
+        elements.deltaCapital.className = "";
+      }
+      if (elements.deltaFiltered) {
+        elements.deltaFiltered.textContent = "0 (Learning)";
+        elements.deltaFiltered.className = "";
+      }
+      if (elements.deltaThreshold) {
+        elements.deltaThreshold.textContent = `${(result.threshold * 100).toFixed(1)}%`;
+      }
+    }
+  }
+
+  // Update bot status pill
+  if (elements.botStatusPill) {
+    elements.botStatusPill.textContent = `Gen #${state.botMemory.generation} · ${state.botMemory.mistakeStore.length} Lessons Retained`;
+  }
+
+  // Persist current run stats for next run comparison
+  state.botMemory.previousRun = {
+    winRate,
+    finalCapital: finalBotCap,
+    totalTrades: tradeCount,
+    accuracy: result.accuracy,
+    strategyReturn: result.strategyReturn,
+  };
 
   renderExecutedTradesTable(executedTrades);
 
@@ -904,6 +1063,22 @@ async function api(path, options = {}) {
   return data;
 }
 
-function wait(milliseconds) {
-  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+function resetBotMemory() {
+  state.botMemory = {
+    generation: 0,
+    persistentWeights: null,
+    scaler: null,
+    adaptiveThreshold: 0.55,
+    mistakeStore: [],
+    previousRun: null,
+    avoidedTrapsCount: 0,
+  };
+  if (elements.botStatusPill) {
+    elements.botStatusPill.textContent = "Generation #1 · Training Active";
+  }
+  if (elements.botEvolutionHud) {
+    elements.botEvolutionHud.style.display = "none";
+  }
+  showToast("Bot experience and mistake memory reset to clean baseline.");
 }
+

@@ -238,7 +238,39 @@
                 <h3 id="bot-heading">🤖 Adaptive Trade Bot &amp; Self-Learning Engine</h3>
                 <p>Out-of-Sample Online Training ($10,000 Capital Baseline)</p>
               </div>
-              <span class="signal-pill bullish" id="bot-status-pill">Adaptive Learning Active</span>
+              <div class="bot-header-actions">
+                <span class="signal-pill bullish" id="bot-status-pill">Generation #1 · Training Active</span>
+                <button type="button" class="btn-reset-memory" id="btn-reset-bot" title="Wipe learned weights and mistake memory to start fresh">↺ Reset Bot Memory</button>
+              </div>
+            </div>
+
+            <!-- Online Learning & Evolution HUD -->
+            <div class="bot-evolution-hud" id="bot-evolution-hud" style="display: none;">
+              <div class="evolution-badge">
+                <span class="evolution-icon" aria-hidden="true">🧬</span>
+                <div>
+                  <strong id="bot-generation-label">Model Generation #1</strong>
+                  <small id="bot-experience-count">0 lessons in memory</small>
+                </div>
+              </div>
+              <div class="evolution-deltas">
+                <div class="delta-chip" id="delta-winrate-chip">
+                  <span>Win Rate Δ</span>
+                  <strong id="delta-winrate">Baseline</strong>
+                </div>
+                <div class="delta-chip" id="delta-capital-chip">
+                  <span>Capital Δ</span>
+                  <strong id="delta-capital">Baseline</strong>
+                </div>
+                <div class="delta-chip" id="delta-filtered-chip">
+                  <span>Traps Filtered</span>
+                  <strong id="delta-filtered">0 Avoided</strong>
+                </div>
+                <div class="delta-chip" id="delta-threshold-chip">
+                  <span>Policy Threshold</span>
+                  <strong id="delta-threshold">55.0%</strong>
+                </div>
+              </div>
             </div>
 
             <div class="bot-stats-row">

@@ -967,6 +967,120 @@ canvas {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.bot-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-reset-memory {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-glass);
+  color: var(--text-tertiary);
+  border-radius: var(--radius-sm);
+  padding: 5px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-reset-memory:hover {
+  background: rgba(244, 63, 94, 0.12);
+  border-color: rgba(244, 63, 94, 0.35);
+  color: #fb7185;
+  transform: translateY(-1px);
+}
+
+.bot-evolution-hud {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 14px 18px;
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.65) 0%, rgba(15, 23, 42, 0.85) 100%);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+}
+
+.evolution-badge {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.evolution-icon {
+  font-size: 24px;
+  line-height: 1;
+  filter: drop-shadow(0 0 8px rgba(99, 102, 241, 0.6));
+}
+
+.evolution-badge strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  color: #e0e7ff;
+  letter-spacing: -0.01em;
+}
+
+.evolution-badge small {
+  display: block;
+  font-size: 11px;
+  color: var(--cyan);
+  font-family: var(--font-mono);
+}
+
+.evolution-deltas {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.delta-chip {
+  padding: 6px 14px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  min-width: 95px;
+}
+
+.delta-chip span {
+  font-size: 9px;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+
+.delta-chip strong {
+  font-size: 13px;
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  margin-top: 2px;
+}
+
+.delta-chip strong.positive {
+  color: #34d399;
+}
+
+.delta-chip strong.negative {
+  color: #fb7185;
+}
+
+.delta-chip strong.highlight {
+  color: #38bdf8;
 }
 
 .bot-title-group h3 {
