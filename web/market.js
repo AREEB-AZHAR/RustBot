@@ -1067,6 +1067,10 @@ function formatSignedPercent(value) {
   return `${sign}${(value * 100).toFixed(1)}%`;
 }
 
+function wait(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
 function showToast(message) {
   window.clearTimeout(state.toastTimer);
   if (!elements.toast || !elements.toastMessage) return;
