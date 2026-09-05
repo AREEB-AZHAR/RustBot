@@ -641,6 +641,7 @@ async function handleLogout() {
   } catch {
     // Ignore error on logout
   }
+  sessionStorage.removeItem("rustbot_active_conv");
   setUserState(null);
   state.messages = [];
   state.conversations = [];
@@ -667,6 +668,271 @@ async function loadKnowledge() {
   }
 }
 
+function titleCaseWord(w) {
+  if (!w) return "";
+  return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+}
+
+function titleCasePhrase(phrase) {
+  const acronyms = {
+    tps: "TPS", btc: "BTC", eth: "ETH", sol: "SOL", xrp: "XRP", ai: "AI", api: "API",
+    sql: "SQL", sqlite: "SQLite", ui: "UI", usd: "USD", eur: "EUR", pkr: "PKR",
+    inr: "INR", gbp: "GBP", html: "HTML", css: "CSS", js: "JS", rust: "Rust",
+    python: "Python", solana: "Solana", bitcoin: "Bitcoin", ethereum: "Ethereum",
+    us: "US", usa: "USA", america: "US"
+  };
+  const words = (phrase || "").split(/\s+/).filter(Boolean);
+  return words.map((w, i) => {
+    const low = w.toLowerCase().replace(/^[^\w]+|[^\w]+$/g, "");
+    if (acronyms[low]) return acronyms[low];
+    if (i > 0 && ["in", "on", "at", "of", "for", "to", "vs", "by", "with", "and"].includes(low)) {
+      return low;
+    }
+    return titleCaseWord(low || w);
+  }).join(" ");
+}
+
+function generateSpecificTitle(prompt) {
+  const trimmed = (prompt || "").trim();
+  if (!trimmed) return "New Chat";
+
+  const lower = trimmed.toLowerCase();
+
+  // 1. Math queries
+  if (/^[\d\s+\-*/^().%]+$/.test(trimmed) && trimmed.length <= 30) {
+    return `Math: ${trimmed}`;
+  }
+  for (const prefix of ["solve ", "calculate ", "compute ", "evaluate "]) {
+    if (lower.startsWith(prefix)) {
+      const expr = trimmed.slice(prefix.length).trim();
+      if (expr.length <= 25 && /[+\-*/]/.test(expr)) {
+        return `Math: ${expr}`;
+      }
+    }
+  }
+
+  // 2. Greetings
+  const greetingTokens = [
+    "hi", "hello", "hey", "greetings", "good morning", "good evening", "good afternoon",
+    "howdy", "sup", "yo", "hello there", "hi there", "hey there"
+  ];
+  const strippedGreeting = lower.replace(/[^\w\s]/g, "").trim();
+  if (greetingTokens.includes(strippedGreeting)) {
+    return "Greetings";
+  }
+
+  // 3. Bot capabilities
+  const capTokens = [
+    "what can you do", "who are you", "help", "capabilities", "what are your features",
+    "how do you work", "what is rustbot", "introduce yourself"
+  ];
+  if (capTokens.includes(strippedGreeting)) {
+    return "Bot Capabilities";
+  }
+
+  // 4. Conversational prefixes
+  const prefixes = [
+    "can you please explain to me about ",
+    "can you explain to me about ",
+    "can you please explain to me ",
+    "can you explain to me ",
+    "can you please explain how ",
+    "can you please explain what ",
+    "can you please explain why ",
+    "can you please explain ",
+    "can you explain how ",
+    "can you explain what ",
+    "can you explain why ",
+    "can you explain the ",
+    "can you explain ",
+    "could you please explain ",
+    "could you explain ",
+    "can you please tell me about ",
+    "can you tell me about ",
+    "can you please tell me ",
+    "can you tell me ",
+    "can you help me with ",
+    "can you help me understand ",
+    "can you help me ",
+    "i want to know about ",
+    "i want to know ",
+    "what do you know about ",
+    "what can you tell me about ",
+    "let's discuss about ",
+    "let's discuss ",
+    "let s discuss about ",
+    "let s discuss ",
+    "lets discuss about ",
+    "lets discuss ",
+    "write an argumentative essay on whether ",
+    "write an argumentative essay on ",
+    "write an essay on whether ",
+    "write an essay on ",
+    "write a blog post about ",
+    "write a story about ",
+    "write a ",
+    "create a ",
+    "how do i calculate the ",
+    "how do i calculate ",
+    "how do we calculate ",
+    "how do you calculate ",
+    "how do i ",
+    "how do we ",
+    "how do you ",
+    "how to ",
+    "how does ",
+    "how can i ",
+    "how can we ",
+    "how high can ",
+    "give me an overview of ",
+    "give me a summary of ",
+    "give me an ",
+    "give me a ",
+    "give me ",
+    "show me ",
+    "what is the difference between ",
+    "difference between ",
+    "what is the name of the ",
+    "what is the name of ",
+    "what is the ",
+    "what are the ",
+    "what was the ",
+    "what were the ",
+    "what is ",
+    "what are ",
+    "what was ",
+    "what were ",
+    "why does ",
+    "why is the ",
+    "why is ",
+    "why are ",
+    "who is the ",
+    "who was the ",
+    "who is ",
+    "who was ",
+    "analyze ",
+    "analysis of ",
+    "predict ",
+    "explain how ",
+    "explain what ",
+    "explain why ",
+    "explain the ",
+    "explain ",
+    "please ",
+  ];
+
+  let cleaned = trimmed;
+  let found = true;
+  while (found) {
+    found = false;
+    const cLower = cleaned.toLowerCase();
+    for (const p of prefixes) {
+      if (cLower.startsWith(p)) {
+        cleaned = cleaned.slice(p.length).trimStart();
+        found = true;
+        break;
+      }
+    }
+  }
+
+  // 5. Clean trailing phrases
+  const trailing = [
+    " about and how does it work",
+    " and how does it work",
+    " and how it works",
+    " how it works",
+    " works",
+    " right now",
+    " in detail",
+    " step by step",
+    " for me",
+    " please",
+    " thanks",
+    " thank you",
+    " or down according to market sentiment",
+    " according to market sentiment",
+    " should be allowed in school",
+    " should be allowed",
+    " should be",
+  ];
+  let trailingFound = true;
+  while (trailingFound) {
+    trailingFound = false;
+    const strippedPunct = cleaned.toLowerCase().replace(/[^\w\s]+$/g, "").trimEnd();
+    for (const t of trailing) {
+      if (strippedPunct.endsWith(t)) {
+        const cutoff = strippedPunct.length - t.length;
+        cleaned = cleaned.slice(0, cutoff).trimEnd();
+        trailingFound = true;
+        break;
+      }
+    }
+  }
+
+  // Strip trailing punctuation
+  cleaned = cleaned.replace(/[^\w\s]+$/g, "").trim();
+
+  // 6. Comparison pattern: "X and Y"
+  if (cleaned.toLowerCase().includes(" and ")) {
+    const parts = cleaned.split(/\s+and\s+/i);
+    if (parts.length === 2) {
+      const leftWords = parts[0].split(/\s+/).filter(Boolean);
+      const rightWords = parts[1].split(/\s+/).filter(Boolean);
+      if (leftWords.length > 0 && leftWords.length <= 3 && rightWords.length > 0 && rightWords.length <= 3) {
+        return `${titleCasePhrase(parts[0])} vs ${titleCasePhrase(parts[1])}`;
+      }
+    }
+  }
+
+  // 7. Weather queries: "weather in <Location>" -> "<Location> Weather"
+  if (cleaned.toLowerCase().startsWith("weather in ")) {
+    const loc = cleaned.slice(11).trim();
+    if (loc) {
+      return `${titleCasePhrase(loc)} Weather`;
+    }
+  }
+
+  // 8. Tokenize into words and drop initial noise words
+  let words = cleaned
+    .split(/\s+/)
+    .map((w) => w.replace(/^[^\w]+|[^\w]+$/g, ""))
+    .filter(Boolean);
+
+  let startIdx = 0;
+  while (startIdx < words.length && ["the", "a", "an", "about", "of", "to", "in"].includes(words[startIdx].toLowerCase())) {
+    startIdx++;
+  }
+
+  const meaningfulWords = startIdx < words.length ? words.slice(startIdx) : words;
+  if (!meaningfulWords.length) {
+    return "General Discussion";
+  }
+
+  // Target 2 to 4 concise words (max 28 characters)
+  const selectedWords = [];
+  let totalChars = 0;
+  for (const w of meaningfulWords.slice(0, 5)) {
+    if (totalChars + w.length > 28 && selectedWords.length >= 2) {
+      break;
+    }
+    selectedWords.push(w);
+    totalChars += w.length + 1;
+  }
+
+  // Remove dangling trailing prepositions/conjunctions/auxiliary verbs
+  const dangling = [
+    "in", "on", "at", "of", "for", "to", "vs", "by", "with", "and", "or", "the", "a",
+    "an", "is", "be", "about", "should", "would", "could", "can", "will", "must",
+    "might", "do", "does", "did", "have", "has", "had"
+  ];
+  while (selectedWords.length > 1 && dangling.includes(selectedWords[selectedWords.length - 1].toLowerCase())) {
+    selectedWords.pop();
+  }
+
+  const title = titleCasePhrase(selectedWords.join(" "));
+  return title || "New Chat";
+}
+
 async function sendMessage(rawMessage) {
   const message = rawMessage.trim();
   if (!message || state.sending) return;
@@ -686,6 +952,16 @@ async function sendMessage(rawMessage) {
   resizeComposer();
   appendMessage("user", message, { save: false });
   setSending(true);
+
+  // Pre-emptively compute and display specific title if conversation is still default
+  const convObj = state.conversations.find((c) => c.id === state.activeConversationId);
+  const isDefaultTitle = !convObj || !convObj.title || convObj.title === "New Conversation" || convObj.title === "New Chat";
+  if (convObj && isDefaultTitle) {
+    convObj.title = generateSpecificTitle(message);
+    renderConversationsList();
+    if (elements.conversationTitle) elements.conversationTitle.textContent = convObj.title;
+  }
+
   const loadingRow = appendLoadingMessage();
   const requestStartedAt = performance.now();
 
@@ -710,10 +986,13 @@ async function sendMessage(rawMessage) {
       announce("RustBot does not know that answer yet. A teaching form is ready.");
     }
 
-    // Update conversation title if needed
-    const convObj = state.conversations.find((c) => c.id === state.activeConversationId);
-    if (convObj && (!convObj.title || convObj.title === "New Conversation" || convObj.title === "New Chat")) {
-      convObj.title = message.substring(0, 30);
+    // Reconcile conversation title with persisted server response
+    if (convObj) {
+      if (result.conversation_title) {
+        convObj.title = result.conversation_title;
+      } else if (isDefaultTitle) {
+        convObj.title = generateSpecificTitle(message);
+      }
       renderConversationsList();
       if (elements.conversationTitle) elements.conversationTitle.textContent = convObj.title;
     }
@@ -975,9 +1254,9 @@ async function loadConversations() {
     state.conversations = Array.isArray(res.conversations) ? res.conversations : [];
     renderConversationsList();
     if (state.conversations.length > 0) {
-      if (!state.activeConversationId || !state.conversations.some((c) => c.id === state.activeConversationId)) {
-        await selectConversation(state.conversations[0].id);
-      }
+      const savedActiveId = sessionStorage.getItem("rustbot_active_conv");
+      const targetConv = (savedActiveId && state.conversations.find((c) => c.id === savedActiveId)) || state.conversations[0];
+      await selectConversation(targetConv.id);
     } else {
       await startNewConversation();
     }
@@ -1022,16 +1301,21 @@ function renderConversationsList() {
 
 async function selectConversation(convId) {
   state.activeConversationId = convId;
+  sessionStorage.setItem("rustbot_active_conv", convId);
   renderConversationsList();
+
+  const convObj = state.conversations.find((c) => c.id === convId);
+  if (elements.conversationTitle) {
+    elements.conversationTitle.textContent = convObj?.title || "New Chat";
+  }
 
   try {
     const res = await api(`/api/conversations/${convId}/messages`);
     elements.conversation.replaceChildren();
     ensureMessageList();
 
-    const convObj = state.conversations.find((c) => c.id === convId);
     if (elements.conversationTitle) {
-      elements.conversationTitle.textContent = convObj?.title || "Active Chat";
+      elements.conversationTitle.textContent = convObj?.title || "New Chat";
     }
 
     state.messages = [];
@@ -1061,6 +1345,7 @@ async function startNewConversation() {
     });
     if (res.conversation) {
       state.conversations.unshift(res.conversation);
+      sessionStorage.setItem("rustbot_active_conv", res.conversation.id);
       await selectConversation(res.conversation.id);
     }
   } catch (err) {
@@ -1353,7 +1638,8 @@ function switchWorkspace(workspace) {
   elements.composerRegion.hidden = marketOpen;
   elements.marketLab.hidden = !marketOpen;
   elements.workspaceEyebrow.textContent = marketOpen ? "Quant workspace" : "Active workspace";
-  elements.conversationTitle.textContent = marketOpen ? "Market Research Lab" : "Fresh conversation";
+  const activeConv = state.conversations.find((c) => c.id === state.activeConversationId);
+  elements.conversationTitle.textContent = marketOpen ? "Market Research Lab" : (activeConv?.title || "New Chat");
   elements.readyLabel.textContent = marketOpen
     ? state.marketData.length
       ? `Dataset · ${state.marketData.length} candles`

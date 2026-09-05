@@ -643,25 +643,65 @@ impl Database {
         })
     }
 
+    pub fn update_conversation_title(
+        &self,
+        conversation_id: &str,
+        user_id: &str,
+        title: &str,
+    ) -> Result<bool, String> {
+        let clean_title = title.trim();
+        if clean_title.is_empty() {
+            return Err("Title cannot be empty.".to_string());
+        }
+        let now = now_timestamp();
+        let conn = self.conn.lock().map_err(|e| e.to_string())?;
+        let affected = conn
+            .execute(
+                "UPDATE conversations SET title = ?1, updated_at = ?2 WHERE id = ?3 AND user_id = ?4 AND deleted_at IS NULL",
+                params![clean_title, now, conversation_id, user_id],
+            )
+            .map_err(|e| format!("Failed to update conversation title: {e}"))?;
+        Ok(affected > 0)
+    }
+
     pub fn list_conversations_for_user(&self, user_id: &str) -> Result<Vec<ConversationRecord>, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let mut stmt = conn
             .prepare(
-                "SELECT id, user_id, title, created_at, updated_at
-                 FROM conversations
-                 WHERE user_id = ?1 AND deleted_at IS NULL
-                 ORDER BY updated_at DESC",
+                "SELECT c.id, c.user_id, c.title, c.created_at, c.updated_at,
+                        (SELECT m.content FROM messages m WHERE m.conversation_id = c.id AND m.role = 'user' ORDER BY m.created_at ASC LIMIT 1)
+                 FROM conversations c
+                 WHERE c.user_id = ?1 AND c.deleted_at IS NULL
+                 ORDER BY c.updated_at DESC",
             )
             .map_err(|e| e.to_string())?;
 
         let rows = stmt
             .query_map(params![user_id], |row| {
+                let id: String = row.get(0)?;
+                let user_id: String = row.get(1)?;
+                let mut title: Option<String> = row.get(2)?;
+                let created_at: i64 = row.get(3)?;
+                let updated_at: i64 = row.get(4)?;
+                let first_msg: Option<String> = row.get(5)?;
+
+                let is_default = title.as_deref().map_or(true, |t| {
+                    let lt = t.trim().to_lowercase();
+                    lt.is_empty() || lt == "new conversation" || lt == "new chat"
+                });
+
+                if is_default {
+                    if let Some(msg) = first_msg {
+                        title = Some(generate_specific_conversation_title(&msg));
+                    }
+                }
+
                 Ok(ConversationRecord {
-                    id: row.get(0)?,
-                    user_id: row.get(1)?,
-                    title: row.get(2)?,
-                    created_at: row.get(3)?,
-                    updated_at: row.get(4)?,
+                    id,
+                    user_id,
+                    title,
+                    created_at,
+                    updated_at,
                 })
             })
             .map_err(|e| e.to_string())?;
@@ -677,21 +717,40 @@ impl Database {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
         let mut stmt = conn
             .prepare(
-                "SELECT id, user_id, title, created_at, updated_at
-                 FROM conversations
-                 WHERE id = ?1 AND user_id = ?2 AND deleted_at IS NULL
+                "SELECT c.id, c.user_id, c.title, c.created_at, c.updated_at,
+                        (SELECT m.content FROM messages m WHERE m.conversation_id = c.id AND m.role = 'user' ORDER BY m.created_at ASC LIMIT 1)
+                 FROM conversations c
+                 WHERE c.id = ?1 AND c.user_id = ?2 AND c.deleted_at IS NULL
                  LIMIT 1",
             )
             .map_err(|e| e.to_string())?;
 
         let conv = stmt
             .query_row(params![conversation_id, user_id], |row| {
+                let id: String = row.get(0)?;
+                let user_id: String = row.get(1)?;
+                let mut title: Option<String> = row.get(2)?;
+                let created_at: i64 = row.get(3)?;
+                let updated_at: i64 = row.get(4)?;
+                let first_msg: Option<String> = row.get(5)?;
+
+                let is_default = title.as_deref().map_or(true, |t| {
+                    let lt = t.trim().to_lowercase();
+                    lt.is_empty() || lt == "new conversation" || lt == "new chat"
+                });
+
+                if is_default {
+                    if let Some(msg) = first_msg {
+                        title = Some(generate_specific_conversation_title(&msg));
+                    }
+                }
+
                 Ok(ConversationRecord {
-                    id: row.get(0)?,
-                    user_id: row.get(1)?,
-                    title: row.get(2)?,
-                    created_at: row.get(3)?,
-                    updated_at: row.get(4)?,
+                    id,
+                    user_id,
+                    title,
+                    created_at,
+                    updated_at,
                 })
             })
             .optional()
@@ -711,6 +770,401 @@ impl Database {
 
         Ok(affected > 0)
     }
+}
+
+fn title_case_word(w: &str) -> String {
+    let mut chars = w.chars();
+    match chars.next() {
+        None => String::new(),
+        Some(f) => f.to_uppercase().collect::<String>() + &chars.as_str().to_lowercase(),
+    }
+}
+
+fn title_case_phrase(phrase: &str) -> String {
+    let words: Vec<&str> = phrase.split_whitespace().collect();
+    let mut formatted = Vec::new();
+    for (i, &w) in words.iter().enumerate() {
+        let low = w.to_lowercase();
+        match low.as_str() {
+            "tps" => formatted.push("TPS".to_string()),
+            "btc" => formatted.push("BTC".to_string()),
+            "eth" => formatted.push("ETH".to_string()),
+            "sol" => formatted.push("SOL".to_string()),
+            "xrp" => formatted.push("XRP".to_string()),
+            "ai" => formatted.push("AI".to_string()),
+            "api" => formatted.push("API".to_string()),
+            "sql" => formatted.push("SQL".to_string()),
+            "sqlite" => formatted.push("SQLite".to_string()),
+            "ui" => formatted.push("UI".to_string()),
+            "usd" => formatted.push("USD".to_string()),
+            "eur" => formatted.push("EUR".to_string()),
+            "pkr" => formatted.push("PKR".to_string()),
+            "inr" => formatted.push("INR".to_string()),
+            "gbp" => formatted.push("GBP".to_string()),
+            "html" => formatted.push("HTML".to_string()),
+            "css" => formatted.push("CSS".to_string()),
+            "js" => formatted.push("JS".to_string()),
+            "rust" => formatted.push("Rust".to_string()),
+            "python" => formatted.push("Python".to_string()),
+            "solana" => formatted.push("Solana".to_string()),
+            "bitcoin" => formatted.push("Bitcoin".to_string()),
+            "ethereum" => formatted.push("Ethereum".to_string()),
+            "america" | "us" => formatted.push("US".to_string()),
+            "usa" => formatted.push("USA".to_string()),
+            _ => {
+                if i > 0
+                    && matches!(
+                        low.as_str(),
+                        "in" | "on" | "at" | "of" | "for" | "to" | "vs" | "by" | "with" | "and"
+                    )
+                {
+                    formatted.push(low);
+                } else {
+                    formatted.push(title_case_word(w));
+                }
+            }
+        }
+    }
+    formatted.join(" ")
+}
+
+pub fn generate_specific_conversation_title(prompt: &str) -> String {
+    let trimmed = prompt.trim();
+    if trimmed.is_empty() {
+        return "New Chat".to_string();
+    }
+
+    let lower = trimmed.to_lowercase();
+
+    // 1. Math queries
+    if lower
+        .chars()
+        .all(|c| c.is_ascii_digit() || " +-/*^().%".contains(c))
+        && trimmed.len() <= 30
+    {
+        return format!("Math: {}", trimmed);
+    }
+    for prefix in &["solve ", "calculate ", "compute ", "evaluate "] {
+        if lower.starts_with(prefix) {
+            let expr = trimmed[prefix.len()..].trim();
+            if expr.len() <= 25 && expr.chars().any(|c| "+-*/".contains(c)) {
+                return format!("Math: {}", expr);
+            }
+        }
+    }
+
+    // 2. Greetings
+    let greeting_tokens = [
+        "hi",
+        "hello",
+        "hey",
+        "greetings",
+        "good morning",
+        "good evening",
+        "good afternoon",
+        "howdy",
+        "sup",
+        "yo",
+        "hello there",
+        "hi there",
+        "hey there",
+    ];
+    let stripped_greeting = lower
+        .trim_end_matches(|c: char| c.is_ascii_punctuation() || c.is_whitespace());
+    if greeting_tokens.contains(&stripped_greeting) {
+        return "Greetings".to_string();
+    }
+
+    // 3. Bot capabilities / help
+    let cap_tokens = [
+        "what can you do",
+        "who are you",
+        "help",
+        "capabilities",
+        "what are your features",
+        "how do you work",
+        "what is rustbot",
+        "introduce yourself",
+    ];
+    if cap_tokens.contains(&stripped_greeting) {
+        return "Bot Capabilities".to_string();
+    }
+
+    // 4. Clean conversational prefixes
+    let prefixes = [
+        "can you please explain to me about ",
+        "can you explain to me about ",
+        "can you please explain to me ",
+        "can you explain to me ",
+        "can you please explain how ",
+        "can you please explain what ",
+        "can you please explain why ",
+        "can you please explain the ",
+        "can you please explain ",
+        "can you explain how ",
+        "can you explain what ",
+        "can you explain why ",
+        "can you explain the ",
+        "can you explain ",
+        "could you please explain ",
+        "could you explain ",
+        "can you tell me about ",
+        "can you tell me what ",
+        "can you tell me how ",
+        "can you tell me ",
+        "could you tell me about ",
+        "could you tell me ",
+        "tell me about ",
+        "i want to know about ",
+        "i want to know ",
+        "what do you know about ",
+        "what can you tell me about ",
+        "let's discuss about ",
+        "let's discuss ",
+        "let s discuss about ",
+        "let s discuss ",
+        "lets discuss about ",
+        "lets discuss ",
+        "write an argumentative essay on whether ",
+        "write an argumentative essay on ",
+        "write an essay on whether ",
+        "write an essay on ",
+        "write a blog post about ",
+        "write a story about ",
+        "write a ",
+        "create a ",
+        "how do i calculate the ",
+        "how do i calculate ",
+        "how do we calculate ",
+        "how do you calculate ",
+        "how do i ",
+        "how do we ",
+        "how do you ",
+        "how to ",
+        "how does ",
+        "how can i ",
+        "how can we ",
+        "how high can ",
+        "give me an overview of ",
+        "give me a summary of ",
+        "give me an ",
+        "give me a ",
+        "give me ",
+        "show me ",
+        "what is the difference between ",
+        "difference between ",
+        "what is the name of the ",
+        "what is the name of ",
+        "what is the ",
+        "what are the ",
+        "what was the ",
+        "what were the ",
+        "what is ",
+        "what are ",
+        "what was ",
+        "what were ",
+        "why does ",
+        "why is the ",
+        "why is ",
+        "why are ",
+        "who is the ",
+        "who was the ",
+        "who is ",
+        "who was ",
+        "analyze ",
+        "analysis of ",
+        "predict ",
+        "explain how ",
+        "explain what ",
+        "explain why ",
+        "explain the ",
+        "explain ",
+        "please ",
+    ];
+
+    let mut cleaned = trimmed;
+    let mut found = true;
+    while found {
+        found = false;
+        let c_lower = cleaned.to_lowercase();
+        for p in &prefixes {
+            if c_lower.starts_with(p) {
+                cleaned = cleaned[p.len()..].trim_start();
+                found = true;
+                break;
+            }
+        }
+    }
+
+    // 5. Clean trailing conversational phrases
+    let trailing = [
+        " about and how does it work",
+        " and how does it work",
+        " and how it works",
+        " how it works",
+        " works",
+        " right now",
+        " in detail",
+        " step by step",
+        " for me",
+        " please",
+        " thanks",
+        " thank you",
+        " or down according to market sentiment",
+        " according to market sentiment",
+        " should be allowed in school",
+        " should be allowed",
+        " should be",
+    ];
+    let mut trailing_found = true;
+    while trailing_found {
+        trailing_found = false;
+        let c_lower = cleaned.to_lowercase();
+        let stripped_punct =
+            c_lower.trim_end_matches(|c: char| c.is_ascii_punctuation() || c.is_whitespace());
+        for t in &trailing {
+            if stripped_punct.ends_with(t) {
+                let cutoff = stripped_punct.len() - t.len();
+                cleaned = cleaned[..cutoff].trim_end();
+                trailing_found = true;
+                break;
+            }
+        }
+    }
+
+    // Strip trailing punctuation
+    let cleaned = cleaned.trim_end_matches(|c: char| c.is_ascii_punctuation() || c.is_whitespace());
+
+    // 6. Comparison pattern: "X and Y"
+    if let Some((left, right)) = cleaned.split_once(" and ") {
+        let left_words: Vec<&str> = left.split_whitespace().collect();
+        let right_words: Vec<&str> = right.split_whitespace().collect();
+        if !left_words.is_empty()
+            && left_words.len() <= 3
+            && !right_words.is_empty()
+            && right_words.len() <= 3
+        {
+            return format!(
+                "{} vs {}",
+                title_case_phrase(left),
+                title_case_phrase(right)
+            );
+        }
+    }
+
+    // 7. Weather queries: "weather in <Location>" -> "<Location> Weather"
+    let c_lower = cleaned.to_lowercase();
+    if c_lower.starts_with("weather in ") {
+        let loc = cleaned[11..].trim();
+        if !loc.is_empty() {
+            return format!("{} Weather", title_case_phrase(loc));
+        }
+    }
+
+    // 8. Tokenize into words and drop initial noise words
+    let words: Vec<&str> = cleaned
+        .split_whitespace()
+        .map(|w| w.trim_matches(|c: char| c.is_ascii_punctuation()))
+        .filter(|w| !w.is_empty())
+        .collect();
+
+    let mut start_idx = 0;
+    while start_idx < words.len()
+        && matches!(
+            words[start_idx].to_lowercase().as_str(),
+            "the" | "a" | "an" | "about" | "of" | "to" | "in"
+        )
+    {
+        start_idx += 1;
+    }
+
+    let meaningful_words = if start_idx < words.len() {
+        &words[start_idx..]
+    } else {
+        &words[..]
+    };
+
+    if meaningful_words.is_empty() {
+        return "General Discussion".to_string();
+    }
+
+    // Target 2 to 4 concise words (max 28 characters total)
+    let mut selected_words = Vec::new();
+    let mut total_chars = 0;
+    for &w in meaningful_words.iter().take(5) {
+        if total_chars + w.len() > 28 && selected_words.len() >= 2 {
+            break;
+        }
+        selected_words.push(w);
+        total_chars += w.len() + 1;
+    }
+
+    // Remove dangling trailing prepositions/conjunctions/auxiliary verbs
+    let dangling = [
+        "in", "on", "at", "of", "for", "to", "vs", "by", "with", "and", "or", "the", "a",
+        "an", "is", "be", "about", "should", "would", "could", "can", "will", "must",
+        "might", "do", "does", "did", "have", "has", "had",
+    ];
+    while selected_words.len() > 1
+        && dangling.contains(&selected_words.last().unwrap().to_lowercase().as_str())
+    {
+        selected_words.pop();
+    }
+
+    // Format words with proper capitalization
+    let mut formatted_words = Vec::new();
+    for (i, &w) in selected_words.iter().enumerate() {
+        let low = w.to_lowercase();
+        match low.as_str() {
+            "tps" => formatted_words.push("TPS".to_string()),
+            "btc" => formatted_words.push("BTC".to_string()),
+            "eth" => formatted_words.push("ETH".to_string()),
+            "sol" => formatted_words.push("SOL".to_string()),
+            "xrp" => formatted_words.push("XRP".to_string()),
+            "ai" => formatted_words.push("AI".to_string()),
+            "api" => formatted_words.push("API".to_string()),
+            "sql" => formatted_words.push("SQL".to_string()),
+            "sqlite" => formatted_words.push("SQLite".to_string()),
+            "ui" => formatted_words.push("UI".to_string()),
+            "usd" => formatted_words.push("USD".to_string()),
+            "eur" => formatted_words.push("EUR".to_string()),
+            "pkr" => formatted_words.push("PKR".to_string()),
+            "inr" => formatted_words.push("INR".to_string()),
+            "gbp" => formatted_words.push("GBP".to_string()),
+            "html" => formatted_words.push("HTML".to_string()),
+            "css" => formatted_words.push("CSS".to_string()),
+            "js" => formatted_words.push("JS".to_string()),
+            "rust" => formatted_words.push("Rust".to_string()),
+            "python" => formatted_words.push("Python".to_string()),
+            "solana" => formatted_words.push("Solana".to_string()),
+            "bitcoin" => formatted_words.push("Bitcoin".to_string()),
+            "ethereum" => formatted_words.push("Ethereum".to_string()),
+            "america" | "us" => formatted_words.push("US".to_string()),
+            "usa" => formatted_words.push("USA".to_string()),
+            _ => {
+                if i > 0
+                    && matches!(
+                        low.as_str(),
+                        "in" | "on" | "at" | "of" | "for" | "to" | "vs" | "by" | "with" | "and"
+                    )
+                {
+                    formatted_words.push(low);
+                } else {
+                    formatted_words.push(title_case_word(w));
+                }
+            }
+        }
+    }
+
+    let title = formatted_words.join(" ");
+    if title.is_empty() {
+        "New Chat".to_string()
+    } else {
+        title
+    }
+}
+
+impl Database {
 
     pub fn add_message(
         &self,

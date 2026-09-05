@@ -240,6 +240,11 @@ struct CreateConversationRequest {
 }
 
 #[derive(Deserialize)]
+struct UpdateConversationTitleRequest {
+    title: String,
+}
+
+#[derive(Deserialize)]
 struct PostMessageRequest {
     message: String,
 }
@@ -607,6 +612,10 @@ fn route_request(request: &Request, state: &AppState) -> Response {
             let conv_id = path.trim_start_matches("/api/conversations/");
             handle_delete_conversation(request, state, conv_id)
         }
+        ("PATCH", path) if path.starts_with("/api/conversations/") => {
+            let conv_id = path.trim_start_matches("/api/conversations/");
+            handle_update_conversation_title(request, state, conv_id)
+        }
 
         // ==========================================
         // MEMORIES / KNOWLEDGE (ADMIN ONLY FOR MANAGEMENT)
@@ -951,13 +960,34 @@ fn handle_post_message(request: &Request, state: &AppState, conv_id: &str) -> Re
         Err(e) => return Response::error(500, "Internal Server Error", &e),
     };
 
+    // 4. Auto-update conversation title if it is default, unassigned, or generic
+    let updated_title = match state.db.get_conversation_for_user(conv_id, &user.id) {
+        Ok(Some(conv)) => {
+            let is_default = conv.title.as_deref().map_or(true, |t| {
+                let lt = t.trim().to_lowercase();
+                lt.is_empty() || lt == "new conversation" || lt == "new chat"
+            });
+            if is_default {
+                let specific_title = crate::db::generate_specific_conversation_title(msg);
+                let _ = state
+                    .db
+                    .update_conversation_title(conv_id, &user.id, &specific_title);
+                Some(specific_title)
+            } else {
+                conv.title
+            }
+        }
+        _ => None,
+    };
+
     Response::json(
         200,
         "OK",
         json!({
             "user_message": user_msg_record,
             "assistant_message": bot_msg_record,
-            "status": bot_status
+            "status": bot_status,
+            "conversation_title": updated_title
         }),
     )
 }
@@ -1080,6 +1110,37 @@ fn handle_delete_conversation(
 
     match state.db.delete_conversation_for_user(conv_id, &user.id) {
         Ok(true) => Response::json(200, "OK", json!({ "status": "deleted" })),
+        Ok(false) => Response::error(404, "Not Found", "Conversation not found."),
+        Err(e) => Response::error(500, "Internal Server Error", &e),
+    }
+}
+
+fn handle_update_conversation_title(
+    request: &Request,
+    state: &AppState,
+    conv_id: &str,
+) -> Response {
+    let (session, user) = match authenticate(request, state) {
+        Ok(res) => res,
+        Err(err_resp) => return err_resp,
+    };
+
+    if !validate_session_csrf(request, &session, state) {
+        return Response::error(403, "Forbidden", "Invalid CSRF token.");
+    }
+
+    let payload: UpdateConversationTitleRequest = match parse_json(&request.body) {
+        Ok(p) => p,
+        Err(e) => return Response::error(400, "Bad Request", &e),
+    };
+
+    let title = payload.title.trim();
+    if title.is_empty() {
+        return Response::error(400, "Bad Request", "Title cannot be empty.");
+    }
+
+    match state.db.update_conversation_title(conv_id, &user.id, title) {
+        Ok(true) => Response::json(200, "OK", json!({ "id": conv_id, "title": title })),
         Ok(false) => Response::error(404, "Not Found", "Conversation not found."),
         Err(e) => Response::error(500, "Internal Server Error", &e),
     }
@@ -3033,5 +3094,185 @@ mod tests {
         let rec_after_admin = state.db.get_memory_by_id(alice_mem_id).unwrap().unwrap();
         assert_eq!(rec_after_admin.owner_user_id.as_deref(), Some(alice.id.as_str()));
         assert_eq!(rec_after_admin.updated_by_user_id.as_deref(), Some(charlie.id.as_str()));
+    }
+
+    #[test]
+    fn test_specific_conversation_title_generation() {
+        use crate::db::generate_specific_conversation_title;
+
+        assert_eq!(
+            generate_specific_conversation_title("what is merkle tree about and how does it work?"),
+            "Merkle Tree"
+        );
+        assert_eq!(
+            generate_specific_conversation_title("what is the alpine upgrade in solana blockchain?"),
+            "Alpine Upgrade in Solana"
+        );
+        assert_eq!(
+            generate_specific_conversation_title("what is solana tps"),
+            "Solana TPS"
+        );
+        assert_eq!(
+            generate_specific_conversation_title("what is the difference between solana and ethereum"),
+            "Solana vs Ethereum"
+        );
+        assert_eq!(
+            generate_specific_conversation_title("how do i calculate the sharpe ratio in rust"),
+            "Sharpe Ratio in Rust"
+        );
+        assert_eq!(
+            generate_specific_conversation_title("25 * 40 + 100"),
+            "Math: 25 * 40 + 100"
+        );
+        assert_eq!(
+            generate_specific_conversation_title("what is the weather in tokyo right now"),
+            "Tokyo Weather"
+        );
+        assert_eq!(
+            generate_specific_conversation_title("hello there!"),
+            "Greetings"
+        );
+        assert_eq!(
+            generate_specific_conversation_title("what can you do"),
+            "Bot Capabilities"
+        );
+        assert_eq!(
+            generate_specific_conversation_title("can you explain bitcoin halving"),
+            "Bitcoin Halving"
+        );
+    }
+
+    #[test]
+    fn test_conversation_auto_titling_and_persistence() {
+        let db = Database::open_in_memory().unwrap();
+        let config = AppConfig {
+            env: crate::config::Environment::Development,
+            host: "127.0.0.1".to_string(),
+            port: 7878,
+            public_origin: "http://127.0.0.1:7878".to_string(),
+            database_url: PathBuf::from("test_titling.db"),
+            openrouter_api_key: None,
+            coingecko_api_key: None,
+            session_pepper: "test_pepper_titling_12345".to_string(),
+        };
+        let store = Arc::new(RwLock::new(KnowledgeStore::from_memories(&[])));
+        let state = AppState {
+            config,
+            db,
+            store,
+            openrouter_semaphore: Arc::new(Semaphore::new(3)),
+            ip_limiter: Arc::new(Mutex::new(IpRateLimiter::new())),
+            http_client: reqwest::blocking::Client::new(),
+        };
+
+        // 1. Register a test user
+        let reg_req = Request {
+            method: "POST".to_string(),
+            path: "/api/auth/register".to_string(),
+            query: HashMap::new(),
+            headers: HashMap::from([
+                ("host".to_string(), "127.0.0.1:7878".to_string()),
+                ("origin".to_string(), "http://127.0.0.1:7878".to_string()),
+            ]),
+            host: "127.0.0.1:7878".to_string(),
+            body: serde_json::to_vec(&json!({
+                "username": "dave",
+                "password": "Password123!"
+            })).unwrap(),
+        };
+        let reg_res = route_request(&reg_req, &state);
+        assert_eq!(reg_res.status, 200);
+
+        let cookie_header = reg_res.headers.iter().find(|(k, _)| k == "Set-Cookie").unwrap().1.clone();
+        let cookie_val = cookie_header.split(';').next().unwrap().to_string();
+        let auth_data: serde_json::Value = serde_json::from_slice(&reg_res.body).unwrap();
+        let csrf = auth_data["csrf_token"].as_str().unwrap().to_string();
+
+        // 2. Create conversation with default title "New Conversation"
+        let create_req = Request {
+            method: "POST".to_string(),
+            path: "/api/conversations".to_string(),
+            query: HashMap::new(),
+            headers: HashMap::from([
+                ("host".to_string(), "127.0.0.1:7878".to_string()),
+                ("origin".to_string(), "http://127.0.0.1:7878".to_string()),
+                ("cookie".to_string(), cookie_val.clone()),
+                ("x-rustbot-csrf".to_string(), csrf.clone()),
+            ]),
+            host: "127.0.0.1:7878".to_string(),
+            body: serde_json::to_vec(&json!({
+                "title": "New Conversation"
+            })).unwrap(),
+        };
+        let create_res = route_request(&create_req, &state);
+        assert_eq!(create_res.status, 201);
+        let conv_data: serde_json::Value = serde_json::from_slice(&create_res.body).unwrap();
+        let conv_id = conv_data["conversation"]["id"].as_str().unwrap().to_string();
+
+        // 3. Post first user message asking about Merkle tree
+        let post_msg_req = Request {
+            method: "POST".to_string(),
+            path: format!("/api/conversations/{conv_id}/messages"),
+            query: HashMap::new(),
+            headers: HashMap::from([
+                ("host".to_string(), "127.0.0.1:7878".to_string()),
+                ("origin".to_string(), "http://127.0.0.1:7878".to_string()),
+                ("cookie".to_string(), cookie_val.clone()),
+                ("x-rustbot-csrf".to_string(), csrf.clone()),
+            ]),
+            host: "127.0.0.1:7878".to_string(),
+            body: serde_json::to_vec(&json!({
+                "message": "what is merkle tree about and how does it work?"
+            })).unwrap(),
+        };
+        let post_msg_res = route_request(&post_msg_req, &state);
+        assert_eq!(post_msg_res.status, 200);
+        let msg_data: serde_json::Value = serde_json::from_slice(&post_msg_res.body).unwrap();
+        assert_eq!(msg_data["conversation_title"], "Merkle Tree");
+
+        // 4. Listing conversations returns "Merkle Tree" (persisted, not "New Conversation")
+        let list_req = Request {
+            method: "GET".to_string(),
+            path: "/api/conversations".to_string(),
+            query: HashMap::new(),
+            headers: HashMap::from([
+                ("host".to_string(), "127.0.0.1:7878".to_string()),
+                ("cookie".to_string(), cookie_val.clone()),
+            ]),
+            host: "127.0.0.1:7878".to_string(),
+            body: vec![],
+        };
+        let list_res = route_request(&list_req, &state);
+        assert_eq!(list_res.status, 200);
+        let list_data: serde_json::Value = serde_json::from_slice(&list_res.body).unwrap();
+        let convs = list_data["conversations"].as_array().unwrap();
+        let found = convs.iter().find(|c| c["id"] == conv_id).unwrap();
+        assert_eq!(found["title"], "Merkle Tree");
+
+        // 5. Update title manually via PATCH /api/conversations/:id
+        let patch_req = Request {
+            method: "PATCH".to_string(),
+            path: format!("/api/conversations/{conv_id}"),
+            query: HashMap::new(),
+            headers: HashMap::from([
+                ("host".to_string(), "127.0.0.1:7878".to_string()),
+                ("origin".to_string(), "http://127.0.0.1:7878".to_string()),
+                ("cookie".to_string(), cookie_val.clone()),
+                ("x-rustbot-csrf".to_string(), csrf.clone()),
+            ]),
+            host: "127.0.0.1:7878".to_string(),
+            body: serde_json::to_vec(&json!({
+                "title": "Merkle Proofs & Verification"
+            })).unwrap(),
+        };
+        let patch_res = route_request(&patch_req, &state);
+        assert_eq!(patch_res.status, 200);
+
+        // 6. Verify updated title persisted
+        let list_res2 = route_request(&list_req, &state);
+        let list_data2: serde_json::Value = serde_json::from_slice(&list_res2.body).unwrap();
+        let convs2 = list_data2["conversations"].as_array().unwrap();
+        let found2 = convs2.iter().find(|c| c["id"] == conv_id).unwrap();
+        assert_eq!(found2["title"], "Merkle Proofs & Verification");
     }
 }
