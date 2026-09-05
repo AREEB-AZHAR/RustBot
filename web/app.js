@@ -199,10 +199,16 @@ function initHeroTypewriter() {
       return;
     }
 
+    const currentTarget = document.getElementById("hero-typing-text") || target;
+    if (!currentTarget) {
+      timer = setTimeout(typeTick, 1000);
+      return;
+    }
+
     const currentPhrase = phrases[phraseIndex];
     if (isDeleting) {
       charIndex -= 1;
-      target.textContent = currentPhrase.substring(0, charIndex);
+      currentTarget.textContent = currentPhrase.substring(0, charIndex);
       if (charIndex <= 0) {
         isDeleting = false;
         phraseIndex = (phraseIndex + 1) % phrases.length;
@@ -212,7 +218,7 @@ function initHeroTypewriter() {
       timer = setTimeout(typeTick, 35);
     } else {
       charIndex += 1;
-      target.textContent = currentPhrase.substring(0, charIndex);
+      currentTarget.textContent = currentPhrase.substring(0, charIndex);
       if (charIndex >= currentPhrase.length) {
         isDeleting = true;
         timer = setTimeout(typeTick, 2800);
@@ -269,8 +275,11 @@ function bindEvents() {
   });
   elements.composerInput.addEventListener("input", resizeComposer);
 
-  document.querySelectorAll("[data-prompt]").forEach((button) => {
-    button.addEventListener("click", () => sendMessage(button.dataset.prompt || ""));
+  document.addEventListener("click", (e) => {
+    const promptBtn = e.target.closest("[data-prompt]");
+    if (promptBtn) {
+      sendMessage(promptBtn.dataset.prompt || "");
+    }
   });
 
   document.querySelectorAll("[data-nav]").forEach((button) => {
@@ -994,8 +1003,6 @@ async function sendMessage(rawMessage) {
     await startNewConversation();
   }
 
-  if (state.workspace !== "chat") switchWorkspace("chat");
-
   elements.composerInput.value = "";
   resizeComposer();
   appendMessage("user", message, { save: false });
@@ -1385,7 +1392,8 @@ async function startNewConversation() {
     openAuthModal("login");
     return;
   }
-  switchWorkspace("chat");
+  closeKnowledgePanel();
+  closeRailMobile();
   try {
     const res = await api("/api/conversations", {
       method: "POST",
@@ -1470,32 +1478,48 @@ function executeDeleteConversationWithUndo(convId) {
 }
 
 function createWelcomeState() {
-  const original = document.querySelector("#welcome-state");
-  if (original) return original.cloneNode(true);
-
   const wrapper = document.createElement("div");
   wrapper.className = "welcome-state";
   wrapper.id = "welcome-state";
+
   const emblem = document.createElement("div");
   emblem.className = "forge-emblem";
   emblem.setAttribute("aria-hidden", "true");
-  ["forge-ring", "forge-core", "forge-spark spark-one", "forge-spark spark-two"].forEach(
-    (className, index) => {
-      const element = document.createElement("span");
-      element.className = className;
-      if (index === 1) element.textContent = "R";
-      emblem.append(element);
-    },
-  );
+
+  const ring = document.createElement("span");
+  ring.className = "forge-ring";
+  const core = document.createElement("span");
+  core.className = "forge-core";
+  core.textContent = "R";
+  const spark1 = document.createElement("span");
+  spark1.className = "forge-spark spark-one";
+  const spark2 = document.createElement("span");
+  spark2.className = "forge-spark spark-two";
+  const spark3 = document.createElement("span");
+  spark3.className = "forge-spark spark-three";
+  emblem.append(ring, core, spark1, spark2, spark3);
+
   const eyebrow = document.createElement("p");
   eyebrow.className = "welcome-eyebrow";
-  eyebrow.append(document.createElement("span"), " Local · Multi-user isolated");
+  eyebrow.append(document.createElement("span"), " Local · Self-learning");
+
   const title = document.createElement("h2");
-  title.textContent = "Ask. Teach. Repeat.";
+  title.id = "hero-typing-title";
+  title.setAttribute("aria-label", "Ask. Teach. Repeat.");
+  const typingSpan = document.createElement("span");
+  typingSpan.id = "hero-typing-text";
+  typingSpan.textContent = "Ask. Teach. Repeat.";
+  const cursorSpan = document.createElement("span");
+  cursorSpan.className = "typing-cursor";
+  cursorSpan.setAttribute("aria-hidden", "true");
+  cursorSpan.textContent = "|";
+  title.append(typingSpan, cursorSpan);
+
   const copy = document.createElement("p");
   copy.className = "welcome-copy";
   copy.textContent =
-    "A secured local assistant with multi-user session isolation. Try one of the prompts below or write your own.";
+    "A small local bot that gets smarter one answer at a time. If RustBot draws a blank, turn the moment into a new memory.";
+
   const starters = document.createElement("div");
   starters.className = "starter-grid";
   starters.setAttribute("aria-label", "Suggested messages");
@@ -1507,6 +1531,7 @@ function createWelcomeState() {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "starter-card";
+    button.dataset.prompt = prompt;
     const numberElement = document.createElement("span");
     numberElement.className = "starter-number";
     numberElement.textContent = number;
@@ -1521,9 +1546,9 @@ function createWelcomeState() {
     arrow.setAttribute("aria-hidden", "true");
     arrow.textContent = "↗";
     button.append(numberElement, text, arrow);
-    button.addEventListener("click", () => sendMessage(prompt));
     starters.append(button);
   });
+
   wrapper.append(emblem, eyebrow, title, copy, starters);
   return wrapper;
 }
