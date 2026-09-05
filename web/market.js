@@ -331,10 +331,19 @@ async function trainMarketModel(event) {
 
     state.marketData = candles;
     const apiKey = elements.marketApiKey?.value.trim() || "";
-    elements.marketTrainButton.firstElementChild.textContent = apiKey ? "Training AI-Enhanced Model…" : "Training chronological baseline…";
+    elements.marketTrainButton.firstElementChild.textContent = apiKey
+      ? "Training AI Model in Background Worker…"
+      : "Training Baseline in Multi-Threaded Worker…";
     elements.datasetStatus.textContent = `${candles.length} live candles ${apiKey ? "(OpenRouter AI Connected 🤖)" : `(Recorded: ${response.recorded_count || candles.length})`}`;
-    await wait(40);
-    const result = runMarketExperiment(candles);
+
+    // Execute in dedicated background Web Worker thread (Zero UI blocking, 60 FPS fluid rendering!)
+    const result = await runMarketExperimentAsync(candles);
+
+    // Update state memory with worker results
+    state.botMemory.generation = result.generation;
+    state.botMemory.persistentWeights = result.weights;
+    state.botMemory.scaler = result.scaler;
+    state.botMemory.adaptiveThreshold = result.threshold;
 
     let openRouterAnalysis = null;
     if (apiKey) {
@@ -344,7 +353,7 @@ async function trainMarketModel(event) {
 
     renderMarketReport(result, response.provider || provider, response.symbol || symbol, timeframe, openRouterAnalysis);
     renderTradingViewWidget();
-    showToast(`Trained on ${candles.length} candles. Test accuracy: ${Math.round(result.accuracy * 100)}%.`);
+    showToast(`Trained on ${candles.length} candles in Web Worker. Test accuracy: ${Math.round(result.accuracy * 100)}%.`);
   } catch (error) {
     elements.marketFormError.textContent = error.message;
     elements.marketFormError.style.display = "block";
@@ -353,6 +362,66 @@ async function trainMarketModel(event) {
     elements.marketTrainButton.disabled = false;
     elements.marketTrainButton.firstElementChild.textContent = originalLabel;
   }
+}
+
+// ==========================================================================
+// Web Worker Multi-Threading Bridge
+// ==========================================================================
+let marketWorker = null;
+let workerMessageId = 0;
+const workerPendingCallbacks = new Map();
+
+function getOrCreateMarketWorker() {
+  if (!marketWorker && typeof window !== "undefined" && window.Worker) {
+    try {
+      marketWorker = new Worker("/market_worker.js");
+      marketWorker.onmessage = function (event) {
+        const { id, type, payload, error } = event.data || {};
+        const callback = workerPendingCallbacks.get(id);
+        if (callback) {
+          workerPendingCallbacks.delete(id);
+          if (type === "EXPERIMENT_SUCCESS") {
+            callback.resolve(payload);
+          } else {
+            callback.reject(new Error(error || "Worker computation failed"));
+          }
+        }
+      };
+      marketWorker.onerror = function (event) {
+        console.error("Market Web Worker runtime error:", event);
+      };
+    } catch (error) {
+      console.warn("Could not instantiate Web Worker, using fallback:", error);
+      marketWorker = null;
+    }
+  }
+  return marketWorker;
+}
+
+async function runMarketExperimentAsync(candles) {
+  const worker = getOrCreateMarketWorker();
+  if (worker) {
+    workerMessageId += 1;
+    const id = workerMessageId;
+    return new Promise((resolve, reject) => {
+      workerPendingCallbacks.set(id, { resolve, reject });
+      worker.postMessage({
+        id,
+        type: "RUN_EXPERIMENT",
+        payload: {
+          candles,
+          botMemory: {
+            generation: state.botMemory.generation,
+            persistentWeights: state.botMemory.persistentWeights,
+            mistakeStore: state.botMemory.mistakeStore,
+          },
+        },
+      });
+    });
+  }
+
+  // Graceful fallback for non-worker environments
+  return runMarketExperiment(candles);
 }
 
 function runMarketExperiment(candles) {

@@ -23,6 +23,7 @@ const APP_JS: &str = include_str!("../web/app.js");
 const MARKET_HTML: &str = include_str!("../web/market.html");
 const MARKET_CSS: &str = include_str!("../web/market.css");
 const MARKET_JS: &str = include_str!("../web/market.js");
+const MARKET_WORKER_JS: &str = include_str!("../web/market_worker.js");
 const OG_IMAGE: &[u8] = include_bytes!("../web/og.png");
 const MAX_REQUEST_SIZE: usize = 512 * 1024; // Up to 512 KB for imports
 const MAX_CONCURRENT_CONNECTIONS: usize = 64;
@@ -616,6 +617,19 @@ fn route_request(request: &Request, state: &AppState) -> Response {
                 }
             } else {
                 Response::asset(200, "OK", "text/javascript; charset=utf-8", MARKET_JS)
+            };
+            res.headers.push(("Cache-Control".to_string(), "no-cache, no-store, must-revalidate".to_string()));
+            res
+        }
+        ("GET", "/market_worker.js") => {
+            let mut res = if cfg!(debug_assertions) {
+                if let Ok(js) = std::fs::read_to_string("web/market_worker.js") {
+                    Response::asset(200, "OK", "text/javascript; charset=utf-8", &js)
+                } else {
+                    Response::asset(200, "OK", "text/javascript; charset=utf-8", MARKET_WORKER_JS)
+                }
+            } else {
+                Response::asset(200, "OK", "text/javascript; charset=utf-8", MARKET_WORKER_JS)
             };
             res.headers.push(("Cache-Control".to_string(), "no-cache, no-store, must-revalidate".to_string()));
             res
@@ -3390,5 +3404,18 @@ mod tests {
         let res_market_js = route_request(&req_market_js, &state);
         assert_eq!(res_market_js.status, 200);
         assert_eq!(res_market_js.content_type, "text/javascript; charset=utf-8");
+
+        // 5. GET /market_worker.js
+        let req_market_worker = Request {
+            method: "GET".to_string(),
+            path: "/market_worker.js".to_string(),
+            query: HashMap::new(),
+            headers: HashMap::from([("host".to_string(), "127.0.0.1:7878".to_string())]),
+            host: "127.0.0.1:7878".to_string(),
+            body: vec![],
+        };
+        let res_market_worker = route_request(&req_market_worker, &state);
+        assert_eq!(res_market_worker.status, 200);
+        assert_eq!(res_market_worker.content_type, "text/javascript; charset=utf-8");
     }
 }
