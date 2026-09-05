@@ -20,6 +20,9 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 const INDEX_HTML: &str = include_str!("../web/index.html");
 const STYLES_CSS: &str = include_str!("../web/styles.css");
 const APP_JS: &str = include_str!("../web/app.js");
+const MARKET_HTML: &str = include_str!("../web/market.html");
+const MARKET_CSS: &str = include_str!("../web/market.css");
+const MARKET_JS: &str = include_str!("../web/market.js");
 const OG_IMAGE: &[u8] = include_bytes!("../web/og.png");
 const MAX_REQUEST_SIZE: usize = 512 * 1024; // Up to 512 KB for imports
 const MAX_CONCURRENT_CONNECTIONS: usize = 64;
@@ -576,6 +579,43 @@ fn route_request(request: &Request, state: &AppState) -> Response {
                 }
             } else {
                 Response::asset(200, "OK", "text/javascript; charset=utf-8", APP_JS)
+            };
+            res.headers.push(("Cache-Control".to_string(), "no-cache, no-store, must-revalidate".to_string()));
+            res
+        }
+        ("GET", "/market") | ("GET", "/market.html") => {
+            let base_html = if cfg!(debug_assertions) {
+                std::fs::read_to_string("web/market.html").unwrap_or_else(|_| MARKET_HTML.to_string())
+            } else {
+                MARKET_HTML.to_string()
+            };
+            let html = base_html
+                .replace("__ORIGIN__", &state.config.public_origin)
+                .replace("__CSRF_TOKEN__", "");
+            Response::html(200, "OK", html)
+        }
+        ("GET", "/market.css") => {
+            let mut res = if cfg!(debug_assertions) {
+                if let Ok(css) = std::fs::read_to_string("web/market.css") {
+                    Response::asset(200, "OK", "text/css; charset=utf-8", &css)
+                } else {
+                    Response::asset(200, "OK", "text/css; charset=utf-8", MARKET_CSS)
+                }
+            } else {
+                Response::asset(200, "OK", "text/css; charset=utf-8", MARKET_CSS)
+            };
+            res.headers.push(("Cache-Control".to_string(), "no-cache, no-store, must-revalidate".to_string()));
+            res
+        }
+        ("GET", "/market.js") => {
+            let mut res = if cfg!(debug_assertions) {
+                if let Ok(js) = std::fs::read_to_string("web/market.js") {
+                    Response::asset(200, "OK", "text/javascript; charset=utf-8", &js)
+                } else {
+                    Response::asset(200, "OK", "text/javascript; charset=utf-8", MARKET_JS)
+                }
+            } else {
+                Response::asset(200, "OK", "text/javascript; charset=utf-8", MARKET_JS)
             };
             res.headers.push(("Cache-Control".to_string(), "no-cache, no-store, must-revalidate".to_string()));
             res
@@ -3274,5 +3314,81 @@ mod tests {
         let convs2 = list_data2["conversations"].as_array().unwrap();
         let found2 = convs2.iter().find(|c| c["id"] == conv_id).unwrap();
         assert_eq!(found2["title"], "Merkle Proofs & Verification");
+    }
+
+    #[test]
+    fn test_market_page_routes() {
+        let db = Database::open_in_memory().unwrap();
+        let config = AppConfig {
+            env: crate::config::Environment::Development,
+            host: "127.0.0.1".to_string(),
+            port: 7878,
+            public_origin: "http://127.0.0.1:7878".to_string(),
+            database_url: PathBuf::from("test.db"),
+            openrouter_api_key: None,
+            coingecko_api_key: None,
+            session_pepper: "test_pepper_1234567890".to_string(),
+        };
+        let store = Arc::new(RwLock::new(KnowledgeStore::from_memories(&[])));
+        let state = AppState {
+            config,
+            db,
+            store,
+            openrouter_semaphore: Arc::new(Semaphore::new(3)),
+            ip_limiter: Arc::new(Mutex::new(IpRateLimiter::new())),
+            http_client: reqwest::blocking::Client::new(),
+        };
+
+        // 1. GET /market
+        let req_market = Request {
+            method: "GET".to_string(),
+            path: "/market".to_string(),
+            query: HashMap::new(),
+            headers: HashMap::from([("host".to_string(), "127.0.0.1:7878".to_string())]),
+            host: "127.0.0.1:7878".to_string(),
+            body: vec![],
+        };
+        let res_market = route_request(&req_market, &state);
+        assert_eq!(res_market.status, 200);
+        let html = String::from_utf8(res_market.body).unwrap();
+        assert!(html.contains("Quantitative Research Lab"));
+
+        // 2. GET /market.html
+        let req_market_html = Request {
+            method: "GET".to_string(),
+            path: "/market.html".to_string(),
+            query: HashMap::new(),
+            headers: HashMap::from([("host".to_string(), "127.0.0.1:7878".to_string())]),
+            host: "127.0.0.1:7878".to_string(),
+            body: vec![],
+        };
+        let res_market_html = route_request(&req_market_html, &state);
+        assert_eq!(res_market_html.status, 200);
+
+        // 3. GET /market.css
+        let req_market_css = Request {
+            method: "GET".to_string(),
+            path: "/market.css".to_string(),
+            query: HashMap::new(),
+            headers: HashMap::from([("host".to_string(), "127.0.0.1:7878".to_string())]),
+            host: "127.0.0.1:7878".to_string(),
+            body: vec![],
+        };
+        let res_market_css = route_request(&req_market_css, &state);
+        assert_eq!(res_market_css.status, 200);
+        assert_eq!(res_market_css.content_type, "text/css; charset=utf-8");
+
+        // 4. GET /market.js
+        let req_market_js = Request {
+            method: "GET".to_string(),
+            path: "/market.js".to_string(),
+            query: HashMap::new(),
+            headers: HashMap::from([("host".to_string(), "127.0.0.1:7878".to_string())]),
+            host: "127.0.0.1:7878".to_string(),
+            body: vec![],
+        };
+        let res_market_js = route_request(&req_market_js, &state);
+        assert_eq!(res_market_js.status, 200);
+        assert_eq!(res_market_js.content_type, "text/javascript; charset=utf-8");
     }
 }

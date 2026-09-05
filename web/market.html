@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RustBot · Quantitative Research Lab</title>
+  <meta name="description" content="High-performance quantitative research terminal with walk-forward statistical validation and adaptive self-learning trade bot simulation." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/market.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <!-- Sidebar Navigation Rail -->
+    <aside class="sidebar-rail" id="sidebar-rail">
+      <div class="rail-brand">
+        <div class="brand-icon" aria-hidden="true">📈</div>
+        <div class="brand-meta">
+          <span class="brand-title">RustBot Quant</span>
+          <span class="brand-subtitle">Algorithmic Lab</span>
+        </div>
+      </div>
+
+      <div class="rail-nav-group">
+        <span class="nav-label">Navigation</span>
+        <a href="/" class="nav-link" id="rail-chat-link">
+          <span class="nav-icon" aria-hidden="true">💬</span>
+          <span>AI Conversation</span>
+        </a>
+        <a href="/market" class="nav-link active" id="rail-market-link" aria-current="page">
+          <span class="nav-icon" aria-hidden="true">📈</span>
+          <span>Market Lab</span>
+        </a>
+        <a href="/#teach" class="nav-link" id="rail-teach-link">
+          <span class="nav-icon" aria-hidden="true">🧠</span>
+          <span>Knowledge Forge</span>
+        </a>
+      </div>
+
+      <div class="rail-footer">
+        <div class="user-profile">
+          <div class="user-avatar" id="user-avatar">👤</div>
+          <div class="user-info">
+            <span class="user-name" id="user-name-display">Guest</span>
+            <span class="user-role-badge" id="user-role-badge">Visitor</span>
+          </div>
+        </div>
+        <a href="/" class="auth-btn" id="auth-action-btn">Log In</a>
+      </div>
+    </aside>
+
+    <!-- Main Quant Terminal Interface -->
+    <main class="main-content">
+      <header class="top-header">
+        <div class="header-left">
+          <button class="mobile-nav-toggle" id="rail-toggle-btn" type="button" aria-label="Toggle navigation">☰</button>
+          <div class="page-title-wrap">
+            <h1>Quantitative Research Lab</h1>
+            <p>Out-of-Sample Walk-Forward Validation &amp; Adaptive Self-Learning</p>
+          </div>
+        </div>
+        <div class="header-right">
+          <div class="status-pill">
+            <span class="status-dot"></span>
+            <span>Live Quant Node</span>
+          </div>
+          <a href="/" class="chat-back-btn">💬 Back to Chat</a>
+        </div>
+      </header>
+
+      <div class="dashboard-scroll">
+        <div class="dashboard-container">
+          <!-- Hero Section -->
+          <div class="market-hero-card">
+            <div class="hero-text">
+              <h2>Train a baseline. Test it honestly.</h2>
+              <p>
+                Fetch historical candles from public exchange feeds. RustBot trains a compact numerical classifier
+                in your browser, preserves the newest 15% strictly unseen for forward paper testing, and shows whether
+                your statistical edge survives market friction and trading fees.
+              </p>
+            </div>
+            <div class="hero-badge">
+              <span aria-hidden="true">◇</span>
+              <div>
+                <strong>Research Only</strong>
+                <small>No live orders or financial guarantees</small>
+              </div>
+            </div>
+          </div>
+
+          <!-- Two-Column Control & Prediction Grid -->
+          <div class="quant-grid-two">
+            <!-- Setup Card -->
+            <section class="quant-card" aria-labelledby="setup-heading">
+              <div class="card-header-line">
+                <div class="card-title-group">
+                  <p>01 · DATA FEED</p>
+                  <h3 id="setup-heading">Prepare Experiment</h3>
+                </div>
+                <span class="badge-chip">Public API</span>
+              </div>
+
+              <form class="control-form" id="market-form">
+                <div class="input-group">
+                  <label for="market-provider">Data Provider</label>
+                  <select class="input-control" id="market-provider" name="provider">
+                    <option value="binance" selected>Binance Spot</option>
+                    <option value="coingecko">CoinGecko</option>
+                    <option value="kraken">Kraken</option>
+                  </select>
+                </div>
+
+                <div class="input-group">
+                  <label for="market-symbol">Market Symbol</label>
+                  <input class="input-control" id="market-symbol" name="symbol" value="BTCUSDT" maxlength="24" autocomplete="off" />
+                </div>
+
+                <div class="input-group">
+                  <label for="market-timeframe">Candle Interval</label>
+                  <select class="input-control" id="market-timeframe" name="timeframe">
+                    <option value="15m">15 minutes</option>
+                    <option value="1h" selected>1 hour</option>
+                    <option value="4h">4 hours</option>
+                    <option value="1d">1 day</option>
+                  </select>
+                </div>
+
+                <div class="input-group">
+                  <label for="market-lookback">Training Window</label>
+                  <select class="input-control" id="market-lookback" name="lookback">
+                    <option value="500">500 candles</option>
+                    <option value="750" selected>750 candles</option>
+                    <option value="1000">1,000 candles</option>
+                  </select>
+                </div>
+
+                <div class="input-group">
+                  <label for="market-api-key">OpenRouter AI API Key (Optional)</label>
+                  <input class="input-control" id="market-api-key" name="api_key" type="password" placeholder="sk-or-v1-... (Optional AI Insights)" autocomplete="off" />
+                </div>
+
+                <div class="dataset-badge">
+                  <div class="dataset-info">
+                    <strong id="dataset-title">Binance public candlesticks</strong>
+                    <small id="dataset-copy">No exchange key is required for public spot-market data.</small>
+                  </div>
+                  <span class="status-tag" id="dataset-status">Ready to fetch</span>
+                </div>
+
+                <p class="form-error" id="market-form-error" role="alert"></p>
+
+                <button class="btn-primary" id="market-train-button" type="submit">
+                  <span>Fetch, train &amp; walk-forward test</span>
+                  <span aria-hidden="true">→</span>
+                </button>
+              </form>
+            </section>
+
+            <!-- Results & Signal Card -->
+            <section class="quant-card" aria-labelledby="evidence-heading">
+              <div class="card-header-line">
+                <div class="card-title-group">
+                  <p>02 · EVIDENCE</p>
+                  <h3 id="evidence-heading">Signal &amp; Verification</h3>
+                </div>
+                <span class="badge-chip">Walk-Forward</span>
+              </div>
+
+              <div class="results-container" id="market-results">
+                <!-- Initial Empty State -->
+                <div class="empty-state" id="market-empty">
+                  <div class="empty-icon" aria-hidden="true">⌁</div>
+                  <h4>Your test results will appear here</h4>
+                  <p>
+                    Choose an exchange pair and run the validation pipeline. Training accuracy is never treated as proof of future performance.
+                  </p>
+                  <ol class="split-steps">
+                    <li class="split-step-item"><span>1</span>Train 70%</li>
+                    <li class="split-step-item"><span>2</span>Validate 15%</li>
+                    <li class="split-step-item"><span>3</span>Test 15%</li>
+                  </ol>
+                </div>
+
+                <!-- Active Report Container -->
+                <div class="results-container" id="market-report" style="display: none;">
+                  <div class="signal-banner">
+                    <div class="signal-banner-title">
+                      <h4><span id="report-symbol">BTCUSDT</span> · <span id="report-timeframe">1h</span></h4>
+                    </div>
+                    <span class="signal-pill neutral" id="market-signal">Neutral</span>
+                  </div>
+
+                  <div class="prob-gauge-card">
+                    <div class="gauge-meta">
+                      <span>Next-bar up probability</span>
+                      <strong id="up-probability">—</strong>
+                    </div>
+                    <div class="gauge-track" aria-hidden="true"><span class="gauge-fill" id="probability-fill"></span></div>
+                    <p class="gauge-caption" id="signal-explanation">Waiting for a trained model.</p>
+                  </div>
+
+                  <div class="breakdown-card" id="analysis-breakdown">
+                    <div class="breakdown-top">
+                      <strong>Candle Structure &amp; News Impact</strong>
+                      <span id="news-sentiment-badge" class="signal-pill neutral">Sentiment: Neutral</span>
+                    </div>
+                    <p id="candle-patterns-list" class="pattern-text">Patterns: Checking candle structures…</p>
+                    <p id="pivot-levels-display" class="pivot-text">Pivot: — | Support S1: — | Resistance R1: —</p>
+                  </div>
+
+                  <div class="quant-metric-grid">
+                    <div class="metric-box"><span>Test accuracy</span><strong id="test-accuracy">—</strong><small>directional</small></div>
+                    <div class="metric-box"><span>Net test return</span><strong id="strategy-return">—</strong><small>after costs</small></div>
+                    <div class="metric-box"><span>Sharpe ratio</span><strong id="sharpe-ratio">—</strong><small>risk-adjusted</small></div>
+                    <div class="metric-box"><span>Sortino ratio</span><strong id="sortino-ratio">—</strong><small>downside risk</small></div>
+                    <div class="metric-box"><span>Max drawdown</span><strong id="max-drawdown">—</strong><small>test window</small></div>
+                    <div class="metric-box"><span>Test candles</span><strong id="test-samples">—</strong><small>untouched split</small></div>
+                  </div>
+
+                  <div class="chart-box">
+                    <div class="chart-header">
+                      <strong>Price History</strong>
+                      <span id="split-legend">Train 70% · Validate 15% · Test 15%</span>
+                    </div>
+                    <canvas id="price-chart" height="150" aria-label="Historical close-price chart"></canvas>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <!-- Adaptive Trade Bot Section -->
+          <section class="trade-bot-section" aria-labelledby="bot-heading">
+            <div class="bot-header">
+              <div class="bot-title-group">
+                <h3 id="bot-heading">🤖 Adaptive Trade Bot &amp; Self-Learning Engine</h3>
+                <p>Out-of-Sample Online Training ($10,000 Capital Baseline)</p>
+              </div>
+              <span class="signal-pill bullish" id="bot-status-pill">Adaptive Learning Active</span>
+            </div>
+
+            <div class="bot-stats-row">
+              <div class="bot-stat-card"><span>Final Bot Capital</span><strong id="bot-final-capital">$10,000</strong></div>
+              <div class="bot-stat-card"><span>Executed Trades</span><strong id="bot-total-trades">0</strong></div>
+              <div class="bot-stat-card"><span>Trade Win Rate</span><strong class="green" id="bot-win-rate">0.0%</strong></div>
+              <div class="bot-stat-card"><span>Average Gain</span><strong class="green" id="bot-avg-gain">+0.0%</strong></div>
+              <div class="bot-stat-card"><span>Average Loss</span><strong class="orange" id="bot-avg-loss">-0.0%</strong></div>
+              <div class="bot-stat-card"><span>Buy &amp; Hold Return</span><strong class="orange" id="buy-hold-return">0.0%</strong></div>
+            </div>
+
+            <canvas id="equity-chart" height="170" aria-label="Trade Bot Cumulative Equity Chart"></canvas>
+            <div class="chart-legend-line">
+              <span>🟢 Adaptive Bot Cumulative Equity (Net Profit)</span>
+              <span>⚪ Buy &amp; Hold Asset Return</span>
+            </div>
+
+            <div class="trades-log-wrapper">
+              <div class="trades-log-top">
+                <strong>📜 Executed Trades &amp; Mistake Learning Log</strong>
+                <span class="badge-chip" id="trades-count-badge">0 Trades Logged</span>
+              </div>
+              <div class="trades-table-scroll">
+                <table class="trades-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Time / Candle</th>
+                      <th>Signal</th>
+                      <th>Entry</th>
+                      <th>Exit</th>
+                      <th>Trade PnL</th>
+                      <th>Capital</th>
+                      <th>Adaptive Learning Experience Note</th>
+                    </tr>
+                  </thead>
+                  <tbody id="executed-trades-list">
+                    <tr>
+                      <td colspan="8" style="text-align: center; color: var(--text-tertiary); padding: 16px;">
+                        No executed trades yet. Click "Fetch, train &amp; walk-forward test" to run the adaptive bot.
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <!-- TradingView Visual Confirmation Section -->
+          <section class="tradingview-section" aria-labelledby="tv-heading">
+            <div class="tradingview-header">
+              <div class="card-title-group">
+                <p>03 · VISUAL CONFIRMATION</p>
+                <h3 id="tv-heading">TradingView Market Chart</h3>
+              </div>
+              <a class="tradingview-link" id="tradingview-link" href="https://www.tradingview.com/symbols/BTCUSDT/" target="_blank" rel="noopener noreferrer">Open on TradingView ↗</a>
+            </div>
+            <div class="tv-widget-wrap" id="tradingview-widget" aria-label="Interactive TradingView chart"></div>
+          </section>
+        </div>
+      </div>
+    </main>
+
+    <!-- Notifications Toast -->
+    <div class="market-toast" id="toast" role="status"><span id="toast-message"></span></div>
+  </div>
+
+  <script src="/market.js"></script>
+</body>
+</html>
