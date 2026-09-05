@@ -27,6 +27,17 @@
     />
     <meta name="twitter:image" content="__ORIGIN__/og.png" />
     <title>RustBot — Knowledge Forge</title>
+    <script>
+      (function() {
+        try {
+          var saved = localStorage.getItem('rustbot_theme');
+          if (!saved) {
+            saved = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+          }
+          document.documentElement.setAttribute('data-theme', saved);
+        } catch (e) {}
+      })();
+    </script>
     <link rel="stylesheet" href="/styles.css?v=8" />
     <script src="/app.js?v=8" defer></script>
   </head>
@@ -131,6 +142,15 @@
             </div>
           </div>
           <div class="header-actions">
+            <button
+              class="icon-button theme-toggle-btn"
+              id="theme-toggle-btn"
+              type="button"
+              aria-label="Toggle theme (Light / Dark)"
+              title="Toggle theme (Light / Dark)"
+            >
+              <span class="theme-icon" aria-hidden="true">🌙</span>
+            </button>
             <a
               class="icon-button workspace-toggle"
               id="workspace-toggle"
@@ -173,9 +193,12 @@
               <span class="forge-core">R</span>
               <span class="forge-spark spark-one"></span>
               <span class="forge-spark spark-two"></span>
+              <span class="forge-spark spark-three"></span>
             </div>
             <p class="welcome-eyebrow"><span></span> Local · Self-learning</p>
-            <h2>Ask. Teach. Repeat.</h2>
+            <h2 id="hero-typing-title" aria-label="Ask. Teach. Repeat.">
+              <span id="hero-typing-text">Ask. Teach. Repeat.</span><span class="typing-cursor" aria-hidden="true">|</span>
+            </h2>
             <p class="welcome-copy">
               A small local bot that gets smarter one answer at a time. If RustBot draws a blank,
               turn the moment into a new memory.

@@ -1,5 +1,7 @@
-:root {
+:root,
+[data-theme="light"] {
   color-scheme: light;
+  --theme-mode: "light";
   --ink: #101513;
   --rail: #181e1b;
   --rail-soft: #202722;
@@ -7,11 +9,16 @@
   --paper-deep: #ebe4d7;
   --surface: #fffdf8;
   --surface-warm: #faf6ed;
+  --surface-elevated: #ffffff;
   --text: #1b211d;
   --muted: #6a746d;
   --muted-light: #a8b0ab;
   --line: #dcd5c8;
   --line-dark: rgba(255, 255, 255, 0.1);
+  --header-bg: rgba(244, 240, 231, 0.88);
+  --header-border: rgba(124, 112, 92, 0.16);
+  --grid-line: rgba(27, 33, 29, 0.035);
+  --composer-fade: rgba(244, 240, 231, 0);
   --ember: #e46232;
   --ember-deep: #a93f1e;
   --ember-dark: #7f2e18;
@@ -21,6 +28,38 @@
   --focus: #ffc2a6;
   --shadow-shell: 0 28px 80px rgba(0, 0, 0, 0.32);
   --shadow-card: 0 8px 28px rgba(31, 25, 18, 0.08);
+  --ease: cubic-bezier(0.2, 0.75, 0.25, 1);
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --theme-mode: "dark";
+  --ink: #070a08;
+  --rail: #0c110f;
+  --rail-soft: #131a16;
+  --paper: #111614;
+  --paper-deep: #161e1a;
+  --surface: #18221c;
+  --surface-warm: #1f2b23;
+  --surface-elevated: #243229;
+  --text: #edf3ee;
+  --muted: #95a399;
+  --muted-light: #526357;
+  --line: #27362c;
+  --line-dark: rgba(255, 255, 255, 0.14);
+  --header-bg: rgba(17, 22, 20, 0.88);
+  --header-border: rgba(255, 255, 255, 0.08);
+  --grid-line: rgba(255, 255, 255, 0.03);
+  --composer-fade: rgba(17, 22, 20, 0);
+  --ember: #f07044;
+  --ember-deep: #b84320;
+  --ember-dark: #822e15;
+  --sage: #8ec4a6;
+  --sage-soft: #1a3024;
+  --danger: #e05252;
+  --focus: rgba(240, 112, 68, 0.4);
+  --shadow-shell: 0 28px 80px rgba(0, 0, 0, 0.7);
+  --shadow-card: 0 8px 28px rgba(0, 0, 0, 0.45);
   --ease: cubic-bezier(0.2, 0.75, 0.25, 1);
 }
 
@@ -536,10 +575,11 @@ button:disabled {
   min-height: 0;
   overflow: hidden;
   background:
-    linear-gradient(rgba(27, 33, 29, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(27, 33, 29, 0.035) 1px, transparent 1px),
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px),
     var(--paper);
   background-size: 32px 32px;
+  transition: background-color 0.25s ease, color 0.25s ease;
 }
 
 .chat-header {
@@ -547,12 +587,31 @@ button:disabled {
   flex: 0 0 68px;
   min-width: 0;
   padding: 0 28px;
-  background: rgba(244, 240, 231, 0.86);
-  border-bottom: 1px solid rgba(124, 112, 92, 0.16);
+  background: var(--header-bg);
+  border-bottom: 1px solid var(--header-border);
   backdrop-filter: blur(14px);
   align-items: center;
   justify-content: space-between;
   gap: 20px;
+  transition: background-color 0.25s ease, border-color 0.25s ease;
+}
+
+.theme-toggle-btn {
+  display: inline-grid;
+  place-items: center;
+  font-size: 15px;
+  cursor: pointer;
+  border-radius: 999px;
+  transition: transform 0.2s ease, background-color 0.2s ease, border-color 0.2s ease;
+  user-select: none;
+}
+
+.theme-toggle-btn:hover {
+  transform: scale(1.08);
+}
+
+.theme-toggle-btn:active {
+  transform: scale(0.95);
 }
 
 .header-eyebrow {
@@ -1386,6 +1445,8 @@ button:disabled {
   border-radius: 20px;
   box-shadow: var(--shadow-card), inset 0 0 0 6px rgba(228, 98, 50, 0.04);
   transform: rotate(8deg);
+  animation: forge-breathe 5s ease-in-out infinite alternate;
+  transition: background-color 0.25s ease, border-color 0.25s ease;
 }
 
 .forge-ring::before {
@@ -1410,28 +1471,130 @@ button:disabled {
   font-size: 20px;
   font-weight: 700;
   place-items: center;
+  z-index: 2;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
+.forge-emblem:hover .forge-core {
+  transform: scale(1.05);
+  box-shadow: 0 10px 24px rgba(130, 48, 23, 0.35);
+}
+
+/* ==========================================================================
+   Logo Orbital Particle Animations (Back and Forth Sweeps)
+   ========================================================================== */
 .forge-spark {
   position: absolute;
-  width: 6px;
-  height: 6px;
-  background: var(--ember);
+  top: 50%;
+  left: 50%;
   border-radius: 50%;
-  box-shadow: 0 0 13px rgba(228, 98, 50, 0.65);
+  pointer-events: none;
+  z-index: 6;
+  will-change: transform, opacity;
 }
 
 .spark-one {
-  top: 5px;
-  right: 4px;
+  width: 7px;
+  height: 7px;
+  margin: -3.5px 0 0 -3.5px;
+  background: #f97316;
+  box-shadow: 0 0 14px rgba(249, 115, 22, 0.9), 0 0 4px #ffedd5;
+  animation: orbit-forth-back-1 4.8s cubic-bezier(0.42, 0, 0.58, 1) infinite alternate;
 }
 
 .spark-two {
-  right: 0;
-  bottom: 17px;
-  width: 4px;
-  height: 4px;
-  opacity: 0.55;
+  width: 5px;
+  height: 5px;
+  margin: -2.5px 0 0 -2.5px;
+  background: #fb923c;
+  box-shadow: 0 0 10px rgba(251, 146, 60, 0.85);
+  animation: orbit-forth-back-2 3.8s cubic-bezier(0.42, 0, 0.58, 1) infinite alternate;
+  animation-delay: -1.2s;
+}
+
+.spark-three {
+  width: 3.5px;
+  height: 3.5px;
+  margin: -1.75px 0 0 -1.75px;
+  background: #fed7aa;
+  box-shadow: 0 0 8px rgba(254, 215, 170, 0.9);
+  animation: orbit-forth-back-3 5.5s cubic-bezier(0.42, 0, 0.58, 1) infinite alternate;
+  animation-delay: -2.4s;
+}
+
+.forge-emblem:hover .spark-one {
+  animation-duration: 2.6s;
+}
+
+.forge-emblem:hover .spark-two {
+  animation-duration: 2.1s;
+}
+
+@keyframes forge-breathe {
+  0% {
+    transform: rotate(8deg) scale(1);
+  }
+  100% {
+    transform: rotate(9.5deg) scale(1.025);
+    box-shadow: var(--shadow-card), inset 0 0 0 6px rgba(228, 98, 50, 0.09), 0 0 20px rgba(228, 98, 50, 0.15);
+  }
+}
+
+@keyframes orbit-forth-back-1 {
+  0% {
+    transform: rotate(-35deg) translateX(36px) rotate(35deg) scale(0.85);
+    opacity: 0.75;
+    box-shadow: 0 0 10px rgba(249, 115, 22, 0.7);
+  }
+  25% {
+    transform: rotate(25deg) translateX(38px) rotate(-25deg) scale(1.1);
+    opacity: 1;
+    box-shadow: 0 0 16px rgba(249, 115, 22, 1), 0 0 6px #ffedd5;
+  }
+  50% {
+    transform: rotate(95deg) translateX(37px) rotate(-95deg) scale(1);
+    opacity: 0.9;
+  }
+  75% {
+    transform: rotate(155deg) translateX(35px) rotate(-155deg) scale(0.95);
+    opacity: 0.85;
+  }
+  100% {
+    transform: rotate(215deg) translateX(36px) rotate(-215deg) scale(1.15);
+    opacity: 1;
+    box-shadow: 0 0 16px rgba(249, 115, 22, 1), 0 0 6px #ffedd5;
+  }
+}
+
+@keyframes orbit-forth-back-2 {
+  0% {
+    transform: rotate(20deg) translateX(31px) rotate(-20deg) scale(0.9);
+    opacity: 0.65;
+  }
+  50% {
+    transform: rotate(-65deg) translateX(33px) rotate(65deg) scale(1.15);
+    opacity: 1;
+    box-shadow: 0 0 14px rgba(251, 146, 60, 0.95);
+  }
+  100% {
+    transform: rotate(-160deg) translateX(30px) rotate(160deg) scale(0.85);
+    opacity: 0.6;
+  }
+}
+
+@keyframes orbit-forth-back-3 {
+  0% {
+    transform: rotate(180deg) translateX(40px) rotate(-180deg) scale(0.7);
+    opacity: 0.4;
+  }
+  50% {
+    transform: rotate(60deg) translateX(42px) rotate(-60deg) scale(1.1);
+    opacity: 0.9;
+  }
+  100% {
+    transform: rotate(-45deg) translateX(38px) rotate(45deg) scale(0.7);
+    opacity: 0.4;
+  }
 }
 
 .welcome-eyebrow {
@@ -1454,8 +1617,34 @@ button:disabled {
   font-family: Georgia, "Times New Roman", serif;
   font-size: clamp(26px, 3.2vw, 38px);
   font-weight: 500;
-  line-height: 1.08;
+  line-height: 1.18;
   letter-spacing: -0.04em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.25em;
+  transition: color 0.25s ease;
+}
+
+.typing-cursor {
+  display: inline-block;
+  color: var(--ember);
+  font-weight: 300;
+  margin-left: 2px;
+  animation: cursor-blink 0.9s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  text-shadow: 0 0 8px rgba(228, 98, 50, 0.6);
+  user-select: none;
+}
+
+@keyframes cursor-blink {
+  0%, 100% {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+  50% {
+    opacity: 0;
+    transform: scaleY(0.85);
+  }
 }
 
 .welcome-copy {
@@ -1464,6 +1653,7 @@ button:disabled {
   color: var(--muted);
   font-size: 13px;
   line-height: 1.5;
+  transition: color 0.25s ease;
 }
 
 .starter-grid {
@@ -4516,4 +4706,105 @@ pre.code-block code {
 
 .conv-item-del-btn:active {
   transform: scale(0.95);
+}
+
+/* ==========================================================================
+   Dark Theme Component Overrides
+   ========================================================================== */
+[data-theme="dark"] .forge-ring {
+  background: var(--surface);
+  border-color: #2b3930;
+  box-shadow: var(--shadow-card), inset 0 0 0 6px rgba(240, 112, 68, 0.08);
+}
+
+[data-theme="dark"] .forge-ring::before {
+  border-color: rgba(240, 112, 68, 0.35);
+}
+
+[data-theme="dark"] .composer-region {
+  background: linear-gradient(to top, var(--paper) 80%, var(--composer-fade));
+}
+
+[data-theme="dark"] .composer-shell {
+  background: var(--surface);
+  border-color: var(--line);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5);
+}
+
+[data-theme="dark"] .composer-input {
+  color: var(--text);
+}
+
+[data-theme="dark"] .message-card {
+  background: var(--surface);
+  border-color: var(--line);
+}
+
+[data-theme="dark"] .message-user .message-bubble {
+  background: var(--surface-warm);
+  border-color: var(--line);
+  color: var(--text);
+}
+
+[data-theme="dark"] .message-bot .message-bubble {
+  background: var(--surface);
+  border-color: var(--line);
+  color: var(--text);
+}
+
+[data-theme="dark"] .starter-card {
+  background: var(--surface);
+  border-color: var(--line);
+  color: var(--text);
+}
+
+[data-theme="dark"] .starter-card:hover {
+  background: var(--surface-warm);
+  border-color: var(--ember);
+}
+
+[data-theme="dark"] .starter-card strong {
+  color: var(--text);
+}
+
+[data-theme="dark"] .starter-card p {
+  color: var(--muted);
+}
+
+[data-theme="dark"] .knowledge-panel {
+  background: var(--surface);
+  border-left-color: var(--line);
+}
+
+[data-theme="dark"] .memory-card {
+  background: var(--surface-warm);
+  border-color: var(--line);
+}
+
+[data-theme="dark"] .memory-card h3 {
+  color: var(--text);
+}
+
+[data-theme="dark"] .memory-card p {
+  color: var(--muted);
+}
+
+[data-theme="dark"] .auth-dialog {
+  background: var(--surface);
+  border-color: var(--line);
+  color: var(--text);
+}
+
+[data-theme="dark"] .auth-dialog input {
+  background: var(--surface-warm);
+  border-color: var(--line);
+  color: var(--text);
+}
+
+[data-theme="dark"] .icon-button {
+  color: var(--text);
+}
+
+[data-theme="dark"] .icon-button:hover {
+  background: rgba(255, 255, 255, 0.08);
 }

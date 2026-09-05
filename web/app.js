@@ -117,6 +117,8 @@ const elements = {
   authPassword: document.querySelector("#auth-password"),
   authFormError: document.querySelector("#auth-form-error"),
   authSubmitBtn: document.querySelector("#auth-submit-btn"),
+  themeToggleBtn: document.querySelector("#theme-toggle-btn"),
+  heroTypingText: document.querySelector("#hero-typing-text"),
 };
 
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -128,9 +130,103 @@ document.addEventListener("DOMContentLoaded", initialize);
 
 async function initialize() {
   restoreRailPreference();
+  initTheme();
+  initHeroTypewriter();
   bindEvents();
   resizeComposer();
   await checkAuth();
+}
+
+function getActiveTheme() {
+  return document.documentElement.getAttribute("data-theme") || "light";
+}
+
+function updateThemeUI(theme) {
+  if (!elements.themeToggleBtn) return;
+  const icon = elements.themeToggleBtn.querySelector(".theme-icon");
+  if (theme === "dark") {
+    if (icon) icon.textContent = "☀️";
+    elements.themeToggleBtn.setAttribute("aria-label", "Switch to Light Theme");
+    elements.themeToggleBtn.setAttribute("title", "Switch to Light Theme");
+  } else {
+    if (icon) icon.textContent = "🌙";
+    elements.themeToggleBtn.setAttribute("aria-label", "Switch to Dark Theme");
+    elements.themeToggleBtn.setAttribute("title", "Switch to Dark Theme");
+  }
+}
+
+function initTheme() {
+  const current = getActiveTheme();
+  updateThemeUI(current);
+
+  if (elements.themeToggleBtn) {
+    elements.themeToggleBtn.addEventListener("click", () => {
+      const nextTheme = getActiveTheme() === "dark" ? "light" : "dark";
+      document.documentElement.setAttribute("data-theme", nextTheme);
+      try {
+        localStorage.setItem("rustbot_theme", nextTheme);
+      } catch (e) {}
+      updateThemeUI(nextTheme);
+    });
+  }
+}
+
+function initHeroTypewriter() {
+  const target = elements.heroTypingText || document.getElementById("hero-typing-text");
+  if (!target) return;
+
+  if (reducedMotion.matches) {
+    target.textContent = "Ask. Teach. Repeat.";
+    return;
+  }
+
+  const phrases = [
+    "Ask. Teach. Repeat.",
+    "Local & Multi-User Isolated.",
+    "Learn. Remember. Automate.",
+    "Fast, Private & Deterministic.",
+    "Adaptive Market Intelligence."
+  ];
+
+  let phraseIndex = 0;
+  let charIndex = phrases[0].length;
+  let isDeleting = false;
+  let timer = null;
+
+  function typeTick() {
+    if (elements.welcome && elements.welcome.hidden) {
+      timer = setTimeout(typeTick, 1000);
+      return;
+    }
+
+    const currentPhrase = phrases[phraseIndex];
+    if (isDeleting) {
+      charIndex -= 1;
+      target.textContent = currentPhrase.substring(0, charIndex);
+      if (charIndex <= 0) {
+        isDeleting = false;
+        phraseIndex = (phraseIndex + 1) % phrases.length;
+        timer = setTimeout(typeTick, 450);
+        return;
+      }
+      timer = setTimeout(typeTick, 35);
+    } else {
+      charIndex += 1;
+      target.textContent = currentPhrase.substring(0, charIndex);
+      if (charIndex >= currentPhrase.length) {
+        isDeleting = true;
+        timer = setTimeout(typeTick, 2800);
+        return;
+      }
+      const delay = 65 + Math.floor(Math.random() * 25);
+      timer = setTimeout(typeTick, delay);
+    }
+  }
+
+  timer = setTimeout(() => {
+    isDeleting = true;
+    typeTick();
+  }, 2800);
 }
 
 function bindEvents() {

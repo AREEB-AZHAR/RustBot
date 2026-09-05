@@ -79,6 +79,7 @@ const elements = {
   sidebarRail: document.querySelector("#sidebar-rail"),
   toast: document.querySelector("#toast"),
   toastMessage: document.querySelector("#toast-message"),
+  themeToggleBtn: document.querySelector("#theme-toggle-btn"),
 };
 
 const marketProviders = {
@@ -105,9 +106,45 @@ const marketProviders = {
 document.addEventListener("DOMContentLoaded", initialize);
 
 async function initialize() {
+  initTheme();
   bindEvents();
   updateMarketProvider();
   await checkAuth();
+}
+
+function getActiveTheme() {
+  return document.documentElement.getAttribute("data-theme") || "dark";
+}
+
+function updateThemeUI(theme) {
+  if (!elements.themeToggleBtn) return;
+  const icon = elements.themeToggleBtn.querySelector(".theme-icon");
+  if (theme === "dark") {
+    if (icon) icon.textContent = "☀️";
+    elements.themeToggleBtn.setAttribute("aria-label", "Switch to Light Theme");
+    elements.themeToggleBtn.setAttribute("title", "Switch to Light Theme");
+  } else {
+    if (icon) icon.textContent = "🌙";
+    elements.themeToggleBtn.setAttribute("aria-label", "Switch to Dark Theme");
+    elements.themeToggleBtn.setAttribute("title", "Switch to Dark Theme");
+  }
+}
+
+function initTheme() {
+  const current = getActiveTheme();
+  updateThemeUI(current);
+
+  if (elements.themeToggleBtn) {
+    elements.themeToggleBtn.addEventListener("click", () => {
+      const nextTheme = getActiveTheme() === "dark" ? "light" : "dark";
+      document.documentElement.setAttribute("data-theme", nextTheme);
+      try {
+        localStorage.setItem("rustbot_theme", nextTheme);
+      } catch (e) {}
+      updateThemeUI(nextTheme);
+      renderTradingViewWidget();
+    });
+  }
 }
 
 function bindEvents() {
@@ -213,11 +250,11 @@ function renderTradingViewWidget() {
     symbol: chartSymbol,
     interval: intervalMap[elements.marketTimeframe.value] || "60",
     timezone: "Etc/UTC",
-    theme: "dark",
+    theme: getActiveTheme() === "light" ? "light" : "dark",
     style: "1",
     locale: "en",
-    backgroundColor: "#111722",
-    gridColor: "rgba(255, 255, 255, 0.05)",
+    backgroundColor: getActiveTheme() === "light" ? "#ffffff" : "#111722",
+    gridColor: getActiveTheme() === "light" ? "rgba(0, 0, 0, 0.05)" : "rgba(255, 255, 255, 0.05)",
     hide_side_toolbar: false,
     allow_symbol_change: true,
     save_image: false,
