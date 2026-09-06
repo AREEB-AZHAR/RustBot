@@ -4,6 +4,7 @@ mod knowledge;
 mod market_structure;
 mod news_sentiment;
 mod server;
+pub mod timesfm_matrix;
 
 use config::AppConfig;
 use db::Database;
