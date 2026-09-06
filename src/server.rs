@@ -28,6 +28,7 @@ const MARKET_WORKER_JS: &str = include_str!("../web/market_worker.js");
 const SOLANA_HTML: &str = include_str!("../web/solana.html");
 const SOLANA_CSS: &str = include_str!("../web/solana.css");
 const SOLANA_JS: &str = include_str!("../web/solana.js");
+const THEME_INIT_JS: &str = include_str!("../web/theme-init.js");
 const OG_IMAGE: &[u8] = include_bytes!("../web/og.png");
 const MAX_REQUEST_SIZE: usize = 512 * 1024; // Up to 512 KB for imports
 const MAX_CONCURRENT_CONNECTIONS: usize = 64;
@@ -678,6 +679,19 @@ fn route_request(request: &Request, state: &AppState) -> Response {
                 }
             } else {
                 Response::asset(200, "OK", "text/javascript; charset=utf-8", SOLANA_JS)
+            };
+            res.headers.push(("Cache-Control".to_string(), "no-cache, no-store, must-revalidate".to_string()));
+            res
+        }
+        ("GET", "/theme-init.js") => {
+            let mut res = if cfg!(debug_assertions) {
+                if let Ok(js) = std::fs::read_to_string("web/theme-init.js") {
+                    Response::asset(200, "OK", "text/javascript; charset=utf-8", &js)
+                } else {
+                    Response::asset(200, "OK", "text/javascript; charset=utf-8", THEME_INIT_JS)
+                }
+            } else {
+                Response::asset(200, "OK", "text/javascript; charset=utf-8", THEME_INIT_JS)
             };
             res.headers.push(("Cache-Control".to_string(), "no-cache, no-store, must-revalidate".to_string()));
             res
@@ -1863,7 +1877,7 @@ impl Response {
         }
 
         let headers = format!(
-            "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-Frame-Options: DENY\r\nStrict-Transport-Security: max-age=63072000; includeSubDomains\r\nReferrer-Policy: no-referrer\r\nPermissions-Policy: geolocation=(), camera=(), microphone=()\r\nContent-Security-Policy: default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' https://s3.tradingview.com; img-src 'self' data:; connect-src 'self' https://telemetry.tradingview.com; frame-src https://s.tradingview.com https://www.tradingview.com https://*.tradingview-widget.com; base-uri 'none'; frame-ancestors 'none'\r\n{}\r\n",
+            "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-Frame-Options: DENY\r\nStrict-Transport-Security: max-age=63072000; includeSubDomains\r\nReferrer-Policy: no-referrer\r\nPermissions-Policy: geolocation=(), camera=(), microphone=()\r\nContent-Security-Policy: default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; script-src 'self' 'unsafe-inline' https://s3.tradingview.com; img-src 'self' data: https:; connect-src 'self' https://telemetry.tradingview.com; frame-src https://s.tradingview.com https://www.tradingview.com https://*.tradingview-widget.com; base-uri 'none'; frame-ancestors 'none'\r\n{}\r\n",
             self.status,
             self.reason,
             self.content_type,
@@ -2756,128 +2770,168 @@ fn handle_timesfm_predict(request: &Request) -> Result<serde_json::Value, String
 fn fetch_solana_trending(query: &HashMap<String, String>) -> Result<SolanaTrendingResponse, String> {
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(6))
+        .user_agent("RustBot/1.0 (Mozilla/5.0; Windows NT 10.0; Win64; x64)")
         .build()
         .map_err(|e| format!("HTTP client error: {e}"))?;
 
     let min_liquidity = query
         .get("min_liquidity")
         .and_then(|v| v.parse::<f64>().ok())
-        .unwrap_or(50_000.0);
+        .unwrap_or(5_000.0);
 
     let mut tokens: Vec<SolanaTrendingToken> = Vec::new();
+    let mut seen_addresses: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-    let dexscreener_url = "https://api.dexscreener.com/latest/dex/search?q=SOL";
-    if let Ok(value) = fetch_json(client.get(dexscreener_url), "DexScreener") {
-        if let Some(pairs) = value.get("pairs").and_then(|p| p.as_array()) {
-            for pair in pairs {
-                if pair.get("chainId").and_then(|c| c.as_str()) != Some("solana") {
-                    continue;
-                }
-                let base = pair.get("baseToken");
-                let address = base
-                    .and_then(|b| b.get("address"))
-                    .and_then(|a| a.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let symbol = base
-                    .and_then(|b| b.get("symbol"))
-                    .and_then(|s| s.as_str())
-                    .unwrap_or("UNKNOWN")
-                    .to_string();
-                let name = base
-                    .and_then(|b| b.get("name"))
-                    .and_then(|n| n.as_str())
-                    .unwrap_or(&symbol)
-                    .to_string();
-                let dex = pair
-                    .get("dexId")
-                    .and_then(|d| d.as_str())
-                    .unwrap_or("raydium")
-                    .to_string();
+    let search_endpoints = [
+        "https://api.dexscreener.com/latest/dex/search?q=pump.fun",
+        "https://api.dexscreener.com/latest/dex/search?q=solana",
+    ];
 
-                let price_usd = json_number(pair.get("priceUsd").unwrap_or(&serde_json::Value::Null)).unwrap_or(0.0);
-                let volume_24h = pair
-                    .get("volume")
-                    .and_then(|v| v.get("h24"))
-                    .and_then(json_number)
-                    .unwrap_or(0.0);
-                let liquidity_usd = pair
-                    .get("liquidity")
-                    .and_then(|l| l.get("usd"))
-                    .and_then(json_number)
-                    .unwrap_or(0.0);
-                let price_change_5m = pair
-                    .get("priceChange")
-                    .and_then(|pc| pc.get("m5"))
-                    .and_then(json_number)
-                    .unwrap_or(0.0);
-                let price_change_1h = pair
-                    .get("priceChange")
-                    .and_then(|pc| pc.get("h1"))
-                    .and_then(json_number)
-                    .unwrap_or(0.0);
+    for endpoint in &search_endpoints {
+        if let Ok(value) = fetch_json(client.get(*endpoint), "DexScreener") {
+            if let Some(pairs) = value.get("pairs").and_then(|p| p.as_array()) {
+                for pair in pairs {
+                    if pair.get("chainId").and_then(|c| c.as_str()) != Some("solana") {
+                        continue;
+                    }
+                    let base = pair.get("baseToken");
+                    let address = base
+                        .and_then(|b| b.get("address"))
+                        .and_then(|a| a.as_str())
+                        .unwrap_or("")
+                        .to_string();
 
-                let vol_score = (price_change_5m.abs() * 3.0 + price_change_1h.abs() * 1.5).min(99.9);
-                let verified_safety = liquidity_usd >= min_liquidity;
+                    if address.is_empty() || seen_addresses.contains(&address) {
+                        continue;
+                    }
 
-                if !address.is_empty() && price_usd > 0.0 {
-                    tokens.push(SolanaTrendingToken {
-                        address,
-                        symbol,
-                        name,
-                        dex,
-                        price_usd,
-                        volume_24h,
-                        liquidity_usd,
-                        price_change_5m,
-                        price_change_1h,
-                        volatility_score: (vol_score * 10.0).round() / 10.0,
-                        verified_safety,
-                    });
+                    let symbol = base
+                        .and_then(|b| b.get("symbol"))
+                        .and_then(|s| s.as_str())
+                        .unwrap_or("UNKNOWN")
+                        .to_string();
+                    let name = base
+                        .and_then(|b| b.get("name"))
+                        .and_then(|n| n.as_str())
+                        .unwrap_or(&symbol)
+                        .to_string();
+
+                    let raw_dex = pair
+                        .get("dexId")
+                        .and_then(|d| d.as_str())
+                        .unwrap_or("raydium");
+
+                    let dex = if raw_dex == "pumpswap"
+                        || address.ends_with("pump")
+                        || name.to_lowercase().contains("pump")
+                        || symbol.to_uppercase() == "PUMP"
+                    {
+                        "pump.fun".to_string()
+                    } else {
+                        raw_dex.to_string()
+                    };
+
+                    let price_usd = json_number(pair.get("priceUsd").unwrap_or(&serde_json::Value::Null)).unwrap_or(0.0);
+                    let volume_24h = pair
+                        .get("volume")
+                        .and_then(|v| v.get("h24"))
+                        .and_then(json_number)
+                        .unwrap_or(0.0);
+                    let liquidity_usd = pair
+                        .get("liquidity")
+                        .and_then(|l| l.get("usd"))
+                        .and_then(json_number)
+                        .unwrap_or(0.0);
+                    let price_change_5m = pair
+                        .get("priceChange")
+                        .and_then(|pc| pc.get("m5"))
+                        .and_then(json_number)
+                        .unwrap_or(0.0);
+                    let price_change_1h = pair
+                        .get("priceChange")
+                        .and_then(|pc| pc.get("h1"))
+                        .and_then(json_number)
+                        .unwrap_or(0.0);
+
+                    let vol_score = (price_change_5m.abs() * 3.0 + price_change_1h.abs() * 1.5).min(99.9);
+                    let verified_safety = liquidity_usd >= min_liquidity;
+
+                    if price_usd > 0.0 {
+                        seen_addresses.insert(address.clone());
+                        tokens.push(SolanaTrendingToken {
+                            address,
+                            symbol,
+                            name,
+                            dex,
+                            price_usd,
+                            volume_24h,
+                            liquidity_usd,
+                            price_change_5m,
+                            price_change_1h,
+                            volatility_score: (vol_score * 10.0).round() / 10.0,
+                            verified_safety,
+                        });
+                    }
                 }
             }
         }
     }
 
+    // Sort by volatility score descending
+    tokens.sort_by(|a, b| b.volatility_score.partial_cmp(&a.volatility_score).unwrap_or(std::cmp::Ordering::Equal));
+
     if tokens.is_empty() {
         tokens = vec![
             SolanaTrendingToken {
-                address: "So11111111111111111111111111111111111111112".to_string(),
-                symbol: "SOL".to_string(),
-                name: "Solana".to_string(),
-                dex: "raydium".to_string(),
-                price_usd: 142.50,
-                volume_24h: 3_820_000_000.0,
-                liquidity_usd: 120_000_000.0,
-                price_change_5m: 1.25,
-                price_change_1h: 3.80,
-                volatility_score: 72.4,
+                address: "pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn".to_string(),
+                symbol: "PUMP".to_string(),
+                name: "Pump.fun".to_string(),
+                dex: "pump.fun".to_string(),
+                price_usd: 0.00384,
+                volume_24h: 5_120_000.0,
+                liquidity_usd: 924_000.0,
+                price_change_5m: 3.85,
+                price_change_1h: 12.40,
+                volatility_score: 96.5,
                 verified_safety: true,
             },
             SolanaTrendingToken {
-                address: "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN".to_string(),
-                symbol: "JUP".to_string(),
-                name: "Jupiter".to_string(),
-                dex: "orca".to_string(),
-                price_usd: 0.885,
-                volume_24h: 128_000_000.0,
-                liquidity_usd: 45_000_000.0,
-                price_change_5m: 2.10,
-                price_change_1h: 6.40,
-                volatility_score: 84.1,
+                address: "9BB6NFEcjBCtnNLFko2FqVQBq8HHM13kCyYcdQbgpump".to_string(),
+                symbol: "FARTCOIN".to_string(),
+                name: "Fartcoin".to_string(),
+                dex: "pump.fun".to_string(),
+                price_usd: 0.324,
+                volume_24h: 42_000_000.0,
+                liquidity_usd: 8_500_000.0,
+                price_change_5m: 5.20,
+                price_change_1h: 18.90,
+                volatility_score: 98.2,
                 verified_safety: true,
             },
             SolanaTrendingToken {
-                address: "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R".to_string(),
-                symbol: "RAY".to_string(),
-                name: "Raydium".to_string(),
+                address: "7GCihgDB8fe6KNjn2MYtkzZcRjQy3t9GHdC8uHYmW2hr".to_string(),
+                symbol: "POPCAT".to_string(),
+                name: "Popcat".to_string(),
                 dex: "raydium".to_string(),
-                price_usd: 2.14,
-                volume_24h: 84_000_000.0,
-                liquidity_usd: 22_000_000.0,
-                price_change_5m: -1.80,
-                price_change_1h: 7.20,
-                volatility_score: 88.5,
+                price_usd: 0.485,
+                volume_24h: 68_000_000.0,
+                liquidity_usd: 14_000_000.0,
+                price_change_5m: -2.10,
+                price_change_1h: 7.80,
+                volatility_score: 89.4,
+                verified_safety: true,
+            },
+            SolanaTrendingToken {
+                address: "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm".to_string(),
+                symbol: "WIF".to_string(),
+                name: "dogwifhat".to_string(),
+                dex: "raydium".to_string(),
+                price_usd: 1.62,
+                volume_24h: 210_000_000.0,
+                liquidity_usd: 35_000_000.0,
+                price_change_5m: -2.40,
+                price_change_1h: 8.90,
+                volatility_score: 95.0,
                 verified_safety: true,
             },
             SolanaTrendingToken {
@@ -2894,16 +2948,42 @@ fn fetch_solana_trending(query: &HashMap<String, String>) -> Result<SolanaTrendi
                 verified_safety: true,
             },
             SolanaTrendingToken {
-                address: "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm".to_string(),
-                symbol: "WIF".to_string(),
-                name: "dogwifhat".to_string(),
+                address: "So11111111111111111111111111111111111111112".to_string(),
+                symbol: "SOL".to_string(),
+                name: "Solana".to_string(),
                 dex: "raydium".to_string(),
-                price_usd: 1.62,
-                volume_24h: 210_000_000.0,
-                liquidity_usd: 35_000_000.0,
-                price_change_5m: -2.40,
-                price_change_1h: 8.90,
-                volatility_score: 95.0,
+                price_usd: 142.50,
+                volume_24h: 3_820_000_000.0,
+                liquidity_usd: 120_000_000.0,
+                price_change_5m: 1.25,
+                price_change_1h: 3.80,
+                volatility_score: 72.4,
+                verified_safety: true,
+            },
+            SolanaTrendingToken {
+                address: "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R".to_string(),
+                symbol: "RAY".to_string(),
+                name: "Raydium".to_string(),
+                dex: "raydium".to_string(),
+                price_usd: 2.14,
+                volume_24h: 84_000_000.0,
+                liquidity_usd: 22_000_000.0,
+                price_change_5m: -1.80,
+                price_change_1h: 7.20,
+                volatility_score: 88.5,
+                verified_safety: true,
+            },
+            SolanaTrendingToken {
+                address: "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN".to_string(),
+                symbol: "JUP".to_string(),
+                name: "Jupiter".to_string(),
+                dex: "orca".to_string(),
+                price_usd: 0.885,
+                volume_24h: 128_000_000.0,
+                liquidity_usd: 45_000_000.0,
+                price_change_5m: 2.10,
+                price_change_1h: 6.40,
+                volatility_score: 84.1,
                 verified_safety: true,
             },
         ];
@@ -2961,7 +3041,10 @@ fn fetch_solana_candles(query: &HashMap<String, String>) -> Result<MarketDataRes
             "RAY" => 2.14,
             "BONK" => 0.0000214,
             "WIF" => 1.62,
-            _ => 10.0,
+            "PUMP" => 0.00384,
+            "FARTCOIN" => 0.324,
+            "POPCAT" => 0.485,
+            _ => 1.25,
         };
 
         let mut curr_p = base_price;

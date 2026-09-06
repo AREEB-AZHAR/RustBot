@@ -243,11 +243,14 @@ async function scanSolanaChain(forceUserToast = false) {
   } catch (error) {
     console.warn("Solana trending scanner error, using resilient fallback:", error);
     const fallbackTokens = [
-      { address: "So11111111111111111111111111111111111111112", symbol: "SOL", name: "Solana", dex: "raydium", price_usd: 142.50, volume_24h: 950000000, liquidity_usd: 180000000, price_change_5m: 1.45, price_change_1h: 3.82, volatility_score: 82.4 },
-      { address: "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN", symbol: "JUP", name: "Jupiter", dex: "orca", price_usd: 0.885, volume_24h: 128000000, liquidity_usd: 45000000, price_change_5m: 2.10, price_change_1h: 6.40, volatility_score: 84.1 },
-      { address: "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R", symbol: "RAY", name: "Raydium", dex: "raydium", price_usd: 2.14, volume_24h: 84000000, liquidity_usd: 22000000, price_change_5m: -1.80, price_change_1h: 7.20, volatility_score: 88.5 },
+      { address: "pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn", symbol: "PUMP", name: "Pump.fun", dex: "pump.fun", price_usd: 0.00384, volume_24h: 5120000, liquidity_usd: 924000, price_change_5m: 3.85, price_change_1h: 12.40, volatility_score: 96.5 },
+      { address: "9BB6NFEcjBCtnNLFko2FqVQBq8HHM13kCyYcdQbgpump", symbol: "FARTCOIN", name: "Fartcoin", dex: "pump.fun", price_usd: 0.324, volume_24h: 42000000, liquidity_usd: 8500000, price_change_5m: 5.20, price_change_1h: 18.90, volatility_score: 98.2 },
+      { address: "7GCihgDB8fe6KNjn2MYtkzZcRjQy3t9GHdC8uHYmW2hr", symbol: "POPCAT", name: "Popcat", dex: "raydium", price_usd: 0.485, volume_24h: 68000000, liquidity_usd: 14000000, price_change_5m: -2.10, price_change_1h: 7.80, volatility_score: 89.4 },
+      { address: "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm", symbol: "WIF", name: "dogwifhat", dex: "raydium", price_usd: 1.62, volume_24h: 210000000, liquidity_usd: 35000000, price_change_5m: -2.40, price_change_1h: 8.90, volatility_score: 95.0 },
       { address: "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263", symbol: "BONK", name: "Bonk", dex: "raydium", price_usd: 0.0000214, volume_24h: 96000000, liquidity_usd: 18000000, price_change_5m: 3.40, price_change_1h: -4.10, volatility_score: 91.2 },
-      { address: "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm", symbol: "WIF", name: "dogwifhat", dex: "raydium", price_usd: 1.62, volume_24h: 210000000, liquidity_usd: 35000000, price_change_5m: -2.40, price_change_1h: 8.90, volatility_score: 95.0 }
+      { address: "So11111111111111111111111111111111111111112", symbol: "SOL", name: "Solana", dex: "raydium", price_usd: 142.50, volume_24h: 950000000, liquidity_usd: 180000000, price_change_5m: 1.45, price_change_1h: 3.82, volatility_score: 82.4 },
+      { address: "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R", symbol: "RAY", name: "Raydium", dex: "raydium", price_usd: 2.14, volume_24h: 84000000, liquidity_usd: 22000000, price_change_5m: -1.80, price_change_1h: 7.20, volatility_score: 88.5 },
+      { address: "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN", symbol: "JUP", name: "Jupiter", dex: "orca", price_usd: 0.885, volume_24h: 128000000, liquidity_usd: 45000000, price_change_5m: 2.10, price_change_1h: 6.40, volatility_score: 84.1 }
     ];
     solanaBotState.scannedTokens = fallbackTokens;
     renderSolanaTokensTable();
@@ -276,10 +279,14 @@ function renderSolanaTokensTable() {
     const change1hClass = (t.price_change_1h || 0) >= 0 ? "positive" : "negative";
     const formattedPrice = t.price_usd < 0.001 ? t.price_usd.toFixed(7) : t.price_usd.toFixed(4);
 
+    const isPump = (t.dex || "").toLowerCase().includes("pump");
+    const dexLabel = isPump ? "💊 pump.fun" : (t.dex || 'DEX');
+    const dexClass = isPump ? "token-cell-dex badge-pump-fun" : "token-cell-dex";
+
     return `
       <tr style="cursor: pointer; ${isSelected ? 'background: var(--surface-elevated); border-left: 3px solid var(--ember);' : ''}" onclick="selectSolanaTokenBySymbol('${t.symbol}')">
         <td>
-          <div class="token-cell-title">${t.symbol} <span class="token-cell-dex">· ${t.dex || 'DEX'}</span></div>
+          <div class="token-cell-title">${t.symbol} <span class="${dexClass}" style="${isPump ? 'color: var(--ember); font-weight: 700;' : ''}">· ${dexLabel}</span></div>
           <small style="color: var(--muted); font-size: 0.7rem;">${(t.address || '').slice(0, 4)}...${(t.address || '').slice(-4)}</small>
         </td>
         <td>$${formattedPrice}</td>
@@ -1264,6 +1271,117 @@ function renderMultiPositionsTable() {
       </tr>
     `;
   }).join("");
+}
+
+function renderSolanaJournal() {
+  if (!elements.solanaJournalTbody) return;
+  const trades = solanaBotState.executedTrades || [];
+
+  if (elements.solanaTradeJournalCount) {
+    elements.solanaTradeJournalCount.textContent = `${trades.length} Trade${trades.length === 1 ? '' : 's'}`;
+  }
+
+  if (trades.length === 0) {
+    elements.solanaJournalTbody.innerHTML = `
+      <tr>
+        <td colspan="9" style="text-align: center; color: var(--muted); padding: 14px;">
+          No live Solana HFT trades executed yet. Click "Start Solana Bot" above to begin.
+        </td>
+      </tr>`;
+    return;
+  }
+
+  elements.solanaJournalTbody.innerHTML = trades
+    .slice(0, 50)
+    .map((t, idx) => {
+      const isPositive = (t.pnlUsd || 0) >= 0;
+      const pnlClass = isPositive ? "positive" : "negative";
+      const pnlSign = isPositive ? "+" : "";
+      const formattedEntry = (t.entryPrice || 0) < 0.001 ? (t.entryPrice || 0).toFixed(7) : (t.entryPrice || 0).toFixed(4);
+      const formattedExit = (t.exitPrice || 0) < 0.001 ? (t.exitPrice || 0).toFixed(7) : (t.exitPrice || 0).toFixed(4);
+
+      let learningBadge = `<span class="badge-stage" style="color: var(--sage); background: rgba(142, 196, 166, 0.12); padding: 2px 6px; border-radius: 4px; font-size: 0.72rem; font-weight: 700;">✅ Confirmed Win</span>`;
+      if (!t.isWin) {
+        learningBadge = `<span class="badge-stage" style="color: var(--danger); background: rgba(224, 82, 82, 0.12); padding: 2px 6px; border-radius: 4px; font-size: 0.72rem; font-weight: 700;">🛑 Stage 1 Doubt Registered</span>`;
+      }
+
+      const isPump = (t.dex || "").toLowerCase().includes("pump");
+      const dexBadge = isPump
+        ? `<span class="token-cell-dex" style="color: var(--ember); font-weight: 700;">💊 PUMP.FUN</span>`
+        : `<span class="token-cell-dex" style="text-transform: uppercase;">${t.dex || "RAYDIUM"}</span>`;
+
+      return `
+        <tr>
+          <td>#${trades.length - idx}</td>
+          <td>${t.time || "--:--:--"}</td>
+          <td><strong>${t.token || "SOL"}</strong></td>
+          <td>${dexBadge}</td>
+          <td>$${formattedEntry}</td>
+          <td>$${formattedExit}</td>
+          <td class="${pnlClass}" style="font-weight: 700;">${pnlSign}$${(t.pnlUsd || 0).toFixed(2)} (${pnlSign}${(t.pnlPct || 0).toFixed(2)}%)</td>
+          <td><span class="badge-chip">${t.exitReason || "Closed"}</span></td>
+          <td>${learningBadge}</td>
+        </tr>`;
+    })
+    .join("");
+}
+
+function renderLearningLedger() {
+  if (!elements.solanaLearningTbody) return;
+  const le = solanaBotState.learningEngine;
+
+  const stage1 = le.stage1Doubts || [];
+  const stage2 = le.stage2Retesting || [];
+  const stage3 = le.stage3PermanentTraps || [];
+
+  if (elements.tagStage1Count) elements.tagStage1Count.textContent = `${stage1.length} Doubts`;
+  if (elements.tagStage2Count) elements.tagStage2Count.textContent = `${stage2.length} Retests`;
+  if (elements.tagStage3Count) elements.tagStage3Count.textContent = `${stage3.length} Permanent Vetoes`;
+
+  const allTraps = [...stage3, ...stage2, ...stage1];
+
+  if (allTraps.length === 0) {
+    elements.solanaLearningTbody.innerHTML = `
+      <tr>
+        <td colspan="7" style="text-align: center; color: var(--muted); padding: 14px;">
+          No trade mistakes recorded yet. Start the Solana autonomous bot to begin active learning.
+        </td>
+      </tr>`;
+    return;
+  }
+
+  elements.solanaLearningTbody.innerHTML = allTraps
+    .map((trap) => {
+      let stageBadge = "";
+      let retestText = "";
+      let vetoActionText = "";
+
+      if (trap.stage === 1) {
+        stageBadge = `<span class="badge-doubt">Stage 1 · Doubt</span>`;
+        retestText = `<span style="color: var(--muted);">Scheduled for 2x re-test</span>`;
+        vetoActionText = `<span style="color: var(--muted);">Testing pattern resiliency</span>`;
+      } else if (trap.stage === 2) {
+        stageBadge = `<span class="badge-retesting">Stage 2 · Retesting</span>`;
+        retestText = `<strong style="color: var(--cyan);">${trap.retestPasses || 0}/2 Passes · ${trap.retestFails || 0}/2 Fails</strong>`;
+        vetoActionText = `<span>Observing failure reproducibility</span>`;
+      } else {
+        stageBadge = `<span class="badge-vetoed">Stage 3 · Permanent Veto</span>`;
+        retestText = `<strong style="color: var(--danger);">Confirmed 2x Failure</strong>`;
+        vetoActionText = `<strong style="color: var(--ember);">Vetoed ${trap.timesVetoed || 0}x (+$${(trap.savedCapital || 0).toFixed(2)})</strong>`;
+      }
+
+      return `
+        <tr>
+          <td><code>${trap.id || trap.trap_id || "TRAP"}</code></td>
+          <td><strong>${trap.tokenSymbol || "SOL"}</strong> <small style="color: var(--muted);">(${trap.pattern || "Fair Value Gap Trap"})</small></td>
+          <td class="negative">-${((trap.failLoss || 0.15) * 100).toFixed(1)}%</td>
+          <td>${stageBadge}</td>
+          <td>${retestText}</td>
+          <td>${vetoActionText}</td>
+          <td><span class="badge-chip">${trap.status || "active"}</span></td>
+        </tr>`;
+    })
+    .join("");
 }
 
 function showToast(message) {

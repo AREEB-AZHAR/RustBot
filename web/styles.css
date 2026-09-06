@@ -815,8 +815,8 @@ button:disabled {
 .market-setup-card,
 .market-results {
   min-width: 0;
-  background: rgba(255, 253, 248, 0.9);
-  border: 1px solid rgba(202, 192, 175, 0.82);
+  background: var(--surface);
+  border: 1px solid var(--line);
   border-radius: 22px;
   box-shadow: var(--shadow-card);
 }
@@ -1366,8 +1366,8 @@ button:disabled {
   max-width: 1100px;
   margin: 18px auto 8px;
   padding: 18px;
-  background: rgba(255, 253, 248, 0.9);
-  border: 1px solid rgba(202, 192, 175, 0.82);
+  background: var(--surface);
+  border: 1px solid var(--line);
   border-radius: 22px;
   box-shadow: var(--shadow-card);
 }
@@ -1672,10 +1672,10 @@ button:disabled {
   padding: 10px 12px;
   overflow: hidden;
   color: var(--text);
-  background: rgba(255, 253, 248, 0.74);
-  border: 1px solid rgba(180, 167, 145, 0.5);
+  background: var(--surface);
+  border: 1px solid var(--line);
   border-radius: 14px;
-  box-shadow: 0 4px 12px rgba(31, 25, 18, 0.025);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
   grid-template-columns: 1fr auto;
   grid-template-rows: 1fr auto;
   gap: 6px;
@@ -1684,14 +1684,14 @@ button:disabled {
 }
 
 .starter-card:hover {
-  background: var(--surface);
-  border-color: rgba(169, 63, 30, 0.3);
+  background: var(--surface-warm);
+  border-color: var(--ember);
   box-shadow: var(--shadow-card);
   transform: translateY(-2px);
 }
 
 .starter-number {
-  color: #a19d91;
+  color: var(--muted);
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   font-size: 9px;
   letter-spacing: 0.08em;
@@ -1707,6 +1707,7 @@ button:disabled {
 
 .starter-card strong {
   font-size: 12px;
+  color: var(--text);
 }
 
 .starter-card small {
@@ -1722,8 +1723,8 @@ button:disabled {
   display: grid;
   width: 24px;
   height: 24px;
-  color: var(--ember-deep);
-  background: rgba(169, 63, 30, 0.07);
+  color: var(--ember);
+  background: rgba(240, 112, 68, 0.12);
   border-radius: 50%;
   font-size: 12px;
   place-items: center;
@@ -2632,19 +2633,19 @@ pre.code-block code {
   position: relative;
   margin-bottom: 9px;
   padding: 13px 13px 12px;
-  background: rgba(255, 253, 248, 0.82);
-  border: 1px solid rgba(202, 192, 175, 0.72);
+  background: var(--surface);
+  border: 1px solid var(--line);
   border-radius: 13px;
-  box-shadow: 0 3px 10px rgba(31, 25, 18, 0.025);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.05);
   content-visibility: auto;
   contain-intrinsic-size: auto 126px;
   transition: background 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 160ms var(--ease);
 }
 
 .memory-card:hover {
-  background: var(--surface);
-  border-color: rgba(169, 63, 30, 0.23);
-  box-shadow: 0 8px 22px rgba(31, 25, 18, 0.07);
+  background: var(--surface-warm);
+  border-color: var(--ember);
+  box-shadow: var(--shadow-card);
   transform: translateY(-1px);
 }
 
