@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RustBot · Solana Autonomous HFT Agent &amp; TimesFM Matrix</title>
+  <meta name="description" content="High-frequency autonomous Solana DEX volatility trading agent powered by TimesFM predictive matrix attention, Fair Value Gaps, and 3-stage continuous learning." />
+  <script>
+    (function() {
+      try {
+        var saved = localStorage.getItem('rustbot_theme');
+        if (!saved) {
+          saved = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+        document.documentElement.setAttribute('data-theme', saved);
+      } catch (e) {}
+    })();
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/solana.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <!-- Sidebar Navigation Rail -->
+    <aside class="sidebar-rail" id="sidebar-rail">
+      <div class="rail-brand">
+        <div class="brand-icon" aria-hidden="true">⚡</div>
+        <div class="brand-meta">
+          <span class="brand-title">RustBot Quant</span>
+          <span class="brand-subtitle">Algorithmic Lab</span>
+        </div>
+      </div>
+
+      <div class="rail-nav-group">
+        <span class="nav-label">Core Navigation</span>
+        <a href="/" class="nav-link" id="rail-chat-link">
+          <span class="nav-icon" aria-hidden="true">💬</span>
+          <span>AI Conversation</span>
+        </a>
+
+        <span class="nav-label" style="margin-top: 14px;">Market Lab Suite</span>
+        <a href="/market" class="nav-link" id="rail-market-link">
+          <span class="nav-icon" aria-hidden="true">📈</span>
+          <span>Quant Lab (Walk-Forward)</span>
+        </a>
+        <a href="/solana" class="nav-link active" id="rail-solana-link" aria-current="page">
+          <span class="nav-icon" aria-hidden="true">⚡</span>
+          <span>Solana HFT Agent</span>
+          <span class="nav-badge-hft">HFT</span>
+        </a>
+
+        <span class="nav-label" style="margin-top: 14px;">Memory &amp; Knowledge</span>
+        <a href="/#teach" class="nav-link" id="rail-teach-link">
+          <span class="nav-icon" aria-hidden="true">🧠</span>
+          <span>Knowledge Forge</span>
+        </a>
+      </div>
+
+      <div class="rail-footer">
+        <div class="user-profile">
+          <div class="user-avatar" id="user-avatar">👤</div>
+          <div class="user-info">
+            <span class="user-name" id="user-name-display">Guest</span>
+            <span class="user-role-badge" id="user-role-badge">Visitor</span>
+          </div>
+        </div>
+        <a href="/" class="auth-btn" id="auth-action-btn">Log In</a>
+      </div>
+    </aside>
+
+    <!-- Main Quant Terminal Interface -->
+    <main class="main-content">
+      <header class="top-header">
+        <div class="header-left">
+          <button class="mobile-nav-toggle" id="rail-toggle-btn" type="button" aria-label="Toggle navigation">☰</button>
+          <div class="page-title-wrap">
+            <h1>Solana Autonomous HFT Agent</h1>
+            <p>TimesFM Predictive Matrix · Continuous Volatility Exploitation · 20% Circuit Breaker</p>
+          </div>
+        </div>
+
+        <!-- Top Navigation Switcher Tabs -->
+        <div class="market-lab-tabs-nav" aria-label="Market Lab Sub-Tabs">
+          <a href="/market" class="lab-sub-tab">
+            <span class="tab-icon">📈</span>
+            <span>Walk-Forward Quant Lab</span>
+          </a>
+          <a href="/solana" class="lab-sub-tab active" aria-current="page">
+            <span class="tab-icon">⚡</span>
+            <span>Solana HFT Agent</span>
+          </a>
+        </div>
+
+        <div class="header-right">
+          <button class="theme-toggle-btn" id="theme-toggle-btn" type="button" aria-label="Toggle theme (Light / Dark)" title="Toggle theme (Light / Dark)">
+            <span class="theme-icon" aria-hidden="true">☀️</span>
+          </button>
+          <div class="status-pill">
+            <span class="status-dot"></span>
+            <span>Solana Node Live</span>
+          </div>
+          <a href="/" class="chat-back-btn">💬 Back to Chat</a>
+        </div>
+      </header>
+
+      <div class="dashboard-scroll">
+        <div class="dashboard-container">
+          <!-- Solana HFT Autonomous Section -->
+          <section class="solana-hft-section" id="solana-hft-section" aria-labelledby="solana-heading">
+            <div class="solana-header">
+              <div class="solana-title-group">
+                <div class="solana-badge-chain">
+                  <span class="chain-icon">⚡</span>
+                  <span>Solana Chain Pure HFT &amp; TimesFM Predictive Matrix</span>
+                </div>
+                <h2 id="solana-heading">⚡ Solana Autonomous Bot &amp; TimesFM Matrix</h2>
+                <p>Continuous On-Chain Scanner · Fair Value Gap Exploitation · 20% Loss Circuit Breaker</p>
+              </div>
+              <div class="solana-header-controls">
+                <div class="solana-status-pill idle" id="solana-bot-status-pill">
+                  <span class="status-pulse-dot"></span>
+                  <span id="solana-status-text">STANDBY · READY</span>
+                </div>
+                <button type="button" class="btn-solana-start" id="btn-start-solana-bot">
+                  <span class="btn-icon">🚀</span>
+                  <span>Start Solana Bot</span>
+                </button>
+                <button type="button" class="btn-solana-stop" id="btn-stop-solana-bot" style="display: none;">
+                  <span class="btn-icon">🛑</span>
+                  <span>Stop Bot (Operator Halt)</span>
+                </button>
+                <button type="button" class="btn-reset-solana" id="btn-reset-solana-wallet" title="Reset Wallet to $10,000 baseline">
+                  <span>↺ Reset Wallet</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Real-Time Virtual Paper Wallet & Circuit Breaker HUD -->
+            <div class="solana-wallet-hud">
+              <div class="wallet-card primary">
+                <div class="wallet-card-header">
+                  <span>Virtual Wallet Equity</span>
+                  <span class="wallet-tag">USDC / USDT</span>
+                </div>
+                <strong class="wallet-amount" id="solana-wallet-balance">$10,000.00</strong>
+                <div class="wallet-subtext">
+                  <span>Starting Capital: $10,000.00</span>
+                  <span id="solana-cash-allocation">$10,000.00 Cash (100%)</span>
+                </div>
+              </div>
+
+              <div class="wallet-card">
+                <div class="wallet-card-header">
+                  <span>Cumulative PnL</span>
+                  <span class="wallet-tag" id="solana-pnl-tag">0 Trades</span>
+                </div>
+                <strong class="wallet-amount neutral" id="solana-cum-pnl">+$0.00 (+0.0%)</strong>
+                <div class="wallet-subtext">
+                  <span id="solana-winrate-stat">Win Rate: 0.0%</span>
+                  <span id="solana-fee-drag">DEX Fees: $0.00</span>
+                </div>
+              </div>
+
+              <div class="wallet-card circuit-breaker-card">
+                <div class="wallet-card-header">
+                  <span>20% Max Loss Circuit Breaker</span>
+                  <span class="circuit-status" id="circuit-status-badge">PROTECTED</span>
+                </div>
+                <div class="circuit-meter-wrap">
+                  <div class="circuit-bar-track">
+                    <div class="circuit-bar-fill" id="circuit-bar-fill" style="width: 0%;"></div>
+                    <div class="circuit-limit-marker" title="Auto-Shutdown Limit (-20% / $8,000)">-20% Limit</div>
+                  </div>
+                </div>
+                <div class="wallet-subtext">
+                  <span id="circuit-drawdown-text">Drawdown: 0.00%</span>
+                  <span class="circuit-danger-hint">Halts automatically at $8,000.00</span>
+                </div>
+              </div>
+
+              <div class="wallet-card position-card" id="solana-active-position-card">
+                <div class="wallet-card-header">
+                  <span>Active Position</span>
+                  <span class="badge-chip" id="solana-active-token-badge">NO POSITION</span>
+                </div>
+                <div class="position-details" id="solana-position-details">
+                  <span class="no-position-label">Bot is ready to scan Solana DEX pairs…</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Solana Scanner & TimesFM Matrix Display Grid -->
+            <div class="solana-grid-two">
+              <!-- Left: Live Chain Scanner -->
+              <div class="solana-panel">
+                <div class="panel-header-line">
+                  <div class="card-title-group">
+                    <p>STEP 01 · ON-CHAIN SCANNER</p>
+                    <h3>High-Volatility Solana DEX Pairs</h3>
+                  </div>
+                  <button type="button" class="btn-refresh-scan" id="btn-refresh-solana-scan" title="Force chain scan">🔄 Scan</button>
+                </div>
+                <div class="solana-tokens-scroll">
+                  <table class="solana-tokens-table">
+                    <thead>
+                      <tr>
+                        <th>Pair / DEX</th>
+                        <th>Price</th>
+                        <th>5m Δ</th>
+                        <th>1h Δ</th>
+                        <th>Volatility</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody id="solana-tokens-tbody">
+                      <tr>
+                        <td colspan="6" style="text-align: center; color: var(--muted); padding: 16px;">
+                          Click "Start Solana Bot" to scan real-time Raydium, Orca, and Jupiter DEX pairs.
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- Right: TimesFM Predictive Matrix & Fair Value Gap Canvas -->
+              <div class="solana-panel">
+                <div class="panel-header-line">
+                  <div class="card-title-group">
+                    <p>STEP 02 · TIMESFM ATTENTION MATRIX &amp; FVGs</p>
+                    <h3 id="timesfm-active-pair-heading">TimesFM Quantile Forecast &amp; Gaps</h3>
+                  </div>
+                  <span class="badge-chip" id="timesfm-status-chip">P10 / P50 / P90</span>
+                </div>
+
+                <div class="timesfm-meta-bar">
+                  <div class="timesfm-stat">
+                    <span>Expected Return:</span>
+                    <strong id="timesfm-expected-return">— bps</strong>
+                  </div>
+                  <div class="timesfm-stat">
+                    <span>Mean Reversion Prob:</span>
+                    <strong id="timesfm-mean-rev-prob">—%</strong>
+                  </div>
+                  <div class="timesfm-stat">
+                    <span>Fair Value Gaps:</span>
+                    <strong id="timesfm-fvg-count">0 Detected</strong>
+                  </div>
+                </div>
+
+                <div class="timesfm-canvas-container">
+                  <canvas id="timesfm-forecast-canvas" height="170" aria-label="TimesFM Multi-Step Forecast &amp; Attention Quantiles"></canvas>
+                  <div class="timesfm-legend">
+                    <span><span class="legend-dot p90"></span>P90 Upper Quantile</span>
+                    <span><span class="legend-dot p50"></span>P50 Median Forecast</span>
+                    <span><span class="legend-dot p10"></span>P10 Lower Quantile</span>
+                    <span><span class="legend-box fvg-bull"></span>Bullish FVG</span>
+                    <span><span class="legend-box fvg-bear"></span>Bearish FVG</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 3-Stage Continuous Learning Engine & Mistake Ledger -->
+            <div class="solana-panel learning-panel">
+              <div class="panel-header-line">
+                <div class="card-title-group">
+                  <p>STEP 03 · 3-STAGE CONTINUOUS LEARNING ENGINE</p>
+                  <h3>Adaptive Mistake Ledger &amp; Pattern Re-test Verification</h3>
+                </div>
+                <div class="learning-counts-group">
+                  <span class="stage-tag stage-1" id="tag-stage-1-count">Stage 1: 0 Doubts</span>
+                  <span class="stage-tag stage-2" id="tag-stage-2-count">Stage 2: 0 Re-testing</span>
+                  <span class="stage-tag stage-3" id="tag-stage-3-count">Stage 3: 0 Permanent Traps</span>
+                </div>
+              </div>
+
+              <div class="learning-stages-explanation">
+                <div class="stage-box">
+                  <span class="stage-num">Stage 1</span>
+                  <strong>Doubt &amp; Quarantine</strong>
+                  <p>When a trade loses or stops out, the setup is immediately doubted and quarantined so it isn't repeated blindly.</p>
+                </div>
+                <div class="stage-arrow" aria-hidden="true">→</div>
+                <div class="stage-box">
+                  <span class="stage-num">Stage 2</span>
+                  <strong>Historical Re-test (2x)</strong>
+                  <p>Replays the pattern across 2 distinct historical windows. If it fails 2x more, it's confirmed a structural trap. If it wins 2x, doubt is cleared.</p>
+                </div>
+                <div class="stage-arrow" aria-hidden="true">→</div>
+                <div class="stage-box">
+                  <span class="stage-num">Stage 3</span>
+                  <strong>Permanent Commit &amp; Veto</strong>
+                  <p>Confirmed traps are permanently locked into the Mistake Store to veto future entries via feature cosine distance checks.</p>
+                </div>
+              </div>
+
+              <div class="learning-ledger-scroll">
+                <table class="learning-ledger-table">
+                  <thead>
+                    <tr>
+                      <th>Trap ID</th>
+                      <th>Token / Pattern</th>
+                      <th>Initial Loss</th>
+                      <th>Current Stage</th>
+                      <th>2x Re-test Verification</th>
+                      <th>Veto Prevention Action</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="solana-learning-tbody">
+                    <tr>
+                      <td colspan="7" style="text-align: center; color: var(--muted); padding: 14px;">
+                        No trade mistakes recorded yet. Start the Solana autonomous bot to begin active learning.
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Solana HFT Executed Trades Journal -->
+            <div class="solana-panel trades-journal-panel">
+              <div class="panel-header-line">
+                <div class="card-title-group">
+                  <p>EXECUTION AUDIT</p>
+                  <h3>Solana HFT Real-Time Trade Journal</h3>
+                </div>
+                <span class="badge-chip" id="solana-trade-journal-count">0 Trades</span>
+              </div>
+              <div class="solana-journal-scroll">
+                <table class="trades-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Time</th>
+                      <th>Token</th>
+                      <th>DEX</th>
+                      <th>Entry</th>
+                      <th>Exit</th>
+                      <th>PnL ($ / %)</th>
+                      <th>Exit Reason</th>
+                      <th>3-Stage Learning Result</th>
+                    </tr>
+                  </thead>
+                  <tbody id="solana-journal-tbody">
+                    <tr>
+                      <td colspan="9" style="text-align: center; color: var(--muted); padding: 14px;">
+                        No live Solana HFT trades executed yet. Click "Start Solana Bot" above to begin.
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+
+    <!-- Notifications Toast -->
+    <div class="market-toast" id="toast" role="status"><span id="toast-message"></span></div>
+  </div>
+
+  <script src="/market_worker.js"></script>
+  <script src="/solana.js"></script>
+</body>
+</html>

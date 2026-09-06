@@ -25,6 +25,9 @@ const MARKET_HTML: &str = include_str!("../web/market.html");
 const MARKET_CSS: &str = include_str!("../web/market.css");
 const MARKET_JS: &str = include_str!("../web/market.js");
 const MARKET_WORKER_JS: &str = include_str!("../web/market_worker.js");
+const SOLANA_HTML: &str = include_str!("../web/solana.html");
+const SOLANA_CSS: &str = include_str!("../web/solana.css");
+const SOLANA_JS: &str = include_str!("../web/solana.js");
 const OG_IMAGE: &[u8] = include_bytes!("../web/og.png");
 const MAX_REQUEST_SIZE: usize = 512 * 1024; // Up to 512 KB for imports
 const MAX_CONCURRENT_CONNECTIONS: usize = 64;
@@ -631,6 +634,43 @@ fn route_request(request: &Request, state: &AppState) -> Response {
                 }
             } else {
                 Response::asset(200, "OK", "text/javascript; charset=utf-8", MARKET_WORKER_JS)
+            };
+            res.headers.push(("Cache-Control".to_string(), "no-cache, no-store, must-revalidate".to_string()));
+            res
+        }
+        ("GET", "/solana") | ("GET", "/solana.html") => {
+            let base_html = if cfg!(debug_assertions) {
+                std::fs::read_to_string("web/solana.html").unwrap_or_else(|_| SOLANA_HTML.to_string())
+            } else {
+                SOLANA_HTML.to_string()
+            };
+            let html = base_html
+                .replace("__ORIGIN__", &state.config.public_origin)
+                .replace("__CSRF_TOKEN__", "");
+            Response::html(200, "OK", html)
+        }
+        ("GET", "/solana.css") => {
+            let mut res = if cfg!(debug_assertions) {
+                if let Ok(css) = std::fs::read_to_string("web/solana.css") {
+                    Response::asset(200, "OK", "text/css; charset=utf-8", &css)
+                } else {
+                    Response::asset(200, "OK", "text/css; charset=utf-8", SOLANA_CSS)
+                }
+            } else {
+                Response::asset(200, "OK", "text/css; charset=utf-8", SOLANA_CSS)
+            };
+            res.headers.push(("Cache-Control".to_string(), "no-cache, no-store, must-revalidate".to_string()));
+            res
+        }
+        ("GET", "/solana.js") => {
+            let mut res = if cfg!(debug_assertions) {
+                if let Ok(js) = std::fs::read_to_string("web/solana.js") {
+                    Response::asset(200, "OK", "text/javascript; charset=utf-8", &js)
+                } else {
+                    Response::asset(200, "OK", "text/javascript; charset=utf-8", SOLANA_JS)
+                }
+            } else {
+                Response::asset(200, "OK", "text/javascript; charset=utf-8", SOLANA_JS)
             };
             res.headers.push(("Cache-Control".to_string(), "no-cache, no-store, must-revalidate".to_string()));
             res
@@ -3749,6 +3789,46 @@ mod tests {
         let res_market_worker = route_request(&req_market_worker, &state);
         assert_eq!(res_market_worker.status, 200);
         assert_eq!(res_market_worker.content_type, "text/javascript; charset=utf-8");
+
+        // 6. GET /solana
+        let req_solana = Request {
+            method: "GET".to_string(),
+            path: "/solana".to_string(),
+            query: HashMap::new(),
+            headers: HashMap::from([("host".to_string(), "127.0.0.1:7878".to_string())]),
+            host: "127.0.0.1:7878".to_string(),
+            body: vec![],
+        };
+        let res_solana = route_request(&req_solana, &state);
+        assert_eq!(res_solana.status, 200);
+        let solana_html = String::from_utf8(res_solana.body).unwrap();
+        assert!(solana_html.contains("Solana Autonomous HFT Agent"));
+
+        // 7. GET /solana.css
+        let req_solana_css = Request {
+            method: "GET".to_string(),
+            path: "/solana.css".to_string(),
+            query: HashMap::new(),
+            headers: HashMap::from([("host".to_string(), "127.0.0.1:7878".to_string())]),
+            host: "127.0.0.1:7878".to_string(),
+            body: vec![],
+        };
+        let res_solana_css = route_request(&req_solana_css, &state);
+        assert_eq!(res_solana_css.status, 200);
+        assert_eq!(res_solana_css.content_type, "text/css; charset=utf-8");
+
+        // 8. GET /solana.js
+        let req_solana_js = Request {
+            method: "GET".to_string(),
+            path: "/solana.js".to_string(),
+            query: HashMap::new(),
+            headers: HashMap::from([("host".to_string(), "127.0.0.1:7878".to_string())]),
+            host: "127.0.0.1:7878".to_string(),
+            body: vec![],
+        };
+        let res_solana_js = route_request(&req_solana_js, &state);
+        assert_eq!(res_solana_js.status, 200);
+        assert_eq!(res_solana_js.content_type, "text/javascript; charset=utf-8");
     }
 
     fn make_test_state() -> AppState {

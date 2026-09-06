@@ -169,6 +169,13 @@ function initTheme() {
       updateThemeUI(nextTheme);
     });
   }
+
+  window.addEventListener("storage", (event) => {
+    if (event.key === "rustbot_theme" && event.newValue) {
+      document.documentElement.setAttribute("data-theme", event.newValue);
+      updateThemeUI(event.newValue);
+    }
+  });
 }
 
 function initHeroTypewriter() {
