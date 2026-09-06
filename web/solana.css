@@ -544,6 +544,29 @@ body {
   gap: 10px;
 }
 
+.solana-db-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 13px;
+  border-radius: 9999px;
+  font-size: 0.76rem;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  border: 1px solid var(--cyan);
+  background: rgba(56, 189, 248, 0.12);
+  color: var(--cyan);
+}
+
+.db-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--cyan);
+  box-shadow: 0 0 8px var(--cyan);
+  animation: pulse-dot 1.8s infinite;
+}
+
 .solana-status-pill {
   display: inline-flex;
   align-items: center;
@@ -1130,6 +1153,89 @@ body {
   background: var(--surface-elevated);
   border: 1px solid var(--line);
   color: var(--muted);
+}
+
+.multi-positions-panel {
+  border-color: rgba(56, 189, 248, 0.35);
+  background: linear-gradient(175deg, var(--surface-warm), rgba(56, 189, 248, 0.04));
+}
+
+.positions-meta-chips {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.btn-close-all {
+  padding: 4px 10px;
+  background: rgba(224, 82, 82, 0.15);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-sm);
+  color: var(--danger);
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-close-all:hover {
+  background: var(--danger);
+  color: #ffffff;
+}
+
+.btn-close-single {
+  padding: 3px 8px;
+  background: var(--surface-elevated);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-close-single:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.multi-positions-scroll {
+  max-height: 280px;
+  overflow-y: auto;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+}
+
+.multi-positions-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  font-family: var(--font-mono);
+}
+
+.multi-positions-table th,
+.multi-positions-table td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+}
+
+.multi-positions-table th {
+  background: var(--surface-elevated);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.multi-positions-table tbody tr:hover {
+  background: var(--surface-elevated);
 }
 
 .market-toast {

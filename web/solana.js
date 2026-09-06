@@ -12,19 +12,19 @@ const solanaBotState = {
   isRunning: false,
   loopTimer: null,
   tickCount: 0,
-  tickIntervalMs: 2200,
+  tickIntervalMs: 500, // Ultra-fast HFT tick cadence (~500ms)
   scannedTokens: [],
   selectedToken: null,
   currentCandles: [],
   latestTimesfmResult: null,
-  activePosition: null,
+  activePositions: [], // Multiple simultaneous positions across scanned coins
   wallet: {
-    initialEquity: 10000.0,
-    currentEquity: 10000.0,
-    cash: 10000.0,
+    initialEquity: 1000.0, // Default baseline $1,000 as requested
+    currentEquity: 1000.0,
+    cash: 1000.0,
     realizedPnl: 0.0,
     totalFeesPaid: 0.0,
-    peakEquity: 10000.0,
+    peakEquity: 1000.0,
     maxDrawdownPct: 0.0,
     tradesWon: 0,
     tradesLost: 0,
@@ -37,6 +37,12 @@ const solanaBotState = {
     savedCapital: 0.0,
   },
   executedTrades: [],
+  databaseInfo: {
+    connected: false,
+    path: "solana_trades.db",
+    tradesCount: 0,
+    trapsCount: 0,
+  },
   toastTimer: null,
 };
 
@@ -60,6 +66,8 @@ const elements = {
   btnRefreshSolanaScan: document.querySelector("#btn-refresh-solana-scan"),
   solanaBotStatusPill: document.querySelector("#solana-bot-status-pill"),
   solanaStatusText: document.querySelector("#solana-status-text"),
+  solanaDbPill: document.querySelector("#solana-db-pill"),
+  solanaDbText: document.querySelector("#solana-db-text"),
   solanaWalletBalance: document.querySelector("#solana-wallet-balance"),
   solanaCashAllocation: document.querySelector("#solana-cash-allocation"),
   solanaCumPnl: document.querySelector("#solana-cum-pnl"),
@@ -69,8 +77,15 @@ const elements = {
   circuitBarFill: document.querySelector("#circuit-bar-fill"),
   circuitDrawdownText: document.querySelector("#circuit-drawdown-text"),
   circuitStatusBadge: document.querySelector("#circuit-status-badge"),
+  circuitDangerHint: document.querySelector("#circuit-danger-hint"),
   solanaActiveTokenBadge: document.querySelector("#solana-active-token-badge"),
   solanaPositionDetails: document.querySelector("#solana-position-details"),
+  multiPositionsPanel: document.querySelector("#multi-positions-panel"),
+  activePositionsCount: document.querySelector("#active-positions-count"),
+  allocatedMarginChip: document.querySelector("#allocated-margin-chip"),
+  unrealizedPnlChip: document.querySelector("#unrealized-pnl-chip"),
+  btnCloseAllPositions: document.querySelector("#btn-close-all-positions"),
+  multiPositionsTbody: document.querySelector("#multi-positions-tbody"),
   solanaTokensTbody: document.querySelector("#solana-tokens-tbody"),
   timesfmForecastCanvas: document.querySelector("#timesfm-forecast-canvas"),
   timesfmActivePairHeading: document.querySelector("#timesfm-active-pair-heading"),
@@ -91,7 +106,9 @@ async function initialize() {
   initTheme();
   bindEvents();
   updateSolanaWalletHUD();
+  renderMultiPositionsTable();
   await checkAuth();
+  await syncWithDedicatedDb();
   await scanSolanaChain(false);
 }
 
@@ -489,6 +506,102 @@ function drawTimesfmCanvas(candles, forecast) {
 }
 
 /* ==========================================================================
+   Dedicated Database Synchronization (solana_trades.db)
+   ========================================================================== */
+
+async function syncWithDedicatedDb() {
+  try {
+    // 1. Fetch recent trades from solana_trades.db
+    const tradesRes = await api("/api/market/solana/trades?limit=50");
+    if (tradesRes && Array.isArray(tradesRes.trades)) {
+      solanaBotState.executedTrades = tradesRes.trades.map((t) => ({
+        id: t.id,
+        tradeRef: t.trade_ref,
+        time: new Date(t.closed_at * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+        token: t.token_symbol,
+        dex: t.dex,
+        entryPrice: t.entry_price,
+        exitPrice: t.exit_price,
+        marginUsd: t.margin_usd,
+        pnlUsd: t.pnl_usd,
+        pnlPct: t.pnl_pct,
+        feesPaid: t.fees_paid_usd,
+        exitReason: t.exit_reason,
+        isWin: t.is_win,
+        learningNote: t.is_win ? "🟢 Captured Edge" : "🔴 Learned Mistake",
+      }));
+      solanaBotState.databaseInfo.tradesCount = tradesRes.count || solanaBotState.executedTrades.length;
+    }
+
+    // 2. Fetch learned traps from solana_trades.db
+    const memoryRes = await api("/api/market/solana/learned-memory");
+    if (memoryRes && Array.isArray(memoryRes.traps)) {
+      const stage1 = [];
+      const stage2 = [];
+      const stage3 = [];
+      let totalVetoes = 0;
+      let totalSaved = 0.0;
+
+      memoryRes.traps.forEach((trap) => {
+        totalVetoes += trap.times_vetoed || 0;
+        totalSaved += trap.saved_capital_usd || 0.0;
+
+        let parsedFeatures = [0.01, -0.02, 0.03, 1, 0.5];
+        try {
+          if (trap.features_json) parsedFeatures = JSON.parse(trap.features_json);
+        } catch {
+          // fallback
+        }
+
+        const trapItem = {
+          id: trap.trap_id,
+          trap_id: trap.trap_id,
+          tokenSymbol: trap.token_symbol,
+          pattern: trap.pattern_name,
+          features: parsedFeatures,
+          stage: trap.stage,
+          retestPasses: trap.retest_passes || 0,
+          retestFails: trap.retest_fails || 0,
+          failLoss: (trap.initial_loss_pct || 15.0) / 100,
+          timesVetoed: trap.times_vetoed || 0,
+          savedCapital: trap.saved_capital_usd || 0.0,
+          status: trap.status,
+          notes: trap.notes,
+        };
+
+        if (trap.stage === 1) stage1.push(trapItem);
+        else if (trap.stage === 2) stage2.push(trapItem);
+        else if (trap.stage === 3) stage3.push(trapItem);
+      });
+
+      solanaBotState.learningEngine.stage1Doubts = stage1;
+      solanaBotState.learningEngine.stage2Retesting = stage2;
+      solanaBotState.learningEngine.stage3PermanentTraps = stage3;
+      solanaBotState.learningEngine.avoidedTrapsCount = totalVetoes;
+      solanaBotState.learningEngine.savedCapital = totalSaved;
+      solanaBotState.databaseInfo.trapsCount = memoryRes.count || memoryRes.traps.length;
+    }
+
+    solanaBotState.databaseInfo.connected = true;
+    if (elements.solanaDbText) {
+      elements.solanaDbText.textContent = `solana_trades.db (${solanaBotState.databaseInfo.tradesCount} trades, ${solanaBotState.databaseInfo.trapsCount} traps)`;
+    }
+    if (elements.solanaDbPill) {
+      elements.solanaDbPill.style.borderColor = "var(--sage)";
+      elements.solanaDbPill.style.color = "var(--sage)";
+    }
+
+    renderSolanaJournal();
+    renderLearningLedger();
+  } catch (err) {
+    console.warn("Could not sync with solana_trades.db backend:", err);
+    if (elements.solanaDbText) {
+      elements.solanaDbText.textContent = "solana_trades.db (Local In-Memory)";
+    }
+  }
+}
+
+/* ==========================================================================
    Autonomous HFT Loop & 20% Circuit Breaker
    ========================================================================== */
 
@@ -496,8 +609,8 @@ function startSolanaAutonomousBot() {
   if (solanaBotState.isRunning) return;
 
   const drawdown = (solanaBotState.wallet.peakEquity - solanaBotState.wallet.currentEquity) / solanaBotState.wallet.peakEquity;
-  if (drawdown >= 0.20 || solanaBotState.wallet.currentEquity <= 8000.0) {
-    showToast("⚠️ 20% Circuit Breaker is tripped ($8,000 limit). Click 'Reset Wallet' to restore $10,000 baseline.");
+  if (drawdown >= 0.20 || solanaBotState.wallet.currentEquity <= 800.0) {
+    showToast("⚠️ 20% Circuit Breaker is tripped ($800 limit). Click 'Reset Wallet' to restore $1,000 baseline.");
     return;
   }
 
@@ -509,10 +622,10 @@ function startSolanaAutonomousBot() {
     elements.solanaBotStatusPill.className = "solana-status-pill active";
   }
   if (elements.solanaStatusText) {
-    elements.solanaStatusText.textContent = "RUNNING · HIGH VOLATILITY LOOP";
+    elements.solanaStatusText.textContent = "RUNNING · SUB-SECOND HFT CADENCE";
   }
 
-  showToast("⚡ Solana Autonomous HFT Bot engaged! Scanning DEX price gaps continuously until stopped or -20% loss.");
+  showToast("⚡ Solana Multi-Trade HFT Bot engaged! Placing 2% margin trades on all volatile coins with 15% stop loss & BE+5x fees exit.");
   runSolanaAutonomousTick();
 }
 
@@ -526,8 +639,8 @@ function stopSolanaAutonomousBot(haltReason = "OPERATOR_STOP") {
   if (elements.btnStartSolanaBot) elements.btnStartSolanaBot.style.display = "inline-flex";
   if (elements.btnStopSolanaBot) elements.btnStopSolanaBot.style.display = "none";
 
-  if (solanaBotState.activePosition) {
-    closeActivePosition("Forced Close on Bot Halt", haltReason === "CIRCUIT_BREAKER_20PCT_LOSS");
+  if (solanaBotState.activePositions.length > 0) {
+    closeAllPositions("Forced Close on Bot Halt");
   }
 
   processThreeStageLearningEngine();
@@ -551,10 +664,11 @@ function stopSolanaAutonomousBot(haltReason = "OPERATOR_STOP") {
     if (elements.solanaStatusText) {
       elements.solanaStatusText.textContent = "STANDBY · OPERATOR HALTED";
     }
-    showToast("Solana bot stopped by operator. 3-stage learning ledger updated.");
+    showToast("Solana bot stopped by operator. 3-stage learning ledger synchronized with solana_trades.db.");
   }
 
   updateSolanaWalletHUD();
+  renderMultiPositionsTable();
   renderSolanaJournal();
   renderLearningLedger();
 }
@@ -569,63 +683,116 @@ async function runSolanaAutonomousTick() {
   const current = solanaBotState.wallet.currentEquity;
   const drawdown = (peak - current) / Math.max(1, peak);
 
-  if (drawdown >= 0.20 || current <= 8000.0) {
+  if (drawdown >= 0.20 || current <= 800.0) {
     stopSolanaAutonomousBot("CIRCUIT_BREAKER_20PCT_LOSS");
     return;
   }
 
-  // Step 2: In-Position Management
-  if (solanaBotState.activePosition) {
-    const pos = solanaBotState.activePosition;
+  // Step 2: Manage All Active Positions Simultaneously
+  const activePositionsCopy = [...solanaBotState.activePositions];
+  for (const pos of activePositionsCopy) {
     pos.barsHeld++;
 
+    // Realistic volatility price jump based on coin's DEX volatility score
     const vol = (pos.token.volatility_score || 80) / 100;
-    const randomNoise = ((Math.sin(solanaBotState.tickCount * 1.7) * 0.6) + ((Math.random() - 0.48) * 0.8)) * 0.012 * vol;
-    pos.currentPrice = Math.max(0.000001, pos.currentPrice * (1 + randomNoise));
+    const tokenSeed = pos.token.symbol.charCodeAt(0) + pos.token.symbol.length;
+    const noise = ((Math.sin(solanaBotState.tickCount * 2.2 + tokenSeed) * 0.7) + ((Math.random() - 0.46) * 1.1)) * 0.016 * vol;
+    pos.currentPrice = Math.max(0.0000001, pos.currentPrice * (1 + noise));
 
-    const rawReturn = (pos.currentPrice - pos.entryPrice) / pos.entryPrice;
+    // Fee calculations: 15 bps (0.15%) taker fee per trade leg
+    const feeRate = 0.0015;
+    const singleFeeUsd = pos.marginUsd * feeRate;
+    const entryFeeUsd = singleFeeUsd;
+    const exitFeeUsd = (pos.shares * pos.currentPrice) * feeRate;
+    const grossPnlUsd = (pos.shares * pos.currentPrice) - pos.marginUsd;
+    const netPnlUsd = grossPnlUsd - (entryFeeUsd + exitFeeUsd);
 
-    // Exit rules: Take Profit (+3.5%), Stop Loss (-1.8%), Time Limit (> 8 ticks)
-    const isTakeProfit = rawReturn >= 0.035;
-    const isStopLoss = rawReturn <= -0.018;
-    const isTimeLimit = pos.barsHeld >= 8;
+    pos.unrealizedPnlUsd = netPnlUsd;
+    pos.unrealizedReturnPct = (netPnlUsd / pos.marginUsd) * 100;
 
-    if (isTakeProfit || isStopLoss || isTimeLimit) {
-      const exitReason = isTakeProfit ? "Take Profit (+3.5%)" : isStopLoss ? "Stop Loss (-1.8%)" : "HFT Time Decay Limit";
-      closeActivePosition(exitReason, false);
-    } else {
-      const posValue = pos.shares * pos.currentPrice;
-      solanaBotState.wallet.currentEquity = solanaBotState.wallet.cash + posValue;
-      if (solanaBotState.wallet.currentEquity > solanaBotState.wallet.peakEquity) {
-        solanaBotState.wallet.peakEquity = solanaBotState.wallet.currentEquity;
-      }
+    // TARGET EXIT CONDITIONS (Specified by User):
+    // 1. Exit on 15% loss (unrealizedReturnPct <= -15.0%)
+    // 2. Exit when breakeven price is broken with enough profit to cover 5 more trade fees (netPnlUsd >= 5 * singleFeeUsd)
+    const isStopLoss = pos.unrealizedReturnPct <= -15.0;
+    const isTakeProfit = netPnlUsd >= (5 * singleFeeUsd);
+    const isStaleTimeout = pos.barsHeld >= 18;
+
+    if (isStopLoss) {
+      closePosition(pos, `STOP_LOSS (-15.0% Loss Limit Hit: ${pos.unrealizedReturnPct.toFixed(2)}%)`, false);
+    } else if (isTakeProfit) {
+      closePosition(pos, `TAKE_PROFIT (Breakeven + 5x Fees: +$${netPnlUsd.toFixed(2)} Net)`, false);
+    } else if (isStaleTimeout) {
+      closePosition(pos, "HFT Time Decay Rebalance", false);
     }
-  } else {
-    // Step 3: Scan Chain & Seek New Volatility / Price Gap Entry
-    if (solanaBotState.tickCount % 5 === 0) {
-      await scanSolanaChain(false);
+  }
+
+  // Recalculate Current Wallet Equity
+  const openPositionsValue = solanaBotState.activePositions.reduce((acc, p) => acc + (p.shares * p.currentPrice), 0);
+  solanaBotState.wallet.currentEquity = solanaBotState.wallet.cash + openPositionsValue;
+  if (solanaBotState.wallet.currentEquity > solanaBotState.wallet.peakEquity) {
+    solanaBotState.wallet.peakEquity = solanaBotState.wallet.currentEquity;
+  }
+
+  // Step 3: Scan Chain & Seek Multiple Simultaneous Entries Across Coins
+  if (solanaBotState.tickCount % 8 === 0) {
+    await scanSolanaChain(false);
+  }
+
+  // Candidate Coins Pool (scanned coins + resilient fallbacks)
+  const candidatePool = solanaBotState.scannedTokens.length > 0 ? solanaBotState.scannedTokens : [
+    { symbol: "SOL", name: "Solana", price_usd: 142.50, dex: "raydium", volatility_score: 85, price_change_5m: 1.4, price_change_1h: 3.2 },
+    { symbol: "JUP", name: "Jupiter", price_usd: 0.885, dex: "orca", volatility_score: 88, price_change_5m: 2.1, price_change_1h: 4.8 },
+    { symbol: "RAY", name: "Raydium", price_usd: 2.15, dex: "raydium", volatility_score: 92, price_change_5m: 3.6, price_change_1h: 6.5 },
+    { symbol: "BONK", name: "Bonk", price_usd: 0.0000214, dex: "raydium", volatility_score: 96, price_change_5m: -1.2, price_change_1h: 8.4 },
+    { symbol: "WIF", name: "dogwifhat", price_usd: 1.62, dex: "raydium", volatility_score: 94, price_change_5m: 4.1, price_change_1h: 7.9 },
+    { symbol: "PYTH", name: "Pyth Network", price_usd: 0.34, dex: "orca", volatility_score: 82, price_change_5m: 0.8, price_change_1h: 2.1 },
+    { symbol: "JTO", name: "Jito", price_usd: 2.45, dex: "orca", volatility_score: 86, price_change_5m: 2.4, price_change_1h: 5.1 },
+  ];
+
+  // User specification: "if i have 1000 dollars place trades on many coins as possible with same 2% margin for each trades"
+  const uniformMarginUsd = Math.max(5.0, solanaBotState.wallet.currentEquity * 0.02);
+  const singleFeeUsd = uniformMarginUsd * 0.0015;
+
+  for (const candidate of candidatePool) {
+    // Check if cash can afford the 2% margin + fee
+    if (solanaBotState.wallet.cash < (uniformMarginUsd + singleFeeUsd)) {
+      break; // Cash exhausted for opening more trades
     }
 
-    const candidate = solanaBotState.selectedToken || solanaBotState.scannedTokens[0];
-    if (candidate) {
-      const isVetoed = checkStage3TrapVeto(candidate);
-      if (isVetoed) {
-        solanaBotState.learningEngine.avoidedTrapsCount++;
-        solanaBotState.learningEngine.savedCapital += 3.60;
-      } else {
-        const fvgResult = solanaBotState.latestTimesfmResult;
-        const gaps = fvgResult ? (fvgResult.fairValueGaps || fvgResult.fair_value_gaps || []) : [];
-        const hasGap = gaps.length > 0 || (candidate.volatility_score || 0) > 85;
+    // Don't open duplicate positions for the same token
+    if (solanaBotState.activePositions.some((p) => p.token.symbol === candidate.symbol)) {
+      continue;
+    }
 
-        if (hasGap) {
-          openActivePosition(candidate, gaps[0] ? gaps[0].type : "Bullish Volatility Gap");
-        }
-      }
+    // MANDATORY PRE-CHECK: Query Learned Memory in solana_trades.db before placing new trades
+    const vetoTrap = checkStage3TrapVeto(candidate);
+    if (vetoTrap) {
+      solanaBotState.learningEngine.avoidedTrapsCount++;
+      solanaBotState.learningEngine.savedCapital += uniformMarginUsd;
+
+      // Notify server to record veto event into solana_trades.db
+      api("/api/market/solana/learned-memory/veto", {
+        method: "POST",
+        body: JSON.stringify({
+          trap_id: vetoTrap.id || vetoTrap.trap_id,
+          saved_capital_usd: uniformMarginUsd,
+        }),
+      }).catch((e) => console.warn("Veto API error:", e));
+
+      showToast(`🛑 [solana_trades.db VETO] Blocked candidate ${candidate.symbol} matching trap ${vetoTrap.id}! Saved $${uniformMarginUsd.toFixed(2)} margin.`);
+      continue;
+    }
+
+    // Setup meets high volatility / gap criteria
+    const hasVolatility = (candidate.volatility_score || 75) >= 80 || Math.abs(candidate.price_change_5m || 0) > 1.0;
+    if (hasVolatility) {
+      openPosition(candidate, uniformMarginUsd, "Bullish Volatility Gap");
     }
   }
 
   processThreeStageLearningEngine();
   updateSolanaWalletHUD();
+  renderMultiPositionsTable();
   renderSolanaJournal();
   renderLearningLedger();
 
@@ -634,19 +801,18 @@ async function runSolanaAutonomousTick() {
   }
 }
 
-function openActivePosition(token, fvgType) {
+function openPosition(token, marginUsd, fvgType = "BULLISH_FVG") {
   const safeFvg = String(fvgType || "BULLISH_FVG");
-  const tradeSizeUsd = Math.max(50, solanaBotState.wallet.currentEquity * 0.02);
-  const takerFeeUsd = tradeSizeUsd * 0.0012; // 12 bps taker fee
+  const takerFeeUsd = marginUsd * 0.0015; // 15 bps fee
 
-  if (solanaBotState.wallet.cash < tradeSizeUsd + takerFeeUsd) {
+  if (solanaBotState.wallet.cash < marginUsd + takerFeeUsd) {
     return;
   }
 
   const entryPrice = token.price_usd || 1.0;
-  const shares = tradeSizeUsd / entryPrice;
+  const shares = marginUsd / entryPrice;
 
-  solanaBotState.wallet.cash -= (tradeSizeUsd + takerFeeUsd);
+  solanaBotState.wallet.cash -= (marginUsd + takerFeeUsd);
   solanaBotState.wallet.totalFeesPaid += takerFeeUsd;
 
   const rawFeatures = [
@@ -657,72 +823,129 @@ function openActivePosition(token, fvgType) {
     (token.volume_24h || 1000000) / 100000000,
   ];
 
-  solanaBotState.activePosition = {
+  const pos = {
     token,
+    marginUsd,
     entryPrice,
     currentPrice: entryPrice,
-    sizeUsd: tradeSizeUsd,
     shares,
     entryTime: Date.now(),
     entryFeatures: rawFeatures,
     fvgType: safeFvg,
     barsHeld: 0,
+    unrealizedPnlUsd: 0.0,
+    unrealizedReturnPct: 0.0,
   };
+
+  solanaBotState.activePositions.push(pos);
 }
 
-function closeActivePosition(exitReason, isEmergencyHalt = false) {
-  const pos = solanaBotState.activePosition;
-  if (!pos) return;
+function closePosition(pos, exitReason, isEmergencyHalt = false) {
+  const index = solanaBotState.activePositions.indexOf(pos);
+  if (index === -1) return;
 
   const exitPrice = pos.currentPrice;
-  const exitTakerFee = (pos.shares * exitPrice) * 0.0012;
-  const grossReturn = (exitPrice - pos.entryPrice) / pos.entryPrice;
-  const netReturn = grossReturn - 0.0024;
-  const pnlUsd = (pos.sizeUsd * netReturn);
+  const exitTakerFee = (pos.shares * exitPrice) * 0.0015;
+  const grossPnl = (pos.shares * exitPrice) - pos.marginUsd;
+  const entryFee = pos.marginUsd * 0.0015;
+  const netPnlUsd = grossPnl - (entryFee + exitTakerFee);
+  const netReturnPct = (netPnlUsd / pos.marginUsd) * 100;
 
-  solanaBotState.wallet.cash += (pos.sizeUsd + pnlUsd - exitTakerFee);
-  solanaBotState.wallet.realizedPnl += pnlUsd;
+  // Return margin + net PnL back into cash
+  solanaBotState.wallet.cash += (pos.marginUsd + grossPnl - exitTakerFee);
+  solanaBotState.wallet.realizedPnl += netPnlUsd;
   solanaBotState.wallet.totalFeesPaid += exitTakerFee;
-  solanaBotState.wallet.currentEquity = solanaBotState.wallet.cash;
+
+  const openPositionsValue = solanaBotState.activePositions
+    .filter((p) => p !== pos)
+    .reduce((acc, p) => acc + (p.shares * p.currentPrice), 0);
+  solanaBotState.wallet.currentEquity = solanaBotState.wallet.cash + openPositionsValue;
 
   if (solanaBotState.wallet.currentEquity > solanaBotState.wallet.peakEquity) {
     solanaBotState.wallet.peakEquity = solanaBotState.wallet.currentEquity;
   }
 
-  const isWin = netReturn > 0;
+  const isWin = netPnlUsd > 0;
   if (isWin) {
     solanaBotState.wallet.tradesWon++;
   } else {
     solanaBotState.wallet.tradesLost++;
-    registerTradeMistakeInStage1(pos.token, pos.entryFeatures, netReturn, pos.fvgType);
+    registerTradeMistakeInStage1(pos.token, pos.entryFeatures, netReturnPct / 100, pos.fvgType);
   }
 
+  const tradeRef = `SOL-HFT-${Date.now().toString().slice(-6)}`;
   const tradeEntry = {
     id: solanaBotState.executedTrades.length + 1,
+    tradeRef,
     time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
     token: pos.token.symbol,
     dex: pos.token.dex || "Raydium",
     entryPrice: pos.entryPrice,
     exitPrice,
-    pnlUsd,
-    pnlPct: netReturn * 100,
+    marginUsd: pos.marginUsd,
+    pnlUsd: netPnlUsd,
+    pnlPct: netReturnPct,
+    feesPaid: entryFee + exitTakerFee,
     exitReason,
     isWin,
     learningNote: isWin ? "🟢 Captured Edge" : "🔴 Doubted (Stage 1)",
   };
 
   solanaBotState.executedTrades.unshift(tradeEntry);
-  solanaBotState.activePosition = null;
+  solanaBotState.activePositions.splice(index, 1);
+
+  // PERSISTENCE: Save trade record into dedicated solana_trades.db
+  api("/api/market/solana/trades", {
+    method: "POST",
+    body: JSON.stringify({
+      trade_ref: tradeRef,
+      token_symbol: pos.token.symbol,
+      token_name: pos.token.name || pos.token.symbol,
+      dex: pos.token.dex || "Raydium",
+      entry_price: pos.entryPrice,
+      exit_price: exitPrice,
+      margin_usd: pos.marginUsd,
+      pnl_usd: netPnlUsd,
+      pnl_pct: netReturnPct,
+      fees_paid_usd: entryFee + exitTakerFee,
+      exit_reason: exitReason,
+      is_win: isWin,
+      features_json: JSON.stringify(pos.entryFeatures),
+    }),
+  }).then(() => {
+    solanaBotState.databaseInfo.tradesCount++;
+    if (elements.solanaDbText) {
+      elements.solanaDbText.textContent = `solana_trades.db (${solanaBotState.databaseInfo.tradesCount} trades, ${solanaBotState.databaseInfo.trapsCount} traps)`;
+    }
+  }).catch((e) => console.warn("Failed to persist trade to solana_trades.db:", e));
 }
 
+function closeAllPositions(reason) {
+  const positions = [...solanaBotState.activePositions];
+  for (const pos of positions) {
+    closePosition(pos, reason, false);
+  }
+}
+
+window.closeSinglePositionBySymbol = function(symbol) {
+  const pos = solanaBotState.activePositions.find((p) => p.token.symbol === symbol);
+  if (pos) {
+    closePosition(pos, "Manual Close by Operator", false);
+    updateSolanaWalletHUD();
+    renderMultiPositionsTable();
+    renderSolanaJournal();
+  }
+};
+
 /* ==========================================================================
-   3-Stage Continuous Learning Engine
+   3-Stage Continuous Learning Engine (Doubt -> Re-test -> Permanent Veto)
    ========================================================================== */
 
 function registerTradeMistakeInStage1(token, features, failReturn, fvgType) {
-  const mistakeId = `TRAP-${String(solanaBotState.learningEngine.stage1Doubts.length + solanaBotState.learningEngine.stage3PermanentTraps.length + 1).padStart(3, "0")}`;
+  const mistakeId = `TRAP-${token.symbol}-${String(solanaBotState.learningEngine.stage1Doubts.length + solanaBotState.learningEngine.stage3PermanentTraps.length + 1).padStart(3, "0")}`;
   const mistakeItem = {
     id: mistakeId,
+    trap_id: mistakeId,
     tokenSymbol: token.symbol,
     failLoss: failReturn,
     pattern: fvgType || "Volatility Imbalance Misjudgment",
@@ -734,6 +957,25 @@ function registerTradeMistakeInStage1(token, features, failReturn, fvgType) {
   };
 
   solanaBotState.learningEngine.stage1Doubts.push(mistakeItem);
+
+  // PERSISTENCE: Save new Stage 1 Doubt into dedicated solana_trades.db
+  api("/api/market/solana/learned-memory", {
+    method: "POST",
+    body: JSON.stringify({
+      trap_id: mistakeId,
+      token_symbol: token.symbol,
+      pattern_name: fvgType || "Volatility Imbalance Misjudgment",
+      features_json: JSON.stringify(features || []),
+      stage: 1,
+      initial_loss_pct: Math.abs(failReturn * 100),
+      notes: "Quarantined in Stage 1 Doubt after stop loss exit",
+    }),
+  }).then(() => {
+    solanaBotState.databaseInfo.trapsCount++;
+    if (elements.solanaDbText) {
+      elements.solanaDbText.textContent = `solana_trades.db (${solanaBotState.databaseInfo.tradesCount} trades, ${solanaBotState.databaseInfo.trapsCount} traps)`;
+    }
+  }).catch((e) => console.warn("Failed to persist mistake to solana_trades.db:", e));
 }
 
 function processThreeStageLearningEngine() {
@@ -744,6 +986,20 @@ function processThreeStageLearningEngine() {
     const item = engine.stage1Doubts.shift();
     item.stage = 2;
     engine.stage2Retesting.push(item);
+
+    // Persist Stage 2 transition to solana_trades.db
+    api("/api/market/solana/learned-memory", {
+      method: "POST",
+      body: JSON.stringify({
+        is_update: true,
+        trap_id: item.trap_id || item.id,
+        stage: 2,
+        retest_passes: item.retestPasses,
+        retest_fails: item.retestFails,
+        status: "RETESTING",
+        notes: "Queued for 2x historical re-test verification",
+      }),
+    }).catch(() => {});
   }
 
   // Advance Stage 2 Retests (2x Verification)
@@ -760,22 +1016,49 @@ function processThreeStageLearningEngine() {
     }
 
     if (item.retestFails >= 2) {
-      // Confirmed Chronic Trap -> Advance to Stage 3
+      // Confirmed Chronic Trap -> Advance to Stage 3 Permanent Veto
       item.stage = 3;
       item.timesVetoed = 0;
       engine.stage2Retesting.splice(i, 1);
       engine.stage3PermanentTraps.push(item);
+
+      // Persist Stage 3 Permanent Veto to solana_trades.db
+      api("/api/market/solana/learned-memory", {
+        method: "POST",
+        body: JSON.stringify({
+          is_update: true,
+          trap_id: item.trap_id || item.id,
+          stage: 3,
+          retest_passes: item.retestPasses,
+          retest_fails: item.retestFails,
+          status: "PERMANENT_VETO",
+          notes: "Confirmed structural trap after 2 failed re-tests. Permanently vetoing.",
+        }),
+      }).catch(() => {});
     } else if (item.retestPasses >= 2) {
       // Cleared Doubt
       item.stage = "CLEARED";
       engine.stage2Retesting.splice(i, 1);
+
+      api("/api/market/solana/learned-memory", {
+        method: "POST",
+        body: JSON.stringify({
+          is_update: true,
+          trap_id: item.trap_id || item.id,
+          stage: 0,
+          retest_passes: item.retestPasses,
+          retest_fails: item.retestFails,
+          status: "CLEARED",
+          notes: "Doubt cleared after 2 successful historical re-tests.",
+        }),
+      }).catch(() => {});
     }
   }
 }
 
 function checkStage3TrapVeto(candidate) {
   const traps = solanaBotState.learningEngine.stage3PermanentTraps;
-  if (!traps || traps.length === 0) return false;
+  if (!traps || traps.length === 0) return null;
 
   const currentFeatures = [
     (candidate.price_change_5m || 0) / 100,
@@ -787,16 +1070,17 @@ function checkStage3TrapVeto(candidate) {
 
   for (const trap of traps) {
     let sumSq = 0;
-    for (let f = 0; f < Math.min(currentFeatures.length, trap.features.length); f++) {
-      sumSq += (currentFeatures[f] - trap.features[f]) ** 2;
+    const trapFeatures = trap.features || [];
+    for (let f = 0; f < Math.min(currentFeatures.length, trapFeatures.length); f++) {
+      sumSq += (currentFeatures[f] - trapFeatures[f]) ** 2;
     }
     const dist = Math.sqrt(sumSq);
     if (dist < 0.85) {
       trap.timesVetoed = (trap.timesVetoed || 0) + 1;
-      return true;
+      return trap;
     }
   }
-  return false;
+  return null;
 }
 
 /* ==========================================================================
@@ -807,22 +1091,22 @@ function resetSolanaWallet() {
   if (solanaBotState.isRunning) {
     stopSolanaAutonomousBot("OPERATOR_STOP");
   }
-  solanaBotState.activePosition = null;
+  solanaBotState.activePositions = [];
   solanaBotState.wallet = {
-    initialEquity: 10000.0,
-    currentEquity: 10000.0,
-    cash: 10000.0,
+    initialEquity: 1000.0,
+    currentEquity: 1000.0,
+    cash: 1000.0,
     realizedPnl: 0.0,
     totalFeesPaid: 0.0,
-    peakEquity: 10000.0,
+    peakEquity: 1000.0,
     maxDrawdownPct: 0.0,
     tradesWon: 0,
     tradesLost: 0,
   };
-  solanaBotState.executedTrades = [];
   updateSolanaWalletHUD();
+  renderMultiPositionsTable();
   renderSolanaJournal();
-  showToast("Solana virtual paper wallet reset to $10,000.00 baseline.");
+  showToast("Solana virtual paper wallet reset to $1,000.00 baseline.");
 }
 
 function updateSolanaWalletHUD() {
@@ -871,6 +1155,10 @@ function updateSolanaWalletHUD() {
     elements.circuitDrawdownText.textContent = `Drawdown: ${drawdownPct.toFixed(2)}% / 20.00% Max`;
   }
 
+  if (elements.circuitDangerHint) {
+    elements.circuitDangerHint.textContent = "Halts automatically at $800.00 (-20%)";
+  }
+
   if (elements.circuitStatusBadge) {
     if (drawdownPct >= 20.0) {
       elements.circuitStatusBadge.textContent = "TRIPPED (-20%)";
@@ -885,120 +1173,94 @@ function updateSolanaWalletHUD() {
   }
 
   if (elements.solanaActiveTokenBadge && elements.solanaPositionDetails) {
-    const pos = solanaBotState.activePosition;
-    if (pos) {
-      elements.solanaActiveTokenBadge.textContent = `${pos.token.symbol} (LONG)`;
+    const activeCount = solanaBotState.activePositions.length;
+    const totalAllocatedMargin = solanaBotState.activePositions.reduce((acc, p) => acc + p.marginUsd, 0);
+    const marginPct = ((totalAllocatedMargin / Math.max(1, current)) * 100).toFixed(1);
+
+    if (activeCount > 0) {
+      elements.solanaActiveTokenBadge.textContent = `${activeCount} IN PLAY`;
       elements.solanaActiveTokenBadge.style.color = "var(--sage)";
-      const rawRet = ((pos.currentPrice - pos.entryPrice) / pos.entryPrice) * 100;
       elements.solanaPositionDetails.innerHTML = `
         <div class="position-stat-grid">
-          <div><span>Entry Price:</span> <strong>$${pos.entryPrice < 0.001 ? pos.entryPrice.toFixed(7) : pos.entryPrice.toFixed(4)}</strong></div>
-          <div><span>Current:</span> <strong>$${pos.currentPrice < 0.001 ? pos.currentPrice.toFixed(7) : pos.currentPrice.toFixed(4)}</strong></div>
-          <div><span>Unrealized:</span> <strong style="color: ${rawRet >= 0 ? 'var(--sage)' : 'var(--danger)'};">${rawRet >= 0 ? '+' : ''}${rawRet.toFixed(2)}%</strong></div>
-          <div><span>Position:</span> <strong>$${pos.sizeUsd.toFixed(2)} (2%)</strong></div>
+          <div><span>Allocated Margin:</span> <strong>$${totalAllocatedMargin.toFixed(2)} (${marginPct}%)</strong></div>
+          <div><span>Per Trade Size:</span> <strong>2.0% ($${(current * 0.02).toFixed(2)})</strong></div>
+          <div><span>Active Coins:</span> <strong>${solanaBotState.activePositions.map((p) => p.token.symbol).join(", ")}</strong></div>
+          <div><span>Take Profit Rule:</span> <strong>BE + 5x Fees</strong></div>
         </div>
       `;
     } else {
-      elements.solanaActiveTokenBadge.textContent = "NO POSITION";
+      elements.solanaActiveTokenBadge.textContent = "0 IN PLAY";
       elements.solanaActiveTokenBadge.style.color = "var(--muted)";
-      elements.solanaPositionDetails.innerHTML = `<span class="no-position-label">Bot is scanning Solana DEX pairs for price gaps…</span>`;
+      elements.solanaPositionDetails.innerHTML = `<span class="no-position-label">Bot ready to trade multiple Solana coins (2% margin each)…</span>`;
     }
   }
 }
 
-function renderLearningLedger() {
-  const engine = solanaBotState.learningEngine;
-  if (elements.tagStage1Count) elements.tagStage1Count.textContent = `Stage 1: ${engine.stage1Doubts.length} Doubts`;
-  if (elements.tagStage2Count) elements.tagStage2Count.textContent = `Stage 2: ${engine.stage2Retesting.length} Re-testing`;
-  if (elements.tagStage3Count) elements.tagStage3Count.textContent = `Stage 3: ${engine.stage3PermanentTraps.length} Traps Vetoed`;
+function renderMultiPositionsTable() {
+  const positions = solanaBotState.activePositions;
+  const activeCount = positions.length;
 
-  if (!elements.solanaLearningTbody) return;
+  if (elements.activePositionsCount) {
+    elements.activePositionsCount.textContent = `${activeCount} Active`;
+  }
 
-  const allItems = [
-    ...engine.stage3PermanentTraps,
-    ...engine.stage2Retesting,
-    ...engine.stage1Doubts,
-  ];
+  const totalMargin = positions.reduce((sum, p) => sum + p.marginUsd, 0);
+  const totalUnrealized = positions.reduce((sum, p) => sum + (p.unrealizedPnlUsd || 0), 0);
+  const totalEquity = Math.max(1, solanaBotState.wallet.currentEquity);
+  const totalMarginPct = ((totalMargin / totalEquity) * 100).toFixed(1);
 
-  if (allItems.length === 0) {
-    elements.solanaLearningTbody.innerHTML = `
+  if (elements.allocatedMarginChip) {
+    elements.allocatedMarginChip.textContent = `Allocated Margin: $${totalMargin.toFixed(2)} (${totalMarginPct}%)`;
+  }
+
+  if (elements.unrealizedPnlChip) {
+    const sign = totalUnrealized >= 0 ? "+" : "-";
+    elements.unrealizedPnlChip.textContent = `Unrealized PnL: ${sign}$${Math.abs(totalUnrealized).toFixed(2)}`;
+    elements.unrealizedPnlChip.style.color = totalUnrealized >= 0 ? "var(--sage)" : "var(--danger)";
+  }
+
+  if (elements.btnCloseAllPositions) {
+    elements.btnCloseAllPositions.style.display = activeCount > 0 ? "inline-flex" : "none";
+  }
+
+  if (!elements.multiPositionsTbody) return;
+
+  if (activeCount === 0) {
+    elements.multiPositionsTbody.innerHTML = `
       <tr>
-        <td colspan="7" style="text-align: center; color: var(--muted); padding: 14px;">
-          No trade mistakes recorded yet. Start the Solana autonomous bot to begin active learning.
+        <td colspan="8" style="text-align: center; color: var(--muted); padding: 18px;">
+          No active positions held. Start the Solana Bot to enter concurrent 2% margin trades across all scanned coins.
         </td>
       </tr>`;
     return;
   }
 
-  elements.solanaLearningTbody.innerHTML = allItems.map((item) => {
-    let stageBadge = "";
-    let retestProgress = "";
-    let vetoAction = "";
-    let statusBadge = "";
+  elements.multiPositionsTbody.innerHTML = positions.map((pos) => {
+    const pnl = pos.unrealizedPnlUsd || 0;
+    const pnlPct = pos.unrealizedReturnPct || 0;
+    const pnlColor = pnl >= 0 ? "var(--sage)" : "var(--danger)";
+    const sign = pnl >= 0 ? "+" : "-";
+    const singleFee = pos.marginUsd * 0.0015;
+    const tpTargetUsd = 5 * singleFee;
 
-    if (item.stage === 1) {
-      stageBadge = `<span class="badge-doubt">Stage 1: Doubt</span>`;
-      retestProgress = `<span>Queued for 2x re-test</span>`;
-      vetoAction = `<span>Quarantined setup</span>`;
-      statusBadge = `<span class="badge-doubt">Doubt &amp; Quarantine</span>`;
-    } else if (item.stage === 2) {
-      stageBadge = `<span class="badge-retesting">Stage 2: Re-test</span>`;
-      retestProgress = `<span>Re-tests: ${item.retestFails}F / ${item.retestPasses}P (Goal: 2x)</span>`;
-      vetoAction = `<span>Re-testing in historical windows</span>`;
-      statusBadge = `<span class="badge-retesting">Verifying Trap</span>`;
-    } else if (item.stage === 3) {
-      stageBadge = `<span class="badge-trap-veto">Stage 3: Permanent</span>`;
-      retestProgress = `<span>Confirmed (2/2 Re-tests Failed)</span>`;
-      vetoAction = `<strong style="color: var(--danger);">Active Entry Veto (${item.timesVetoed || 0} Blocked)</strong>`;
-      statusBadge = `<span class="badge-trap-veto">Blacklisted</span>`;
-    }
+    const formattedEntry = pos.entryPrice < 0.001 ? pos.entryPrice.toFixed(7) : pos.entryPrice.toFixed(4);
+    const formattedCurrent = pos.currentPrice < 0.001 ? pos.currentPrice.toFixed(7) : pos.currentPrice.toFixed(4);
 
     return `
       <tr>
-        <td><strong>${item.id}</strong></td>
-        <td>${item.tokenSymbol} · ${item.pattern}</td>
-        <td style="color: var(--danger);">${(item.failLoss * 100).toFixed(2)}%</td>
-        <td>${stageBadge}</td>
-        <td>${retestProgress}</td>
-        <td>${vetoAction}</td>
-        <td>${statusBadge}</td>
-      </tr>
-    `;
-  }).join("");
-}
-
-function renderSolanaJournal() {
-  if (!elements.solanaJournalTbody) return;
-  const trades = solanaBotState.executedTrades;
-  if (elements.solanaTradeJournalCount) {
-    elements.solanaTradeJournalCount.textContent = `${trades.length} Executed Trades`;
-  }
-
-  if (trades.length === 0) {
-    elements.solanaJournalTbody.innerHTML = `
-      <tr>
-        <td colspan="9" style="text-align: center; color: var(--muted); padding: 14px;">
-          No live Solana HFT trades executed yet. Click "Start Solana Bot" above to begin.
+        <td>
+          <div class="token-cell-title"><strong>${pos.token.symbol}</strong> <span class="token-cell-dex">· ${pos.token.dex || 'Raydium'}</span></div>
+          <small style="color: var(--muted); font-size: 0.7rem;">${pos.fvgType || 'Volatility Gap'}</small>
         </td>
-      </tr>`;
-    return;
-  }
-
-  elements.solanaJournalTbody.innerHTML = trades.slice(0, 50).map((t) => {
-    const pnlColor = t.isWin ? "var(--sage)" : "var(--danger)";
-    const sign = t.isWin ? "+" : "-";
-
-    return `
-      <tr>
-        <td>#${t.id}</td>
-        <td>${t.time}</td>
-        <td><strong>${t.token}</strong></td>
-        <td>${t.dex}</td>
-        <td>$${t.entryPrice < 0.001 ? t.entryPrice.toFixed(7) : t.entryPrice.toFixed(4)}</td>
-        <td>$${t.exitPrice < 0.001 ? t.exitPrice.toFixed(7) : t.exitPrice.toFixed(4)}</td>
-        <td style="color: ${pnlColor}; font-weight: 700;">${sign}$${Math.abs(t.pnlUsd).toFixed(2)} (${sign}${Math.abs(t.pnlPct).toFixed(2)}%)</td>
-        <td>${t.exitReason}</td>
-        <td>${t.learningNote}</td>
+        <td><strong>$${pos.marginUsd.toFixed(2)}</strong> <small style="color: var(--muted);">(2%)</small></td>
+        <td>$${formattedEntry}</td>
+        <td>$${formattedCurrent}</td>
+        <td style="color: ${pnlColor}; font-weight: 700;">${sign}$${Math.abs(pnl).toFixed(2)} (${sign}${Math.abs(pnlPct).toFixed(2)}%)</td>
+        <td style="color: var(--sage);">BE +$${tpTargetUsd.toFixed(3)} <small style="color: var(--muted);">(5x Fees)</small></td>
+        <td style="color: var(--danger);">-15.0% <small style="color: var(--muted);">(-$${(pos.marginUsd * 0.15).toFixed(2)})</small></td>
+        <td>
+          <button type="button" class="btn-close-single" onclick="window.closeSinglePositionBySymbol('${pos.token.symbol}')">Close</button>
+        </td>
       </tr>
     `;
   }).join("");

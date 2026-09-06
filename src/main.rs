@@ -4,6 +4,7 @@ mod knowledge;
 mod market_structure;
 mod news_sentiment;
 mod server;
+pub mod solana_db;
 pub mod timesfm_matrix;
 
 use config::AppConfig;
@@ -11,6 +12,7 @@ use db::Database;
 use knowledge::KnowledgeStore;
 use std::io::{self, Write};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 fn main() {
     if let Err(error) = run() {
@@ -23,6 +25,7 @@ fn run() -> Result<(), String> {
     let config = AppConfig::load()?;
     let db = Database::open(&config.database_url)?;
     let knowledge_path = PathBuf::from("knowledge.json");
+    let solana_db = Arc::new(solana_db::SolanaDb::open(std::path::Path::new("solana_trades.db"))?);
 
     let args: Vec<String> = std::env::args().collect();
 
@@ -60,7 +63,7 @@ fn run() -> Result<(), String> {
         }
     }
 
-    server::run(config, db, knowledge_path)
+    server::run(config, db, knowledge_path, solana_db)
 }
 
 fn run_bootstrap_admin(db: &Database) -> Result<(), String> {

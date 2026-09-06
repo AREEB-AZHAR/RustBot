@@ -124,6 +124,7 @@ impl Drop for SemaphoreGuard {
 pub struct AppState {
     pub config: AppConfig,
     pub db: Database,
+    pub solana_db: Arc<crate::solana_db::SolanaDb>,
     pub store: Arc<RwLock<KnowledgeStore>>,
     pub openrouter_semaphore: Arc<Semaphore>,
     pub ip_limiter: Arc<Mutex<IpRateLimiter>>,
@@ -300,7 +301,12 @@ struct CoinGeckoChart {
     total_volumes: Vec<(u64, f64)>,
 }
 
-pub fn run(config: AppConfig, db: Database, knowledge_path: PathBuf) -> Result<(), String> {
+pub fn run(
+    config: AppConfig,
+    db: Database,
+    knowledge_path: PathBuf,
+    solana_db: Arc<crate::solana_db::SolanaDb>,
+) -> Result<(), String> {
     let store = if let Ok(memories) = db.list_memories() {
         if !memories.is_empty() {
             KnowledgeStore::from_memories(&memories)
@@ -322,6 +328,7 @@ pub fn run(config: AppConfig, db: Database, knowledge_path: PathBuf) -> Result<(
     let state = AppState {
         config,
         db,
+        solana_db,
         store: Arc::new(RwLock::new(store)),
         openrouter_semaphore: Arc::new(Semaphore::new(3)),
         ip_limiter: Arc::new(Mutex::new(IpRateLimiter::new())),
@@ -760,6 +767,13 @@ fn route_request(request: &Request, state: &AppState) -> Response {
             Ok(data) => Response::json(200, "OK", data),
             Err(error) => Response::error(400, "Bad Request", &error),
         },
+        // DEDICATED SOLANA HFT DATABASE & 3-STAGE LEARNED MEMORY ENDPOINTS
+        ("GET", "/api/market/solana/trades") => handle_get_solana_trades(request, state),
+        ("POST", "/api/market/solana/trades") => handle_post_solana_trade(request, state),
+        ("GET", "/api/market/solana/learned-memory") => handle_get_solana_learned_memory(request, state),
+        ("POST", "/api/market/solana/learned-memory") => handle_post_solana_learned_memory(request, state),
+        ("POST", "/api/market/solana/learned-memory/veto") => handle_post_solana_veto(request, state),
+        ("POST", "/api/market/solana/reset-db") => handle_reset_solana_db(request, state),
 
         _ => Response::error(404, "Not Found", "The requested endpoint does not exist."),
     }
@@ -2978,6 +2992,149 @@ fn fetch_solana_candles(query: &HashMap<String, String>) -> Result<MarketDataRes
     })
 }
 
+// ==========================================
+// DEDICATED SOLANA DATABASE HANDLERS
+// ==========================================
+
+#[derive(Deserialize)]
+struct PostMistakePayload {
+    #[serde(default)]
+    is_update: bool,
+    trap_id: String,
+    token_symbol: Option<String>,
+    pattern_name: Option<String>,
+    features_json: Option<String>,
+    stage: i64,
+    #[serde(default)]
+    retest_passes: i64,
+    #[serde(default)]
+    retest_fails: i64,
+    initial_loss_pct: Option<f64>,
+    #[serde(default = "default_mistake_status")]
+    status: String,
+    #[serde(default)]
+    notes: String,
+}
+
+fn default_mistake_status() -> String {
+    "ACTIVE".to_string()
+}
+
+#[derive(Deserialize)]
+struct SolanaVetoPayload {
+    trap_id: String,
+    saved_capital_usd: f64,
+}
+
+fn handle_get_solana_trades(request: &Request, state: &AppState) -> Response {
+    let limit = request.query
+        .get("limit")
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(50)
+        .min(200);
+
+    match state.solana_db.list_trades(limit) {
+        Ok(trades) => {
+            let count = trades.len();
+            Response::json(200, "OK", json!({
+                "trades": trades,
+                "count": count,
+                "database": state.solana_db.db_path()
+            }))
+        }
+        Err(err) => Response::error(500, "Internal Server Error", &err),
+    }
+}
+
+fn handle_post_solana_trade(request: &Request, state: &AppState) -> Response {
+    let payload: crate::solana_db::NewSolanaTrade = match parse_json(&request.body) {
+        Ok(p) => p,
+        Err(err) => return Response::error(400, "Bad Request", &err),
+    };
+
+    match state.solana_db.record_trade(&payload) {
+        Ok(id) => Response::json(201, "Created", json!({
+            "success": true,
+            "id": id,
+            "trade_ref": payload.trade_ref
+        })),
+        Err(err) => Response::error(500, "Internal Server Error", &err),
+    }
+}
+
+fn handle_get_solana_learned_memory(_request: &Request, state: &AppState) -> Response {
+    match state.solana_db.list_learned_memory() {
+        Ok(traps) => {
+            let count = traps.len();
+            Response::json(200, "OK", json!({
+                "traps": traps,
+                "count": count,
+                "database": state.solana_db.db_path()
+            }))
+        }
+        Err(err) => Response::error(500, "Internal Server Error", &err),
+    }
+}
+
+fn handle_post_solana_learned_memory(request: &Request, state: &AppState) -> Response {
+    let payload: PostMistakePayload = match parse_json(&request.body) {
+        Ok(p) => p,
+        Err(err) => return Response::error(400, "Bad Request", &err),
+    };
+
+    if payload.is_update {
+        let update = crate::solana_db::UpdateSolanaMistakeStage {
+            trap_id: payload.trap_id,
+            stage: payload.stage,
+            retest_passes: payload.retest_passes,
+            retest_fails: payload.retest_fails,
+            status: payload.status,
+            notes: payload.notes,
+        };
+        match state.solana_db.update_mistake_stage(&update) {
+            Ok(_) => Response::json(200, "OK", json!({ "success": true, "updated": true })),
+            Err(err) => Response::error(500, "Internal Server Error", &err),
+        }
+    } else {
+        let mistake = crate::solana_db::NewSolanaMistake {
+            trap_id: payload.trap_id,
+            token_symbol: payload.token_symbol.unwrap_or_default(),
+            pattern_name: payload.pattern_name.unwrap_or_else(|| "Learned Trap Pattern".to_string()),
+            features_json: payload.features_json.unwrap_or_else(|| "[]".to_string()),
+            stage: payload.stage,
+            initial_loss_pct: payload.initial_loss_pct.unwrap_or(15.0),
+            notes: payload.notes,
+        };
+        match state.solana_db.record_or_update_mistake(&mistake) {
+            Ok(_) => Response::json(200, "OK", json!({ "success": true, "created": true })),
+            Err(err) => Response::error(500, "Internal Server Error", &err),
+        }
+    }
+}
+
+fn handle_post_solana_veto(request: &Request, state: &AppState) -> Response {
+    let payload: SolanaVetoPayload = match parse_json(&request.body) {
+        Ok(p) => p,
+        Err(err) => return Response::error(400, "Bad Request", &err),
+    };
+
+    match state.solana_db.record_veto(&payload.trap_id, payload.saved_capital_usd) {
+        Ok(_) => Response::json(200, "OK", json!({
+            "success": true,
+            "trap_id": payload.trap_id,
+            "saved_capital_usd": payload.saved_capital_usd
+        })),
+        Err(err) => Response::error(500, "Internal Server Error", &err),
+    }
+}
+
+fn handle_reset_solana_db(_request: &Request, state: &AppState) -> Response {
+    match state.solana_db.clear_all() {
+        Ok(_) => Response::json(200, "OK", json!({ "success": true, "message": "Solana DB reset" })),
+        Err(err) => Response::error(500, "Internal Server Error", &err),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3043,9 +3200,11 @@ mod tests {
             session_pepper: "test_pepper_1234567890".to_string(),
         };
         let store = Arc::new(RwLock::new(KnowledgeStore::from_memories(&[])));
+        let solana_db = Arc::new(crate::solana_db::SolanaDb::open_in_memory().unwrap());
         let state = AppState {
             config,
             db,
+            solana_db,
             store,
             openrouter_semaphore: Arc::new(Semaphore::new(3)),
             ip_limiter: Arc::new(Mutex::new(IpRateLimiter::new())),
@@ -3204,9 +3363,11 @@ mod tests {
             session_pepper: "secure_pepper_for_duckdns_prod_123".to_string(),
         };
         let store = Arc::new(RwLock::new(KnowledgeStore::from_memories(&[])));
+        let solana_db = Arc::new(crate::solana_db::SolanaDb::open_in_memory().unwrap());
         let state = AppState {
             config,
             db,
+            solana_db,
             store,
             openrouter_semaphore: Arc::new(Semaphore::new(3)),
             ip_limiter: Arc::new(Mutex::new(IpRateLimiter::new())),
@@ -3301,9 +3462,11 @@ mod tests {
             session_pepper: "test_pepper_mem_12345".to_string(),
         };
         let store = Arc::new(RwLock::new(KnowledgeStore::from_memories(&[])));
+        let solana_db = Arc::new(crate::solana_db::SolanaDb::open_in_memory().unwrap());
         let state = AppState {
             config,
             db,
+            solana_db,
             store,
             openrouter_semaphore: Arc::new(Semaphore::new(3)),
             ip_limiter: Arc::new(Mutex::new(IpRateLimiter::new())),
@@ -3582,9 +3745,11 @@ mod tests {
             session_pepper: "test_pepper_titling_12345".to_string(),
         };
         let store = Arc::new(RwLock::new(KnowledgeStore::from_memories(&[])));
+        let solana_db = Arc::new(crate::solana_db::SolanaDb::open_in_memory().unwrap());
         let state = AppState {
             config,
             db,
+            solana_db,
             store,
             openrouter_semaphore: Arc::new(Semaphore::new(3)),
             ip_limiter: Arc::new(Mutex::new(IpRateLimiter::new())),
@@ -3716,9 +3881,11 @@ mod tests {
             session_pepper: "test_pepper_1234567890".to_string(),
         };
         let store = Arc::new(RwLock::new(KnowledgeStore::from_memories(&[])));
+        let solana_db = Arc::new(crate::solana_db::SolanaDb::open_in_memory().unwrap());
         let state = AppState {
             config,
             db,
+            solana_db,
             store,
             openrouter_semaphore: Arc::new(Semaphore::new(3)),
             ip_limiter: Arc::new(Mutex::new(IpRateLimiter::new())),
@@ -3844,9 +4011,11 @@ mod tests {
             session_pepper: "test_pepper_1234567890".to_string(),
         };
         let store = Arc::new(RwLock::new(KnowledgeStore::from_memories(&[])));
+        let solana_db = Arc::new(crate::solana_db::SolanaDb::open_in_memory().unwrap());
         AppState {
             config,
             db,
+            solana_db,
             store,
             openrouter_semaphore: Arc::new(Semaphore::new(3)),
             ip_limiter: Arc::new(Mutex::new(IpRateLimiter::new())),
@@ -3922,5 +4091,116 @@ mod tests {
         let pred_val: serde_json::Value = serde_json::from_slice(&res_predict.body).unwrap();
         assert_eq!(pred_val["horizon_steps"], 6);
         assert!(pred_val["p50_forecast"].as_array().unwrap().len() == 6);
+    }
+
+    #[test]
+    fn test_solana_dedicated_db_routes() {
+        let state = make_test_state();
+
+        // 1. Initial trades should be empty
+        let req_list_trades = Request {
+            method: "GET".to_string(),
+            path: "/api/market/solana/trades".to_string(),
+            query: HashMap::new(),
+            headers: HashMap::from([("host".to_string(), "127.0.0.1:7878".to_string())]),
+            host: "127.0.0.1:7878".to_string(),
+            body: vec![],
+        };
+        let res_list_trades = route_request(&req_list_trades, &state);
+        assert_eq!(res_list_trades.status, 200);
+        let list_data: serde_json::Value = serde_json::from_slice(&res_list_trades.body).unwrap();
+        assert_eq!(list_data["count"], 0);
+
+        // 2. Post a new trade
+        let post_trade_body = serde_json::json!({
+            "trade_ref": "SOL-HFT-001",
+            "token_symbol": "RAY",
+            "token_name": "Raydium",
+            "dex": "raydium",
+            "entry_price": 2.15,
+            "exit_price": 2.22,
+            "margin_usd": 20.0,
+            "pnl_usd": 0.65,
+            "pnl_pct": 3.25,
+            "fees_paid_usd": 0.06,
+            "exit_reason": "TAKE_PROFIT (Breakeven + 5x Fees)",
+            "is_win": true,
+            "features_json": "[0.02, 0.03, 85.0, 1.0]"
+        });
+        let req_post_trade = Request {
+            method: "POST".to_string(),
+            path: "/api/market/solana/trades".to_string(),
+            query: HashMap::new(),
+            headers: HashMap::from([("host".to_string(), "127.0.0.1:7878".to_string())]),
+            host: "127.0.0.1:7878".to_string(),
+            body: post_trade_body.to_string().into_bytes(),
+        };
+        let res_post_trade = route_request(&req_post_trade, &state);
+        assert_eq!(res_post_trade.status, 201);
+
+        // 3. Fetch trades again
+        let res_list_trades_after = route_request(&req_list_trades, &state);
+        let after_data: serde_json::Value = serde_json::from_slice(&res_list_trades_after.body).unwrap();
+        assert_eq!(after_data["count"], 1);
+        assert_eq!(after_data["trades"][0]["trade_ref"], "SOL-HFT-001");
+
+        // 4. Post learned mistake (Stage 1 Doubt)
+        let mistake_body = serde_json::json!({
+            "trap_id": "TRAP-RAY-FVG",
+            "token_symbol": "RAY",
+            "pattern_name": "Failed FVG Retest",
+            "features_json": "[-0.04, 0.01, 95.0, 1.0]",
+            "stage": 1,
+            "initial_loss_pct": 15.0,
+            "notes": "Stop loss hit at -15%"
+        });
+        let req_post_mistake = Request {
+            method: "POST".to_string(),
+            path: "/api/market/solana/learned-memory".to_string(),
+            query: HashMap::new(),
+            headers: HashMap::from([("host".to_string(), "127.0.0.1:7878".to_string())]),
+            host: "127.0.0.1:7878".to_string(),
+            body: mistake_body.to_string().into_bytes(),
+        };
+        let res_mistake = route_request(&req_post_mistake, &state);
+        assert_eq!(res_mistake.status, 200);
+
+        // 5. Query learned memory
+        let req_list_mem = Request {
+            method: "GET".to_string(),
+            path: "/api/market/solana/learned-memory".to_string(),
+            query: HashMap::new(),
+            headers: HashMap::from([("host".to_string(), "127.0.0.1:7878".to_string())]),
+            host: "127.0.0.1:7878".to_string(),
+            body: vec![],
+        };
+        let res_mem = route_request(&req_list_mem, &state);
+        assert_eq!(res_mem.status, 200);
+        let mem_data: serde_json::Value = serde_json::from_slice(&res_mem.body).unwrap();
+        assert_eq!(mem_data["count"], 1);
+        assert_eq!(mem_data["traps"][0]["trap_id"], "TRAP-RAY-FVG");
+        assert_eq!(mem_data["traps"][0]["stage"], 1);
+
+        // 6. Record Veto
+        let veto_body = serde_json::json!({
+            "trap_id": "TRAP-RAY-FVG",
+            "saved_capital_usd": 20.0
+        });
+        let req_veto = Request {
+            method: "POST".to_string(),
+            path: "/api/market/solana/learned-memory/veto".to_string(),
+            query: HashMap::new(),
+            headers: HashMap::from([("host".to_string(), "127.0.0.1:7878".to_string())]),
+            host: "127.0.0.1:7878".to_string(),
+            body: veto_body.to_string().into_bytes(),
+        };
+        let res_veto = route_request(&req_veto, &state);
+        assert_eq!(res_veto.status, 200);
+
+        // 7. Verify veto incremented
+        let res_mem_after_veto = route_request(&req_list_mem, &state);
+        let mem_after_data: serde_json::Value = serde_json::from_slice(&res_mem_after_veto.body).unwrap();
+        assert_eq!(mem_after_data["traps"][0]["times_vetoed"], 1);
+        assert_eq!(mem_after_data["traps"][0]["saved_capital_usd"], 20.0);
     }
 }
