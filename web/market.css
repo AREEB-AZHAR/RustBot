@@ -62,7 +62,7 @@
   --font-mono: "JetBrains Mono", "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
 
   /* Universal AI Chat Color Palette - Light Mode */
-  --bg-deep: #101513;
+  --bg-deep: #ebe4d7;
   --bg-canvas: #f4f0e7;
   --bg-surface: #fffdf8;
   --bg-surface-elevated: #faf6ed;
@@ -77,7 +77,7 @@
   --text-primary: #1b211d;
   --text-secondary: #6a746d;
   --text-tertiary: #a8b0ab;
-  --text-dim: #c5cdc7;
+  --text-dim: #748077;
 
   --emerald: #2d7a52;
   --emerald-glow: rgba(45, 122, 82, 0.18);
@@ -133,6 +133,13 @@ html, body {
     linear-gradient(180deg, var(--bg-deep) 0%, var(--bg-canvas) 100%);
   position: relative;
   overflow: hidden;
+}
+
+[data-theme="light"] .app-shell {
+  background:
+    radial-gradient(ellipse at 80% 5%, rgba(228, 98, 50, 0.08), transparent 45%),
+    radial-gradient(ellipse at 15% 90%, rgba(45, 122, 82, 0.06), transparent 40%),
+    linear-gradient(180deg, #faf7f0 0%, var(--bg-canvas) 100%);
 }
 
 /* ==========================================================================
@@ -1396,8 +1403,16 @@ canvas {
   color: var(--text-secondary);
 }
 
+[data-theme="light"] .trades-table td {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
 .trades-table tr:hover td {
   background: rgba(255, 255, 255, 0.02);
+}
+
+[data-theme="light"] .trades-table tr:hover td {
+  background: rgba(0, 0, 0, 0.02);
 }
 
 /* Toast Notifications */

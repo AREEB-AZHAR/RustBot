@@ -10,7 +10,8 @@
       try {
         var saved = localStorage.getItem('rustbot_theme');
         if (!saved) {
-          saved = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+          saved = 'dark';
+          localStorage.setItem('rustbot_theme', saved);
         }
         document.documentElement.setAttribute('data-theme', saved);
       } catch (e) {}

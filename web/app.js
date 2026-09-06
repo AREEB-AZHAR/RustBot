@@ -138,7 +138,7 @@ async function initialize() {
 }
 
 function getActiveTheme() {
-  return document.documentElement.getAttribute("data-theme") || "light";
+  return localStorage.getItem("rustbot_theme") || document.documentElement.getAttribute("data-theme") || "dark";
 }
 
 function updateThemeUI(theme) {

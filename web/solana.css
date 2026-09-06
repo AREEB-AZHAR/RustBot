@@ -55,7 +55,7 @@
   --font-mono: "JetBrains Mono", "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
 
   /* Universal AI Chat Color Tokens - Light Mode */
-  --ink: #101513;
+  --ink: #f4f0e7;
   --rail: #181e1b;
   --rail-soft: #202722;
   --paper: #f4f0e7;
@@ -101,6 +101,11 @@
 html {
   font-size: 15px;
   height: 100%;
+  background: var(--ink);
+}
+
+[data-theme="light"] html {
+  background: var(--paper);
 }
 
 body {

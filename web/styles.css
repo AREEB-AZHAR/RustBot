@@ -1,36 +1,4 @@
 :root,
-[data-theme="light"] {
-  color-scheme: light;
-  --theme-mode: "light";
-  --ink: #101513;
-  --rail: #181e1b;
-  --rail-soft: #202722;
-  --paper: #f4f0e7;
-  --paper-deep: #ebe4d7;
-  --surface: #fffdf8;
-  --surface-warm: #faf6ed;
-  --surface-elevated: #ffffff;
-  --text: #1b211d;
-  --muted: #6a746d;
-  --muted-light: #a8b0ab;
-  --line: #dcd5c8;
-  --line-dark: rgba(255, 255, 255, 0.1);
-  --header-bg: rgba(244, 240, 231, 0.88);
-  --header-border: rgba(124, 112, 92, 0.16);
-  --grid-line: rgba(27, 33, 29, 0.035);
-  --composer-fade: rgba(244, 240, 231, 0);
-  --ember: #e46232;
-  --ember-deep: #a93f1e;
-  --ember-dark: #7f2e18;
-  --sage: #83b89a;
-  --sage-soft: #dcebe1;
-  --danger: #b63b3b;
-  --focus: #ffc2a6;
-  --shadow-shell: 0 28px 80px rgba(0, 0, 0, 0.32);
-  --shadow-card: 0 8px 28px rgba(31, 25, 18, 0.08);
-  --ease: cubic-bezier(0.2, 0.75, 0.25, 1);
-}
-
 [data-theme="dark"] {
   color-scheme: dark;
   --theme-mode: "dark";
@@ -60,6 +28,38 @@
   --focus: rgba(240, 112, 68, 0.4);
   --shadow-shell: 0 28px 80px rgba(0, 0, 0, 0.7);
   --shadow-card: 0 8px 28px rgba(0, 0, 0, 0.45);
+  --ease: cubic-bezier(0.2, 0.75, 0.25, 1);
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+  --theme-mode: "light";
+  --ink: #101513;
+  --rail: #181e1b;
+  --rail-soft: #202722;
+  --paper: #f4f0e7;
+  --paper-deep: #ebe4d7;
+  --surface: #fffdf8;
+  --surface-warm: #faf6ed;
+  --surface-elevated: #ffffff;
+  --text: #1b211d;
+  --muted: #6a746d;
+  --muted-light: #a8b0ab;
+  --line: #dcd5c8;
+  --line-dark: rgba(255, 255, 255, 0.1);
+  --header-bg: rgba(244, 240, 231, 0.88);
+  --header-border: rgba(124, 112, 92, 0.16);
+  --grid-line: rgba(27, 33, 29, 0.035);
+  --composer-fade: rgba(244, 240, 231, 0);
+  --ember: #e46232;
+  --ember-deep: #a93f1e;
+  --ember-dark: #7f2e18;
+  --sage: #83b89a;
+  --sage-soft: #dcebe1;
+  --danger: #b63b3b;
+  --focus: #ffc2a6;
+  --shadow-shell: 0 28px 80px rgba(0, 0, 0, 0.32);
+  --shadow-card: 0 8px 28px rgba(31, 25, 18, 0.08);
   --ease: cubic-bezier(0.2, 0.75, 0.25, 1);
 }
 

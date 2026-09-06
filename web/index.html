@@ -32,7 +32,8 @@
         try {
           var saved = localStorage.getItem('rustbot_theme');
           if (!saved) {
-            saved = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+            saved = 'dark';
+            localStorage.setItem('rustbot_theme', saved);
           }
           document.documentElement.setAttribute('data-theme', saved);
         } catch (e) {}
@@ -150,10 +151,10 @@
               class="icon-button theme-toggle-btn"
               id="theme-toggle-btn"
               type="button"
-              aria-label="Toggle theme (Light / Dark)"
-              title="Toggle theme (Light / Dark)"
+              aria-label="Switch to Light Theme"
+              title="Switch to Light Theme"
             >
-              <span class="theme-icon" aria-hidden="true">🌙</span>
+              <span class="theme-icon" aria-hidden="true">☀️</span>
             </button>
             <a
               class="icon-button workspace-toggle"
