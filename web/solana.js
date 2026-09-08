@@ -46,7 +46,7 @@ const solanaBotState = {
     trapsCount: 0,
   },
   autoPilotEnabled: true,
-  dynamicMarginPct: 2.0,
+  dynamicMarginPct: 6.67,
   maxConcurrentPositions: 15,
   confluenceStopLossPct: -3.0,
   trailingRunnerTriggerPct: 3.5,
@@ -341,21 +341,17 @@ async function triggerAiRiskAudit(notifyUser = false) {
 function applyAiRiskDirectives(data) {
   if (!data) return;
 
-  // 1. Dynamic Margin %
-  if (typeof data.recommended_margin_pct === "number") {
-    solanaBotState.dynamicMarginPct = Math.max(1.0, Math.min(3.5, data.recommended_margin_pct));
-    if (elements.aiDynamicMargin) {
-      const marginUsd = (solanaBotState.wallet.currentEquity * (solanaBotState.dynamicMarginPct / 100)).toFixed(2);
-      elements.aiDynamicMargin.textContent = `${solanaBotState.dynamicMarginPct.toFixed(1)}% ($${marginUsd})`;
-    }
+  // 1. Dynamic Margin % (Pegged to 1/15th full portfolio allocation)
+  solanaBotState.dynamicMarginPct = 6.67;
+  if (elements.aiDynamicMargin) {
+    const marginUsd = (solanaBotState.wallet.currentEquity / (solanaBotState.maxConcurrentPositions || 15)).toFixed(2);
+    elements.aiDynamicMargin.textContent = `6.7% ($${marginUsd})`;
   }
 
   // 2. Max Concurrent Positions
-  if (typeof data.max_concurrent_positions === "number") {
-    solanaBotState.maxConcurrentPositions = Math.max(5, Math.min(20, data.max_concurrent_positions));
-    if (elements.aiMaxPositions) {
-      elements.aiMaxPositions.textContent = `${solanaBotState.maxConcurrentPositions} Coins`;
-    }
+  solanaBotState.maxConcurrentPositions = 15;
+  if (elements.aiMaxPositions) {
+    elements.aiMaxPositions.textContent = `15 Coins`;
   }
 
   // 3. Adaptive Stop Loss
@@ -1047,11 +1043,14 @@ async function runSolanaAutonomousTick() {
     // Candidate Coins Pool (Using full scanned universe of 40+ tokens)
     const candidatePool = solanaBotState.scannedTokens.length > 0 ? solanaBotState.scannedTokens : SOLANA_EXPANDED_CATALOG;
 
-    // Quantitative Multi-Position Dynamic Risk Sizing
-    const MAX_CONCURRENT_POSITIONS = solanaBotState.maxConcurrentPositions || 15;
-    const MAX_PORTFOLIO_EXPOSURE_USD = solanaBotState.wallet.initialEquity * 0.35; // $3,500 max deployed
-    const uniformMarginUsd = Math.max(5.0, solanaBotState.wallet.currentEquity * (solanaBotState.dynamicMarginPct / 100));
-    const singleFeeUsd = uniformMarginUsd * 0.0015;
+    // Quantitative Multi-Position Risk Sizing: Full Balance Divided by 15
+    const MAX_CONCURRENT_POSITIONS = 15;
+    solanaBotState.maxConcurrentPositions = MAX_CONCURRENT_POSITIONS;
+    const singleFeeRate = 0.0015; // 15 bps taker fee
+
+    // Full balance divided into 15 concurrent position slots (100% allocation across 15 coins)
+    const slotEquityUsd = (solanaBotState.wallet.currentEquity / MAX_CONCURRENT_POSITIONS);
+    const uniformMarginUsd = Math.max(5.0, Math.floor((slotEquityUsd / (1 + singleFeeRate)) * 100) / 100);
 
     // CONFLUENCE METRIC 1: Benchmark Macro Regime Filter
     const solBenchmark = candidatePool.find((c) => c.symbol === "SOL") || { price_change_5m: 0.5, price_change_1h: 2.0 };
@@ -1068,15 +1067,18 @@ async function runSolanaAutonomousTick() {
         continue;
       }
 
-      // Portfolio Constraint 2: Total allocated margin cap (preserves >= 65% cash buffer)
-      const currentAllocatedMargin = solanaBotState.activePositions.reduce((sum, p) => sum + p.marginUsd, 0);
-      if (currentAllocatedMargin + uniformMarginUsd > MAX_PORTFOLIO_EXPOSURE_USD) {
-        break;
-      }
+      // Cash Solvency & Trade Allocation Check: Allocate 1/15th slot or remaining cash buffer
+      let tradeMarginUsd = uniformMarginUsd;
+      let tradeFeeUsd = tradeMarginUsd * singleFeeRate;
 
-      // Portfolio Constraint 3: Cash solvency check
-      if (solanaBotState.wallet.cash < (uniformMarginUsd + singleFeeUsd)) {
-        break;
+      if (solanaBotState.wallet.cash < (tradeMarginUsd + tradeFeeUsd)) {
+        const availableCashMargin = Math.floor((solanaBotState.wallet.cash / (1 + singleFeeRate)) * 100) / 100;
+        if (availableCashMargin >= 5.0) {
+          tradeMarginUsd = availableCashMargin;
+          tradeFeeUsd = tradeMarginUsd * singleFeeRate;
+        } else {
+          break; // Fully deployed; no cash left for another spot trade
+        }
       }
 
       // Do not open duplicate positions for the same token
@@ -1113,7 +1115,7 @@ async function runSolanaAutonomousTick() {
       const vetoTrap = checkStage3TrapVeto(candidate);
       if (vetoTrap) {
         solanaBotState.learningEngine.avoidedTrapsCount++;
-        solanaBotState.learningEngine.savedCapital += uniformMarginUsd;
+        solanaBotState.learningEngine.savedCapital += tradeMarginUsd;
 
         const trapKey = vetoTrap.id || vetoTrap.trap_id || "TRAP-UNKNOWN";
         const nowMs = Date.now();
@@ -1126,7 +1128,7 @@ async function runSolanaAutonomousTick() {
             method: "POST",
             body: JSON.stringify({
               trap_id: trapKey,
-              saved_capital_usd: uniformMarginUsd,
+              saved_capital_usd: tradeMarginUsd,
             }),
           }).catch((e) => console.warn("Veto API sync suppressed:", e));
         }
@@ -1135,13 +1137,13 @@ async function runSolanaAutonomousTick() {
         const lastToast = solanaBotState.learningEngine.lastVetoToastTimes[trapKey] || 0;
         if (nowMs - lastToast > 15000) {
           solanaBotState.learningEngine.lastVetoToastTimes[trapKey] = nowMs;
-          showToast(`🛑 [VETO SAVED] Blocked candidate ${candidate.symbol} matching trap ${trapKey}! Saved $${uniformMarginUsd.toFixed(2)} margin.`);
+          showToast(`🛑 [VETO SAVED] Blocked candidate ${candidate.symbol} matching trap ${trapKey}! Saved $${tradeMarginUsd.toFixed(2)} margin.`);
         }
         continue;
       }
 
       const patternName = ch5m < 0 ? "Bullish FVG Pullback" : "Bullish Momentum Retest";
-      openPosition(candidate, uniformMarginUsd, patternName);
+      openPosition(candidate, tradeMarginUsd, patternName);
     }
 
     processThreeStageLearningEngine();
