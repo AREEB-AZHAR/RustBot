@@ -38,7 +38,7 @@ const MAX_OPENROUTER_MESSAGES: usize = 12;
 const MAX_OPENROUTER_MESSAGE_LENGTH: usize = 8_000;
 const MAX_OPENROUTER_TOKENS: usize = 1_024;
 const MAX_MATH_EXPRESSION_LENGTH: usize = 256;
-const MAX_REQUESTS_PER_MINUTE_PER_IP: usize = 120;
+const MAX_REQUESTS_PER_MINUTE_PER_IP: usize = 600;
 const MAX_AI_REQUESTS_PER_HOUR_PER_USER: i64 = 60;
 const SESSION_TTL_SECONDS: i64 = 7 * 86400; // 7 days
 
@@ -444,10 +444,12 @@ fn validate_session_csrf(
             let clean_o = o.trim_end_matches('/');
             let clean_public = state.config.public_origin.trim_end_matches('/');
             clean_o.eq_ignore_ascii_case(clean_public)
+                || clean_o.eq_ignore_ascii_case("https://rustchatbot.duckdns.org")
+                || clean_o.eq_ignore_ascii_case("http://rustchatbot.duckdns.org")
+                || clean_o.eq_ignore_ascii_case("https://rustchatbot.duckdns.org:7878")
+                || clean_o.eq_ignore_ascii_case("http://rustchatbot.duckdns.org:7878")
                 || clean_o.eq_ignore_ascii_case("https://rustbot.duckdns.org")
                 || clean_o.eq_ignore_ascii_case("http://rustbot.duckdns.org")
-                || clean_o.eq_ignore_ascii_case("https://rustbot.duckdns.org:7878")
-                || clean_o.eq_ignore_ascii_case("http://rustbot.duckdns.org:7878")
                 || clean_o.ends_with(".trycloudflare.com")
                 || is_trusted_loopback_origin(clean_o)
         }
@@ -513,14 +515,16 @@ fn handle_connection(mut stream: TcpStream, state: &AppState) -> Result<(), Stri
         .map_err(|error| error.to_string())?;
 
     if let Ok(peer) = stream.peer_addr() {
-        let mut limiter = state.ip_limiter.lock().unwrap_or_else(|p| p.into_inner());
-        if !limiter.check_and_record(peer.ip()) {
-            return Response::error(
-                429,
-                "Too Many Requests",
-                "Rate limit exceeded (too many requests per minute).",
-            )
-            .write_to(&mut stream);
+        if !peer.ip().is_loopback() {
+            let mut limiter = state.ip_limiter.lock().unwrap_or_else(|p| p.into_inner());
+            if !limiter.check_and_record(peer.ip()) {
+                return Response::error(
+                    429,
+                    "Too Many Requests",
+                    "Rate limit exceeded (too many requests per minute).",
+                )
+                .write_to(&mut stream);
+            }
         }
     }
 
@@ -788,6 +792,8 @@ fn route_request(request: &Request, state: &AppState) -> Response {
         ("POST", "/api/market/solana/learned-memory") => handle_post_solana_learned_memory(request, state),
         ("POST", "/api/market/solana/learned-memory/veto") => handle_post_solana_veto(request, state),
         ("POST", "/api/market/solana/reset-db") => handle_reset_solana_db(request, state),
+        ("GET", "/api/market/solana/wallet") => handle_get_solana_wallet(request, state),
+        ("POST", "/api/market/solana/wallet") => handle_post_solana_wallet(request, state),
 
         _ => Response::error(404, "Not Found", "The requested endpoint does not exist."),
     }
@@ -2767,7 +2773,17 @@ fn handle_timesfm_predict(request: &Request) -> Result<serde_json::Value, String
     serde_json::to_value(prediction).map_err(|e| format!("Serialization error: {e}"))
 }
 
+static SOLANA_TRENDING_CACHE: Mutex<Option<(std::time::Instant, SolanaTrendingResponse)>> = Mutex::new(None);
+
 fn fetch_solana_trending(query: &HashMap<String, String>) -> Result<SolanaTrendingResponse, String> {
+    if let Ok(guard) = SOLANA_TRENDING_CACHE.lock() {
+        if let Some((cached_at, ref cached_res)) = *guard {
+            if cached_at.elapsed() < Duration::from_secs(30) {
+                return Ok(cached_res.clone());
+            }
+        }
+    }
+
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(6))
         .user_agent("RustBot/1.0 (Mozilla/5.0; Windows NT 10.0; Win64; x64)")
@@ -2990,11 +3006,15 @@ fn fetch_solana_trending(query: &HashMap<String, String>) -> Result<SolanaTrendi
     }
 
     let count = tokens.len();
-    Ok(SolanaTrendingResponse {
+    let res = SolanaTrendingResponse {
         network: "solana".to_string(),
         count,
         tokens,
-    })
+    };
+    if let Ok(mut guard) = SOLANA_TRENDING_CACHE.lock() {
+        *guard = Some((std::time::Instant::now(), res.clone()));
+    }
+    Ok(res)
 }
 
 fn fetch_solana_candles(query: &HashMap<String, String>) -> Result<MarketDataResponse, String> {
@@ -3214,6 +3234,25 @@ fn handle_post_solana_veto(request: &Request, state: &AppState) -> Response {
 fn handle_reset_solana_db(_request: &Request, state: &AppState) -> Response {
     match state.solana_db.clear_all() {
         Ok(_) => Response::json(200, "OK", json!({ "success": true, "message": "Solana DB reset" })),
+        Err(err) => Response::error(500, "Internal Server Error", &err),
+    }
+}
+
+fn handle_get_solana_wallet(_request: &Request, state: &AppState) -> Response {
+    match state.solana_db.get_wallet_state() {
+        Ok(Some(w)) => Response::json(200, "OK", json!({ "wallet": w })),
+        Ok(None) => Response::json(200, "OK", json!({ "wallet": null })),
+        Err(err) => Response::error(500, "Internal Server Error", &err),
+    }
+}
+
+fn handle_post_solana_wallet(request: &Request, state: &AppState) -> Response {
+    let payload: crate::solana_db::SolanaWalletState = match parse_json(&request.body) {
+        Ok(p) => p,
+        Err(err) => return Response::error(400, "Bad Request", &err),
+    };
+    match state.solana_db.save_wallet_state(&payload) {
+        Ok(_) => Response::json(200, "OK", json!({ "success": true })),
         Err(err) => Response::error(500, "Internal Server Error", &err),
     }
 }

@@ -125,7 +125,7 @@
                   <span class="btn-icon">🛑</span>
                   <span>Stop Bot (Operator Halt)</span>
                 </button>
-                <button type="button" class="btn-reset-solana" id="btn-reset-solana-wallet" title="Reset Wallet to $1,000 baseline">
+                <button type="button" class="btn-reset-solana" id="btn-reset-solana-wallet" title="Reset Wallet to $10,000 baseline">
                   <span>↺ Reset Wallet</span>
                 </button>
               </div>
@@ -138,10 +138,10 @@
                   <span>Virtual Wallet Equity</span>
                   <span class="wallet-tag">USDC / USDT</span>
                 </div>
-                <strong class="wallet-amount" id="solana-wallet-balance">$1,000.00</strong>
+                <strong class="wallet-amount" id="solana-wallet-balance">$10,000.00</strong>
                 <div class="wallet-subtext">
-                  <span>Baseline Capital: $1,000.00</span>
-                  <span id="solana-cash-allocation">$1,000.00 Cash (100%)</span>
+                  <span>Baseline Capital: $10,000.00</span>
+                  <span id="solana-cash-allocation">$10,000.00 Cash (100%)</span>
                 </div>
               </div>
 
@@ -165,22 +165,22 @@
                 <div class="circuit-meter-wrap">
                   <div class="circuit-bar-track">
                     <div class="circuit-bar-fill" id="circuit-bar-fill" style="width: 0%;"></div>
-                    <div class="circuit-limit-marker" title="Auto-Shutdown Limit (-20% / $800.00)">-20% Limit</div>
+                    <div class="circuit-limit-marker" title="Auto-Shutdown Limit (-20% / $8,000.00)">-20% Limit</div>
                   </div>
                 </div>
                 <div class="wallet-subtext">
                   <span id="circuit-drawdown-text">Drawdown: 0.00%</span>
-                  <span class="circuit-danger-hint" id="circuit-danger-hint">Halts automatically at $800.00</span>
+                  <span class="circuit-danger-hint" id="circuit-danger-hint">Halts automatically at $8,000.00</span>
                 </div>
               </div>
 
               <div class="wallet-card position-card" id="solana-active-position-card">
                 <div class="wallet-card-header">
                   <span>Concurrent Positions</span>
-                  <span class="badge-chip" id="solana-active-token-badge">0 IN PLAY</span>
+                  <span class="badge-chip" id="solana-active-token-badge">0 / 15 IN PLAY</span>
                 </div>
                 <div class="position-details" id="solana-position-details">
-                  <span class="no-position-label">Bot ready to trade multiple Solana coins (2% margin each)…</span>
+                  <span class="no-position-label">Bot ready to trade multiple Solana coins (2% margin / $200 each)…</span>
                 </div>
               </div>
             </div>
@@ -189,8 +189,8 @@
             <div class="solana-panel multi-positions-panel" id="multi-positions-panel">
               <div class="panel-header-line">
                 <div class="card-title-group">
-                  <p>ACTIVE MULTI-TOKEN PORTFOLIO · 2% MARGIN PER TRADE</p>
-                  <h3>Simultaneous Solana DEX Positions (<span id="active-positions-count">0 Active</span>)</h3>
+                  <p>ACTIVE MULTI-TOKEN PORTFOLIO · 2% MARGIN ($200) · MAX 15 COINS</p>
+                  <h3>Simultaneous Solana DEX Positions (<span id="active-positions-count">0 / 15 Active</span>)</h3>
                 </div>
                 <div class="positions-meta-chips">
                   <span class="badge-chip" id="allocated-margin-chip">Allocated Margin: $0.00 (0.0%)</span>
@@ -208,15 +208,15 @@
                       <th>Entry Price</th>
                       <th>Current Price</th>
                       <th>Unrealized PnL</th>
-                      <th>Take Profit (BE + 5x Fees)</th>
-                      <th>Stop Loss (-15%)</th>
+                      <th>Take Profit (+2R / Trailing)</th>
+                      <th>Stop Loss (-3.0% / BE)</th>
                       <th>Action</th>
                     </tr>
                   </thead>
                   <tbody id="multi-positions-tbody">
                     <tr>
                       <td colspan="8" style="text-align: center; color: var(--muted); padding: 18px;">
-                        No active positions held. Start the Solana Bot to enter concurrent 2% margin trades across all scanned coins.
+                        No active positions held. Start the Solana Bot to enter concurrent 2% margin ($200) trades with 5-stage loss protection.
                       </td>
                     </tr>
                   </tbody>

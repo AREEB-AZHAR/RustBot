@@ -88,6 +88,18 @@ pub struct UpdateSolanaMistakeStage {
     pub notes: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SolanaWalletState {
+    pub current_equity: f64,
+    pub cash: f64,
+    pub realized_pnl: f64,
+    pub total_fees: f64,
+    pub peak_equity: f64,
+    pub trades_won: i64,
+    pub trades_lost: i64,
+    pub updated_at: i64,
+}
+
 #[derive(Debug, Clone)]
 pub struct SolanaDb {
     conn: Arc<Mutex<Connection>>,
@@ -122,11 +134,12 @@ impl SolanaDb {
     fn init_schema(&self) -> Result<(), String> {
         let conn = self.conn.lock().map_err(|_| "Database mutex poisoned".to_string())?;
 
-        // Enable Write-Ahead Logging for high-frequency concurrency
+        // Enable Write-Ahead Logging and busy timeout for high-frequency concurrency
         conn.execute_batch(
             "
             PRAGMA journal_mode = WAL;
             PRAGMA synchronous = NORMAL;
+            PRAGMA busy_timeout = 5000;
             PRAGMA foreign_keys = ON;
 
             CREATE TABLE IF NOT EXISTS solana_trades (
@@ -171,6 +184,18 @@ impl SolanaDb {
 
             CREATE INDEX IF NOT EXISTS idx_solana_memory_stage ON solana_learned_memory(stage);
             CREATE INDEX IF NOT EXISTS idx_solana_memory_token ON solana_learned_memory(token_symbol);
+
+            CREATE TABLE IF NOT EXISTS solana_wallet_state (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                current_equity REAL NOT NULL,
+                cash REAL NOT NULL,
+                realized_pnl REAL NOT NULL,
+                total_fees REAL NOT NULL,
+                peak_equity REAL NOT NULL,
+                trades_won INTEGER NOT NULL,
+                trades_lost INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
             ",
         ).map_err(|e| format!("Failed to create Solana DB tables: {e}"))?;
 
@@ -353,11 +378,68 @@ impl SolanaDb {
         Ok(memories)
     }
 
+    pub fn get_wallet_state(&self) -> Result<Option<SolanaWalletState>, String> {
+        let conn = self.conn.lock().map_err(|_| "Database mutex poisoned".to_string())?;
+        let mut stmt = conn
+            .prepare("SELECT current_equity, cash, realized_pnl, total_fees, peak_equity, trades_won, trades_lost, updated_at FROM solana_wallet_state WHERE id = 1")
+            .map_err(|e| format!("Failed to prepare wallet state select: {e}"))?;
+
+        let mut rows = stmt
+            .query_map([], |row| {
+                Ok(SolanaWalletState {
+                    current_equity: row.get(0)?,
+                    cash: row.get(1)?,
+                    realized_pnl: row.get(2)?,
+                    total_fees: row.get(3)?,
+                    peak_equity: row.get(4)?,
+                    trades_won: row.get(5)?,
+                    trades_lost: row.get(6)?,
+                    updated_at: row.get(7)?,
+                })
+            })
+            .map_err(|e| format!("Failed to execute wallet state query: {e}"))?;
+
+        match rows.next() {
+            Some(res) => Ok(Some(res.map_err(|e| format!("Row mapping error in solana_wallet_state: {e}"))?)),
+            None => Ok(None),
+        }
+    }
+
+    pub fn save_wallet_state(&self, state: &SolanaWalletState) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|_| "Database mutex poisoned".to_string())?;
+        let now = now_timestamp();
+        conn.execute(
+            "INSERT INTO solana_wallet_state (id, current_equity, cash, realized_pnl, total_fees, peak_equity, trades_won, trades_lost, updated_at)
+             VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT(id) DO UPDATE SET
+                current_equity = excluded.current_equity,
+                cash = excluded.cash,
+                realized_pnl = excluded.realized_pnl,
+                total_fees = excluded.total_fees,
+                peak_equity = excluded.peak_equity,
+                trades_won = excluded.trades_won,
+                trades_lost = excluded.trades_lost,
+                updated_at = excluded.updated_at",
+            params![
+                state.current_equity,
+                state.cash,
+                state.realized_pnl,
+                state.total_fees,
+                state.peak_equity,
+                state.trades_won,
+                state.trades_lost,
+                now
+            ],
+        ).map_err(|e| format!("Failed to save wallet state: {e}"))?;
+        Ok(())
+    }
+
     pub fn clear_all(&self) -> Result<(), String> {
         let conn = self.conn.lock().map_err(|_| "Database mutex poisoned".to_string())?;
         conn.execute_batch(
             "DELETE FROM solana_trades;
-             DELETE FROM solana_learned_memory;",
+             DELETE FROM solana_learned_memory;
+             DELETE FROM solana_wallet_state;",
         ).map_err(|e| format!("Failed to clear Solana tables: {e}"))?;
         Ok(())
     }
