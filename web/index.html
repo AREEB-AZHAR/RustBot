@@ -28,8 +28,8 @@
     <meta name="twitter:image" content="__ORIGIN__/og.png" />
     <title>RustBot — Knowledge Forge</title>
     <script src="/theme-init.js"></script>
-    <link rel="stylesheet" href="/styles.css?v=8" />
-    <script src="/app.js?v=8" defer></script>
+    <link rel="stylesheet" href="/styles.css?v=9" />
+    <script src="/app.js?v=9" defer></script>
   </head>
   <body>
     <a class="skip-link" href="#composer-input">Skip to message composer</a>
@@ -69,19 +69,20 @@
           <span class="rail-label">New conversation</span>
         </button>
 
-        <!-- Dynamic User Conversations List -->
-        <div class="rail-conversations-section">
-          <p class="rail-eyebrow">Your Chats</p>
-          <div class="rail-conversations-list" id="rail-conversations-list">
-            <!-- Rendered dynamically -->
-          </div>
-        </div>
-
         <nav class="workspace-nav" aria-label="Workspace sections">
           <button class="nav-item is-active" type="button" data-nav="chat" aria-current="page">
             <span class="nav-icon" aria-hidden="true">◌</span>
             <span class="rail-label">Conversation</span>
           </button>
+
+          <!-- Dynamic User Conversations List under Conversation tab -->
+          <div class="rail-conversations-section" id="rail-conversations-section">
+            <p class="rail-eyebrow">Your Chats</p>
+            <div class="rail-conversations-list" id="rail-conversations-list">
+              <!-- Rendered dynamically -->
+            </div>
+          </div>
+
           <a class="nav-item" href="/market" data-nav="market" style="text-decoration: none;">
             <span class="nav-icon" aria-hidden="true">📈</span>
             <span class="rail-label">Quant Lab (Walk-Forward)</span>

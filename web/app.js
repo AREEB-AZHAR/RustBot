@@ -625,6 +625,8 @@ function setUserState(user) {
     }
     if (elements.authActionBtn) elements.authActionBtn.textContent = "Log In";
     if (elements.railConversationsList) elements.railConversationsList.replaceChildren();
+    const sec = document.querySelector("#rail-conversations-section");
+    if (sec) sec.style.display = "none";
     if (elements.readyLabel) elements.readyLabel.textContent = "Please sign in";
     elements.appShell.classList.add("knowledge-collapsed");
     elements.knowledgePanel?.classList.remove("is-open");
@@ -1331,6 +1333,13 @@ function renderConversationsList() {
   if (!elements.railConversationsList) return;
   elements.railConversationsList.replaceChildren();
 
+  const sec = document.querySelector("#rail-conversations-section");
+  if (!state.conversations || state.conversations.length === 0) {
+    if (sec) sec.style.display = "none";
+    return;
+  }
+  if (sec) sec.style.display = "flex";
+
   state.conversations.forEach((conv) => {
     const item = document.createElement("div");
     item.className = `conversation-rail-item${conv.id === state.activeConversationId ? " active" : ""}`;
@@ -1359,6 +1368,11 @@ function renderConversationsList() {
     });
     elements.railConversationsList.append(item);
   });
+
+  const activeItem = elements.railConversationsList.querySelector(".conversation-rail-item.active");
+  if (activeItem) {
+    activeItem.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
 }
 
 async function selectConversation(convId) {
