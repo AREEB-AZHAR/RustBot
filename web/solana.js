@@ -115,6 +115,15 @@ const elements = {
   btnStartSolanaBot: document.querySelector("#btn-start-solana-bot"),
   btnStopSolanaBot: document.querySelector("#btn-stop-solana-bot"),
   btnResetSolanaWallet: document.querySelector("#btn-reset-solana-wallet"),
+  btnOpenSetBalance: document.querySelector("#btn-open-set-balance"),
+  walletBalanceModal: document.querySelector("#wallet-balance-modal"),
+  btnCloseBalanceModal: document.querySelector("#btn-close-balance-modal"),
+  btnCancelBalanceModal: document.querySelector("#btn-cancel-balance-modal"),
+  btnApplyCustomBalance: document.querySelector("#btn-apply-custom-balance"),
+  customWalletBalanceInput: document.querySelector("#custom-wallet-balance-input"),
+  previewSlotSize: document.querySelector("#preview-slot-size"),
+  previewCircuitLimit: document.querySelector("#preview-circuit-limit"),
+  solanaBaselineCapital: document.querySelector("#solana-baseline-capital"),
   btnRefreshSolanaScan: document.querySelector("#btn-refresh-solana-scan"),
   solanaBotStatusPill: document.querySelector("#solana-bot-status-pill"),
   solanaStatusText: document.querySelector("#solana-status-text"),
@@ -251,6 +260,48 @@ function bindEvents() {
   }
   if (elements.btnResetSolanaWallet) {
     elements.btnResetSolanaWallet.addEventListener("click", resetSolanaWallet);
+  }
+  if (elements.btnOpenSetBalance) {
+    elements.btnOpenSetBalance.addEventListener("click", openBalanceModal);
+  }
+  if (elements.btnCloseBalanceModal) {
+    elements.btnCloseBalanceModal.addEventListener("click", closeBalanceModal);
+  }
+  if (elements.btnCancelBalanceModal) {
+    elements.btnCancelBalanceModal.addEventListener("click", closeBalanceModal);
+  }
+  if (elements.walletBalanceModal) {
+    elements.walletBalanceModal.addEventListener("click", (e) => {
+      if (e.target === elements.walletBalanceModal) closeBalanceModal();
+    });
+  }
+  if (elements.customWalletBalanceInput) {
+    elements.customWalletBalanceInput.addEventListener("input", (e) => {
+      updateBalanceModalPreview(e.target.value);
+      highlightActivePreset(e.target.value);
+    });
+  }
+  const presetButtons = document.querySelectorAll(".btn-preset");
+  presetButtons.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const amount = Number(btn.getAttribute("data-amount"));
+      if (elements.customWalletBalanceInput) {
+        elements.customWalletBalanceInput.value = amount;
+      }
+      updateBalanceModalPreview(amount);
+      highlightActivePreset(amount);
+    });
+  });
+  if (elements.btnApplyCustomBalance) {
+    elements.btnApplyCustomBalance.addEventListener("click", () => {
+      const amount = Number(elements.customWalletBalanceInput?.value);
+      if (!amount || amount < 10) {
+        showToast("⚠️ Please enter a valid amount of at least $10.00.");
+        return;
+      }
+      setCustomWalletBalance(amount);
+      closeBalanceModal();
+    });
   }
   if (elements.btnRefreshSolanaScan) {
     elements.btnRefreshSolanaScan.addEventListener("click", () => scanSolanaChain(true));
@@ -892,7 +943,7 @@ function startSolanaAutonomousBot() {
 
   const drawdown = (solanaBotState.wallet.peakEquity - solanaBotState.wallet.currentEquity) / Math.max(1, solanaBotState.wallet.peakEquity);
   if (drawdown >= 0.20 || solanaBotState.wallet.currentEquity <= (solanaBotState.wallet.initialEquity * 0.80)) {
-    showToast("⚠️ 20% Circuit Breaker is tripped ($8,000 limit). Click 'Reset Wallet' to restore $10,000 baseline.");
+    showToast(`⚠️ 20% Circuit Breaker is tripped ($${(solanaBotState.wallet.initialEquity * 0.80).toFixed(0)} limit). Reset or set balance.`);
     return;
   }
 
@@ -907,7 +958,8 @@ function startSolanaAutonomousBot() {
     elements.solanaStatusText.textContent = "RUNNING · SUB-SECOND HFT CADENCE";
   }
 
-  showToast("⚡ Solana Multi-Token Bot engaged: $10,000 capital, 2% margin ($200), max 15 coins, 1:2 R:R asymmetric exits, and 5-stage loss protection.");
+  const slotUsd = (solanaBotState.wallet.currentEquity / 15).toFixed(2);
+  showToast(`⚡ Solana Bot engaged: $${solanaBotState.wallet.currentEquity.toFixed(2)} capital, 1/15th slots ($${slotUsd} each), 50% TP1 scale-outs, and RVOL surge filter.`);
   runSolanaAutonomousTick();
 }
 
@@ -1075,13 +1127,19 @@ async function runSolanaAutonomousTick() {
           closePosition(pos, "HFT Stale Margin Rebalance", false);
         }
       } else {
-        // Stage 2: Managing the Remaining 50% Runner (Risk-Free Mode)
+        // Stage 2: Managing the Remaining 50% Runner (Adaptive Volatility Trailing)
+        const volScore = pos.token.volatility_score || 80;
+        const adaptiveRetraceTrigger = volScore >= 90 ? 3.2 : volScore >= 82 ? 2.2 : 1.5;
+
         const peakRetracePct = ((pos.peakPrice - pos.currentPrice) / pos.peakPrice) * 100;
-        const isTrailingRunnerExit = peakRetracePct >= 2.0 && pos.unrealizedReturnPct >= 1.0;
+        const isTrailingRunnerExit = peakRetracePct >= adaptiveRetraceTrigger && pos.unrealizedReturnPct >= 1.0;
         const isBreakevenStop = pos.currentPrice <= (pos.breakevenPrice || pos.entryPrice * 1.003) || pos.unrealizedReturnPct <= 0.0;
+        const isRunnerStagnant = pos.barsHeld >= 48 && peakRetracePct >= (adaptiveRetraceTrigger * 0.65) && pos.unrealizedReturnPct >= 1.5;
 
         if (isTrailingRunnerExit) {
-          closePosition(pos, `TAKE_PROFIT (Runner Peak Locked: +${pos.unrealizedReturnPct.toFixed(2)}% Net)`, false);
+          closePosition(pos, `TAKE_PROFIT (Adaptive Trailing Peak: +${pos.unrealizedReturnPct.toFixed(2)}% Net)`, false);
+        } else if (isRunnerStagnant) {
+          closePosition(pos, `TAKE_PROFIT (Momentum Exhaustion Banked: +${pos.unrealizedReturnPct.toFixed(2)}% Net)`, false);
         } else if (isBreakevenStop) {
           closePosition(pos, `BREAKEVEN_STOP (Risk-Free Exit: +${Math.max(0, pos.unrealizedReturnPct).toFixed(2)}% Net)`, false);
         }
@@ -1151,11 +1209,23 @@ async function runSolanaAutonomousTick() {
         continue; // Skip illiquid / stagnant coins with no volume velocity
       }
 
-      // CONFLUENCE METRIC 3: Liquidity Depth & Volume Guard (Protects against micro-slippage)
+      // CONFLUENCE METRIC 3: Liquidity Depth & Price Impact Shield (DEX AMM Slippage Defense)
       const vol24h = candidate.volume_24h || 500000;
       const liqUsd = candidate.liquidity_usd || 100000;
       if (vol24h < 40000 || liqUsd < 15000) {
         continue;
+      }
+
+      // Cap position size if estimated price impact > 0.40%
+      const priceImpactPct = (tradeMarginUsd / Math.max(1, liqUsd)) * 100;
+      if (priceImpactPct > 0.40) {
+        const maxSafeMargin = Math.floor(liqUsd * 0.0040 * 100) / 100;
+        if (maxSafeMargin >= 5.0) {
+          tradeMarginUsd = maxSafeMargin;
+          tradeFeeUsd = tradeMarginUsd * singleFeeRate;
+        } else {
+          continue; // Liquidity pool too shallow for safe spot execution without high slippage
+        }
       }
 
       // CONFLUENCE METRIC 4: Anti-FOMO & Overbought Filter (Never buy extreme tops)
@@ -1688,26 +1758,83 @@ async function reassessVetoLedger() {
    ========================================================================== */
 
 function resetSolanaWallet() {
+  const currentBaseline = solanaBotState.wallet.initialEquity || 10000.0;
+  setCustomWalletBalance(currentBaseline);
+}
+
+function setCustomWalletBalance(amount) {
+  if (typeof amount !== "number" || isNaN(amount) || amount < 10) {
+    showToast("⚠️ Please enter a valid wallet balance (minimum $10.00).");
+    return;
+  }
+
   if (solanaBotState.isRunning) {
     stopSolanaAutonomousBot("OPERATOR_STOP");
   }
+
   solanaBotState.activePositions = [];
   solanaBotState.wallet = {
-    initialEquity: 10000.0,
-    currentEquity: 10000.0,
-    cash: 10000.0,
+    initialEquity: amount,
+    currentEquity: amount,
+    cash: amount,
     realizedPnl: 0.0,
     totalFeesPaid: 0.0,
-    peakEquity: 10000.0,
+    peakEquity: amount,
     maxDrawdownPct: 0.0,
     tradesWon: 0,
     tradesLost: 0,
   };
+
   persistSolanaWallet();
   updateSolanaWalletHUD();
   renderMultiPositionsTable();
   renderSolanaJournal();
-  showToast("Solana virtual paper wallet reset to $10,000.00 baseline.");
+
+  const slotUsd = (amount / (solanaBotState.maxConcurrentPositions || 15)).toFixed(2);
+  if (elements.aiDynamicMargin) {
+    elements.aiDynamicMargin.textContent = `6.7% ($${slotUsd})`;
+  }
+
+  showToast(`💰 Virtual wallet balance set to $${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}! Trade slots calibrated to $${slotUsd} each.`);
+}
+
+function openBalanceModal() {
+  if (!elements.walletBalanceModal) return;
+  const currentEquity = solanaBotState.wallet.initialEquity || 10000.0;
+  if (elements.customWalletBalanceInput) {
+    elements.customWalletBalanceInput.value = currentEquity;
+  }
+  updateBalanceModalPreview(currentEquity);
+  highlightActivePreset(currentEquity);
+  elements.walletBalanceModal.style.display = "flex";
+  if (elements.customWalletBalanceInput) {
+    elements.customWalletBalanceInput.focus();
+  }
+}
+
+function closeBalanceModal() {
+  if (!elements.walletBalanceModal) return;
+  elements.walletBalanceModal.style.display = "none";
+}
+
+function updateBalanceModalPreview(val) {
+  const amount = Number(val) || 0;
+  const slotSize = Math.max(0, amount / 15).toFixed(2);
+  const circuitLimit = (amount * 0.80).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (elements.previewSlotSize) elements.previewSlotSize.textContent = `$${slotSize}`;
+  if (elements.previewCircuitLimit) elements.previewCircuitLimit.textContent = `$${circuitLimit}`;
+}
+
+function highlightActivePreset(amount) {
+  const presets = document.querySelectorAll(".btn-preset");
+  presets.forEach((btn) => {
+    const val = Number(btn.getAttribute("data-amount"));
+    if (val === Number(amount)) {
+      btn.classList.add("active");
+    } else {
+      btn.classList.remove("active");
+    }
+  });
 }
 
 function updateSolanaWalletHUD() {
@@ -1718,6 +1845,10 @@ function updateSolanaWalletHUD() {
 
   if (elements.solanaWalletBalance) {
     elements.solanaWalletBalance.textContent = `$${current.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
+
+  if (elements.solanaBaselineCapital) {
+    elements.solanaBaselineCapital.textContent = `Baseline Capital: $${wallet.initialEquity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   }
 
   if (elements.solanaCashAllocation) {
@@ -1757,7 +1888,8 @@ function updateSolanaWalletHUD() {
   }
 
   if (elements.circuitDangerHint) {
-    elements.circuitDangerHint.textContent = "Halts automatically at $8,000.00 (-20%)";
+    const circuitLimitUsd = wallet.initialEquity * 0.80;
+    elements.circuitDangerHint.textContent = `Halts automatically at $${circuitLimitUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (-20%)`;
   }
 
   if (elements.circuitStatusBadge) {
@@ -1777,6 +1909,7 @@ function updateSolanaWalletHUD() {
     const activeCount = solanaBotState.activePositions.length;
     const totalAllocatedMargin = solanaBotState.activePositions.reduce((acc, p) => acc + p.marginUsd, 0);
     const marginPct = ((totalAllocatedMargin / Math.max(1, current)) * 100).toFixed(1);
+    const baseSlotUsd = (current / (solanaBotState.maxConcurrentPositions || 15)).toFixed(2);
 
     if (activeCount > 0) {
       elements.solanaActiveTokenBadge.textContent = `${activeCount} / 15 IN PLAY`;
@@ -1784,15 +1917,15 @@ function updateSolanaWalletHUD() {
       elements.solanaPositionDetails.innerHTML = `
         <div class="position-stat-grid">
           <div><span>Allocated Margin:</span> <strong>$${totalAllocatedMargin.toFixed(2)} (${marginPct}%)</strong></div>
-          <div><span>Per Trade Size:</span> <strong>2.0% ($${(current * 0.02).toFixed(2)})</strong></div>
+          <div><span>Per Trade Size:</span> <strong>1/15th (~6.7% / $${baseSlotUsd})</strong></div>
           <div><span>Active Coins:</span> <strong>${solanaBotState.activePositions.map((p) => p.token.symbol).join(", ")}</strong></div>
-          <div><span>Risk/Reward Rule:</span> <strong>1:2 R:R (+3.5% TP1 / Trailing Runner)</strong></div>
+          <div><span>Risk/Reward Rule:</span> <strong>1:2 R:R (50% TP1 / Adaptive Runner)</strong></div>
         </div>
       `;
     } else {
       elements.solanaActiveTokenBadge.textContent = "0 / 15 IN PLAY";
       elements.solanaActiveTokenBadge.style.color = "var(--muted)";
-      elements.solanaPositionDetails.innerHTML = `<span class="no-position-label">Bot ready to trade multiple Solana coins (2% margin / $200 each)…</span>`;
+      elements.solanaPositionDetails.innerHTML = `<span class="no-position-label">Bot ready to trade multiple Solana coins (1/15th margin / $${baseSlotUsd} each)…</span>`;
     }
   }
 }
