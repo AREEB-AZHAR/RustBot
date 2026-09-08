@@ -2874,10 +2874,11 @@ fn fetch_solana_trending(query: &HashMap<String, String>) -> Result<SolanaTrendi
                         .and_then(json_number)
                         .unwrap_or(0.0);
 
-                    let vol_score = (price_change_5m.abs() * 3.0 + price_change_1h.abs() * 1.5).min(99.9);
+                    let base_vol = (price_change_5m.abs() * 3.0 + price_change_1h.abs() * 1.5).min(99.9);
+                    let vol_score = if base_vol > 5.0 { base_vol } else { 82.0 };
                     let verified_safety = liquidity_usd >= min_liquidity;
 
-                    if price_usd > 0.0 {
+                    if price_usd > 0.0 && liquidity_usd >= 10_000.0 && volume_24h >= 10_000.0 {
                         seen_addresses.insert(address.clone());
                         tokens.push(SolanaTrendingToken {
                             address,
