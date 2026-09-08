@@ -223,7 +223,7 @@
                 </div>
                 <div class="sentinel-metric-chip">
                   <span class="chip-label">Adaptive Stop Loss</span>
-                  <span class="chip-val text-danger" id="ai-stop-loss">-3.0% Confluence</span>
+                  <span class="chip-val text-danger" id="ai-stop-loss">-2.0% Confluence</span>
                 </div>
                 <div class="sentinel-metric-chip">
                   <span class="chip-label">Trailing Runner Lock</span>
@@ -271,19 +271,19 @@
                   <thead>
                     <tr>
                       <th>Token / DEX</th>
-                      <th>2% Margin</th>
+                      <th>Margin (1/15th)</th>
                       <th>Entry Price</th>
                       <th>Current Price</th>
                       <th>Unrealized PnL</th>
-                      <th>Take Profit (+2R / Trailing)</th>
-                      <th>Stop Loss (-3.0% / BE)</th>
+                      <th>Take Profit (50% TP1 / Runner)</th>
+                      <th>Stop Loss (-2.0% / BE)</th>
                       <th>Action</th>
                     </tr>
                   </thead>
                   <tbody id="multi-positions-tbody">
                     <tr>
                       <td colspan="8" style="text-align: center; color: var(--muted); padding: 18px;">
-                        No active positions held. Start the Solana Bot to enter concurrent 2% margin ($200) trades with 5-stage loss protection.
+                        No active positions held. Start the Solana Bot to enter concurrent 1/15th balance ($666) trades with asymmetric scale-out exits.
                       </td>
                     </tr>
                   </tbody>

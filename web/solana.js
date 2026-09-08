@@ -48,7 +48,7 @@ const solanaBotState = {
   autoPilotEnabled: true,
   dynamicMarginPct: 6.67,
   maxConcurrentPositions: 15,
-  confluenceStopLossPct: -3.0,
+  confluenceStopLossPct: -2.0,
   trailingRunnerTriggerPct: 3.5,
   tokenCooldownMap: new Map(),
   lastAiAuditTimestamp: 0,
@@ -354,9 +354,9 @@ function applyAiRiskDirectives(data) {
     elements.aiMaxPositions.textContent = `15 Coins`;
   }
 
-  // 3. Adaptive Stop Loss
+  // 3. Adaptive Stop Loss (Tightened for spot asymmetric risk)
   if (typeof data.tighten_stop_loss_pct === "number") {
-    solanaBotState.confluenceStopLossPct = data.tighten_stop_loss_pct;
+    solanaBotState.confluenceStopLossPct = Math.max(-2.5, Math.min(-1.5, data.tighten_stop_loss_pct));
     if (elements.aiStopLoss) {
       elements.aiStopLoss.textContent = `${solanaBotState.confluenceStopLossPct.toFixed(1)}% Confluence`;
     }
@@ -995,31 +995,33 @@ async function runSolanaAutonomousTick() {
       pos.unrealizedPnlUsd = netPnlUsd;
       pos.unrealizedReturnPct = (netPnlUsd / pos.marginUsd) * 100;
 
-      // QUANTITATIVE ASYMMETRIC EXIT SYSTEM (Adaptive 1:2 R:R):
+      // QUANTITATIVE ASYMMETRIC SCALE-OUT EXIT SYSTEM:
       const runnerTrigger = solanaBotState.trailingRunnerTriggerPct || 3.5;
-      const stopLossPct = solanaBotState.confluenceStopLossPct || -3.0;
+      const stopLossPct = solanaBotState.confluenceStopLossPct || -2.0;
 
-      // Condition 1: Take-Profit 1 -> Lock in profit at adaptive runner threshold
-      if (!pos.tp1Triggered && pos.unrealizedReturnPct >= runnerTrigger) {
-        pos.tp1Triggered = true;
-      }
+      if (!pos.tp1Triggered) {
+        // Stage 1: Pre-TP1 Lifecycle
+        if (pos.unrealizedReturnPct >= runnerTrigger) {
+          // Asymmetric Scale-Out: Bank 50% profit immediately and set breakeven stop on runner
+          executePartialTakeProfit(pos, pos.currentPrice);
+        } else if (pos.unrealizedReturnPct <= stopLossPct) {
+          // Defensive Confluence Stop-Loss (-2.0% Risk Guard)
+          closePosition(pos, `STOP_LOSS (${stopLossPct.toFixed(1)}% Defense: ${pos.unrealizedReturnPct.toFixed(2)}%)`, false);
+        } else if (pos.barsHeld >= 36 && Math.abs(pos.unrealizedReturnPct) < 0.8) {
+          // HFT Stale Margin Rebalance -> If trade is dead flat after ~18s, free capital
+          closePosition(pos, "HFT Stale Margin Rebalance", false);
+        }
+      } else {
+        // Stage 2: Managing the Remaining 50% Runner (Risk-Free Mode)
+        const peakRetracePct = ((pos.peakPrice - pos.currentPrice) / pos.peakPrice) * 100;
+        const isTrailingRunnerExit = peakRetracePct >= 2.0 && pos.unrealizedReturnPct >= 1.0;
+        const isBreakevenStop = pos.currentPrice <= (pos.breakevenPrice || pos.entryPrice * 1.003) || pos.unrealizedReturnPct <= 0.0;
 
-      // Condition 2: Trailing Stop Runner -> Once TP1 is triggered, lock if price retraces 1.5% from peak
-      const peakRetracePct = ((pos.peakPrice - pos.currentPrice) / pos.peakPrice) * 100;
-      const isTrailingStop = pos.tp1Triggered && (peakRetracePct >= 1.5 || pos.unrealizedReturnPct < 0.5);
-
-      // Condition 3: Adaptive Confluence Stop Loss -> Defends against drawdown
-      const isInitialStopLoss = !pos.tp1Triggered && (pos.unrealizedReturnPct <= stopLossPct);
-
-      // Condition 4: HFT Stale Margin Rebalance -> If trade is flat after 24 bars (~12s), free capital
-      const isStaleTimeout = pos.barsHeld >= 24 && Math.abs(pos.unrealizedReturnPct) < 1.0;
-
-      if (isTrailingStop) {
-        closePosition(pos, `TAKE_PROFIT (Trailing Runner Locked: +${pos.unrealizedReturnPct.toFixed(2)}% Net)`, false);
-      } else if (isInitialStopLoss) {
-        closePosition(pos, `STOP_LOSS (${stopLossPct.toFixed(1)}% Confluence Defense: ${pos.unrealizedReturnPct.toFixed(2)}%)`, false);
-      } else if (isStaleTimeout) {
-        closePosition(pos, "HFT Stale Margin Rebalance", false);
+        if (isTrailingRunnerExit) {
+          closePosition(pos, `TAKE_PROFIT (Runner Peak Locked: +${pos.unrealizedReturnPct.toFixed(2)}% Net)`, false);
+        } else if (isBreakevenStop) {
+          closePosition(pos, `BREAKEVEN_STOP (Risk-Free Exit: +${Math.max(0, pos.unrealizedReturnPct).toFixed(2)}% Net)`, false);
+        }
       }
     }
 
@@ -1160,6 +1162,91 @@ async function runSolanaAutonomousTick() {
   }
 }
 
+function executePartialTakeProfit(pos, exitPrice) {
+  if (pos.tp1Triggered) return;
+
+  const sellRatio = 0.50; // Sell 50% of position to bank profit and derisk
+  const sharesToSell = pos.shares * sellRatio;
+  const marginToClose = pos.marginUsd * sellRatio;
+
+  const exitTakerFee = (sharesToSell * exitPrice) * 0.0015;
+  const grossPnl = (sharesToSell * exitPrice) - marginToClose;
+  const entryFee = marginToClose * 0.0015;
+  const netPnlUsd = grossPnl - (entryFee + exitTakerFee);
+  const netReturnPct = (netPnlUsd / marginToClose) * 100;
+
+  // Realize 50% cash & profit
+  solanaBotState.wallet.cash += (marginToClose + grossPnl - exitTakerFee);
+  solanaBotState.wallet.realizedPnl += netPnlUsd;
+  solanaBotState.wallet.totalFeesPaid += exitTakerFee;
+  solanaBotState.wallet.tradesWon++;
+
+  // Update remaining position (50% runner)
+  pos.shares -= sharesToSell;
+  pos.marginUsd -= marginToClose;
+  pos.tp1Triggered = true;
+  pos.tp1BankedProfitUsd = netPnlUsd;
+  pos.tp1ExitPrice = exitPrice;
+  // Breakeven price covers original entry price plus roundtrip taker fees (30 bps)
+  pos.breakevenPrice = pos.entryPrice * 1.003;
+  pos.peakPrice = Math.max(pos.peakPrice || exitPrice, exitPrice);
+
+  // Recalculate equity
+  const openPositionsValue = solanaBotState.activePositions.reduce((acc, p) => acc + (p.shares * p.currentPrice), 0);
+  solanaBotState.wallet.currentEquity = solanaBotState.wallet.cash + openPositionsValue;
+  if (solanaBotState.wallet.currentEquity > solanaBotState.wallet.peakEquity) {
+    solanaBotState.wallet.peakEquity = solanaBotState.wallet.currentEquity;
+  }
+  persistSolanaWallet();
+
+  // Record partial take-profit trade in journal & SQLite
+  const tradeRef = `SOL-TP1-${Date.now().toString().slice(-6)}`;
+  const tradeEntry = {
+    id: solanaBotState.executedTrades.length + 1,
+    tradeRef,
+    time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+    token: pos.token.symbol,
+    dex: pos.token.dex || "Raydium",
+    entryPrice: pos.entryPrice,
+    exitPrice,
+    marginUsd: marginToClose,
+    pnlUsd: netPnlUsd,
+    pnlPct: netReturnPct,
+    feesPaid: entryFee + exitTakerFee,
+    exitReason: `TAKE_PROFIT_1 (Banked 50% Tranche at +${netReturnPct.toFixed(2)}%)`,
+    isWin: true,
+    learningNote: "💰 Scaled Out 50% (Runner at BE)",
+  };
+
+  solanaBotState.executedTrades.unshift(tradeEntry);
+
+  api("/api/market/solana/trades", {
+    method: "POST",
+    body: JSON.stringify({
+      trade_ref: tradeRef,
+      token_symbol: pos.token.symbol,
+      token_name: pos.token.name || pos.token.symbol,
+      dex: pos.token.dex || "Raydium",
+      entry_price: pos.entryPrice,
+      exit_price: exitPrice,
+      margin_usd: marginToClose,
+      pnl_usd: netPnlUsd,
+      pnl_pct: netReturnPct,
+      fees_paid_usd: entryFee + exitTakerFee,
+      exit_reason: `TAKE_PROFIT_1 (Banked 50% Tranche: +${netReturnPct.toFixed(2)}%)`,
+      is_win: true,
+      features_json: JSON.stringify(pos.entryFeatures || []),
+    }),
+  }).then(() => {
+    solanaBotState.databaseInfo.tradesCount++;
+    if (elements.solanaDbText) {
+      elements.solanaDbText.textContent = `solana_trades.db (${solanaBotState.databaseInfo.tradesCount} trades, ${solanaBotState.databaseInfo.trapsCount} traps)`;
+    }
+  }).catch((err) => console.warn("Failed to persist TP1 trade to SQLite:", err));
+
+  showToast(`💰 [TP1 BANKED] ${pos.token.symbol} booked +$${netPnlUsd.toFixed(2)} (+${netReturnPct.toFixed(1)}%)! Remaining 50% runner protected at breakeven.`);
+}
+
 function openPosition(token, marginUsd, fvgType = "BULLISH_FVG") {
   const safeFvg = String(fvgType || "BULLISH_FVG");
   const takerFeeUsd = marginUsd * 0.0015; // 15 bps fee
@@ -1189,6 +1276,8 @@ function openPosition(token, marginUsd, fvgType = "BULLISH_FVG") {
     currentPrice: entryPrice,
     peakPrice: entryPrice,
     tp1Triggered: false,
+    tp1BankedProfitUsd: 0.0,
+    breakevenPrice: entryPrice * 1.003,
     shares,
     entryTime: Date.now(),
     entryFeatures: rawFeatures,
@@ -1227,12 +1316,12 @@ function closePosition(pos, exitReason, isEmergencyHalt = false) {
   }
   persistSolanaWallet();
 
-  const isWin = netPnlUsd > 0;
+  const isWin = netPnlUsd > 0 || Boolean(pos.tp1Triggered);
   if (isWin) {
     solanaBotState.wallet.tradesWon++;
   } else {
     solanaBotState.wallet.tradesLost++;
-    let failurePattern = "Defensive Stop-Loss (-3.0%)";
+    let failurePattern = "Defensive Stop-Loss (-2.0%)";
     if ((pos.token.price_change_5m || 0) > 3.5) {
       failurePattern = "FOMO Overbought Exhaustion";
     } else if ((pos.token.volatility_score || 0) > 92) {
@@ -1256,7 +1345,7 @@ function closePosition(pos, exitReason, isEmergencyHalt = false) {
     feesPaid: entryFee + exitTakerFee,
     exitReason,
     isWin,
-    learningNote: isWin ? "🟢 Captured Edge" : "🔴 Doubted (Stage 1)",
+    learningNote: isWin ? (pos.tp1Triggered ? "🛡️ BE Runner Exit" : "🟢 Captured Edge") : "🔴 Doubted (Stage 1)",
   };
 
   solanaBotState.executedTrades.unshift(tradeEntry);
@@ -1666,13 +1755,14 @@ function renderMultiPositionsTable() {
     const formattedEntry = pos.entryPrice < 0.001 ? pos.entryPrice.toFixed(7) : pos.entryPrice.toFixed(4);
     const formattedCurrent = pos.currentPrice < 0.001 ? pos.currentPrice.toFixed(7) : pos.currentPrice.toFixed(4);
 
-    const tpLabel = pos.tp1Triggered
-      ? `<span style="color: var(--sage); font-weight: 700;">Trailing Runner</span> <small style="color: var(--muted);">(Peak: $${pos.peakPrice < 0.001 ? pos.peakPrice.toFixed(6) : pos.peakPrice.toFixed(4)})</small>`
-      : `<span style="color: var(--sage);">+3.5% (+2R)</span> <small style="color: var(--muted);">(+$${(pos.marginUsd * 0.035).toFixed(2)})</small>`;
+    const isRunner = Boolean(pos.tp1Triggered);
+    const tpLabel = isRunner
+      ? `<span style="color: var(--sage); font-weight: 700;">🏃 50% Runner Active</span> <small style="color: var(--muted);">(Peak: $${pos.peakPrice < 0.001 ? pos.peakPrice.toFixed(6) : pos.peakPrice.toFixed(4)})</small>`
+      : `<span style="color: var(--sage);">+3.5% (Scale 50%)</span> <small style="color: var(--muted);">(+$${(pos.marginUsd * 0.035).toFixed(2)})</small>`;
 
-    const slLabel = pos.tp1Triggered
-      ? `<span style="color: var(--sage); font-weight: 600;">Breakeven ($0 Risk)</span>`
-      : `<span style="color: var(--danger);">-3.0% Confluence</span> <small style="color: var(--muted);">(-$${(pos.marginUsd * 0.03).toFixed(2)})</small>`;
+    const slLabel = isRunner
+      ? `<span style="color: var(--sage); font-weight: 700; background: rgba(52, 211, 153, 0.12); padding: 2px 6px; border-radius: 4px;">🛡️ Breakeven ($0 Risk)</span>`
+      : `<span style="color: var(--danger); font-weight: 600;">-2.0% Risk Guard</span> <small style="color: var(--muted);">(-$${(pos.marginUsd * 0.02).toFixed(2)})</small>`;
 
     return `
       <tr>
@@ -1680,7 +1770,7 @@ function renderMultiPositionsTable() {
           <div class="token-cell-title"><strong>${pos.token.symbol}</strong> <span class="token-cell-dex">· ${pos.token.dex || 'Raydium'}</span></div>
           <small style="color: var(--muted); font-size: 0.7rem;">${pos.fvgType || 'Bullish Retest'}</small>
         </td>
-        <td><strong>$${pos.marginUsd.toFixed(2)}</strong> <small style="color: var(--muted);">(2%)</small></td>
+        <td><strong>$${pos.marginUsd.toFixed(2)}</strong> ${isRunner ? '<small style="color: var(--sage); font-weight: 600;">(50% Left)</small>' : '<small style="color: var(--muted);">(1/15th)</small>'}</td>
         <td>$${formattedEntry}</td>
         <td>$${formattedCurrent}</td>
         <td style="color: ${pnlColor}; font-weight: 700;">${sign}$${Math.abs(pnl).toFixed(2)} (${sign}${Math.abs(pnlPct).toFixed(2)}%)</td>
