@@ -295,8 +295,8 @@ function bindEvents() {
   if (elements.btnApplyCustomBalance) {
     elements.btnApplyCustomBalance.addEventListener("click", () => {
       const amount = Number(elements.customWalletBalanceInput?.value);
-      if (!amount || amount < 10) {
-        showToast("⚠️ Please enter a valid amount of at least $10.00.");
+      if (!amount || amount < 1) {
+        showToast("⚠️ Please enter a valid amount of at least $1.00.");
         return;
       }
       setCustomWalletBalance(amount);
@@ -1027,7 +1027,7 @@ function computeTokenRvol(candidate) {
   return rounded;
 }
 
-function scoreCandidateSetup(candidate, isSolBullish) {
+function scoreCandidateSetup(candidate, isSolBullish, timesfmInsight = null) {
   const rvol = computeTokenRvol(candidate);
   candidate.rvol = rvol;
 
@@ -1064,6 +1064,21 @@ function scoreCandidateSetup(candidate, isSolBullish) {
   if (isSolBullish) score += 10;
   else score -= 10;
 
+  // 5. TimesFM Foundation Model Quantile Synergy (+/- 15 pts)
+  if (timesfmInsight) {
+    const p50Bps = timesfmInsight.expectedReturnBps || 0;
+    if (p50Bps >= 150) {
+      score += 15; // High confidence upward quantile forecast
+      candidate.timesfmEdge = "BULLISH_SURGE";
+    } else if (p50Bps >= 50) {
+      score += 8;
+      candidate.timesfmEdge = "MODERATE_EXPANSION";
+    } else if (p50Bps < -80) {
+      score -= 20; // High probability downward drift / trap
+      candidate.timesfmEdge = "BEARISH_CONTRACTION";
+    }
+  }
+
   const finalScore = Math.max(10, Math.min(99, Math.round(score)));
   candidate.qualityScore = finalScore;
   candidate.grade = finalScore >= 80 ? "A+" : finalScore >= 70 ? "A" : finalScore >= 60 ? "B" : "C";
@@ -1076,12 +1091,15 @@ async function runSolanaAutonomousTick() {
   try {
     solanaBotState.tickCount++;
 
-    // Step 1: Drawdown Check (Strict 20% Max Loss Circuit Breaker: $8,000 threshold)
+    // Step 1: Drawdown Check (Strict 20% Max Loss Circuit Breaker with Dynamic High-Water Mark Ratchet)
     const peak = solanaBotState.wallet.peakEquity;
     const current = solanaBotState.wallet.currentEquity;
     const drawdown = (peak - current) / Math.max(1, peak);
 
-    if (drawdown >= 0.20 || current <= (solanaBotState.wallet.initialEquity * 0.80)) {
+    // Dynamic Trailing Floor: Ratchets upwards with realized profits to protect gains
+    const trailingHaltFloor = Math.max(solanaBotState.wallet.initialEquity * 0.80, peak * 0.80);
+
+    if (drawdown >= 0.20 || current <= trailingHaltFloor) {
       stopSolanaAutonomousBot("CIRCUIT_BREAKER_20PCT_LOSS");
       return;
     }
@@ -1179,10 +1197,16 @@ async function runSolanaAutonomousTick() {
     const isMacroDumping = (solBenchmark.price_change_5m || 0) < -2.2 || (solBenchmark.price_change_1h || 0) < -5.0;
     const isSolBullish = (solBenchmark.price_change_1h || 0) > 0.0 && (solBenchmark.price_change_5m || 0) > -0.8;
 
-    // STEP A: Rank & Score Candidates by Volume Velocity (RVOL), Liquidity, and FVG Confluence
+    // TimesFM Foundation Model Ecosystem Insight
+    const timesfmInsight = solanaBotState.latestTimesfmResult ? {
+      expectedReturnBps: solanaBotState.latestTimesfmResult.expectedReturnBps || solanaBotState.latestTimesfmResult.expected_return_bps || 0,
+      meanRevProb: solanaBotState.latestTimesfmResult.meanReversionProbability || solanaBotState.latestTimesfmResult.mean_reversion_probability || 0.5,
+    } : null;
+
+    // STEP A: Rank & Score Candidates by Volume Velocity (RVOL), Liquidity, FVG Confluence, and TimesFM
     const rankedCandidates = candidatePool
       .map((c) => {
-        const score = scoreCandidateSetup(c, isSolBullish);
+        const score = scoreCandidateSetup(c, isSolBullish, timesfmInsight);
         return { candidate: c, score };
       })
       .sort((a, b) => b.score - a.score);
@@ -1209,23 +1233,11 @@ async function runSolanaAutonomousTick() {
         continue; // Skip illiquid / stagnant coins with no volume velocity
       }
 
-      // CONFLUENCE METRIC 3: Liquidity Depth & Price Impact Shield (DEX AMM Slippage Defense)
+      // CONFLUENCE METRIC 3: Liquidity Depth
       const vol24h = candidate.volume_24h || 500000;
       const liqUsd = candidate.liquidity_usd || 100000;
       if (vol24h < 40000 || liqUsd < 15000) {
         continue;
-      }
-
-      // Cap position size if estimated price impact > 0.40%
-      const priceImpactPct = (tradeMarginUsd / Math.max(1, liqUsd)) * 100;
-      if (priceImpactPct > 0.40) {
-        const maxSafeMargin = Math.floor(liqUsd * 0.0040 * 100) / 100;
-        if (maxSafeMargin >= 5.0) {
-          tradeMarginUsd = maxSafeMargin;
-          tradeFeeUsd = tradeMarginUsd * singleFeeRate;
-        } else {
-          continue; // Liquidity pool too shallow for safe spot execution without high slippage
-        }
       }
 
       // CONFLUENCE METRIC 4: Anti-FOMO & Overbought Filter (Never buy extreme tops)
@@ -1241,7 +1253,12 @@ async function runSolanaAutonomousTick() {
         continue;
       }
 
-      // CONFLUENCE METRIC 6: Setup Grade Gate (Must be at least Grade B / Score >= 60)
+      // CONFLUENCE METRIC 6: TimesFM Foundation Model Quantile Gate (Rejects downward drift)
+      if (candidate.timesfmEdge === "BEARISH_CONTRACTION") {
+        continue; // TimesFM predicts bearish continuation/fakeout
+      }
+
+      // CONFLUENCE METRIC 7: Setup Grade Gate (Must be at least Grade B / Score >= 60)
       if (score < 60) {
         continue;
       }
@@ -1252,7 +1269,7 @@ async function runSolanaAutonomousTick() {
       // Grade B (Score 60-69): 0.80x starter slot
       const convictionMultiplier = score >= 80 ? 1.20 : score >= 70 ? 1.00 : 0.80;
       const targetSlotUsd = baseSlotEquityUsd * convictionMultiplier;
-      const targetMarginUsd = Math.max(5.0, Math.floor((targetSlotUsd / (1 + singleFeeRate)) * 100) / 100);
+      const targetMarginUsd = Math.max(0.10, Math.floor((targetSlotUsd / (1 + singleFeeRate)) * 100) / 100);
 
       // Cash Solvency & Trade Allocation Check
       let tradeMarginUsd = targetMarginUsd;
@@ -1260,11 +1277,24 @@ async function runSolanaAutonomousTick() {
 
       if (solanaBotState.wallet.cash < (tradeMarginUsd + tradeFeeUsd)) {
         const availableCashMargin = Math.floor((solanaBotState.wallet.cash / (1 + singleFeeRate)) * 100) / 100;
-        if (availableCashMargin >= 5.0) {
+        if (availableCashMargin >= 0.10) {
           tradeMarginUsd = availableCashMargin;
           tradeFeeUsd = tradeMarginUsd * singleFeeRate;
         } else {
           break; // Fully deployed; no cash left for another spot trade
+        }
+      }
+
+      // CONFLUENCE METRIC 8: Liquidity Depth & Price Impact Shield (DEX AMM Slippage Defense)
+      // Cap position size if estimated price impact > 0.40%
+      const priceImpactPct = (tradeMarginUsd / Math.max(1, liqUsd)) * 100;
+      if (priceImpactPct > 0.40) {
+        const maxSafeMargin = Math.floor(liqUsd * 0.0040 * 100) / 100;
+        if (maxSafeMargin >= 0.10) {
+          tradeMarginUsd = maxSafeMargin;
+          tradeFeeUsd = tradeMarginUsd * singleFeeRate;
+        } else {
+          continue; // Liquidity pool too shallow for safe spot execution without high slippage
         }
       }
 
@@ -1763,8 +1793,8 @@ function resetSolanaWallet() {
 }
 
 function setCustomWalletBalance(amount) {
-  if (typeof amount !== "number" || isNaN(amount) || amount < 10) {
-    showToast("⚠️ Please enter a valid wallet balance (minimum $10.00).");
+  if (typeof amount !== "number" || isNaN(amount) || amount < 1) {
+    showToast("⚠️ Please enter a valid wallet balance (minimum $1.00).");
     return;
   }
 
@@ -1888,8 +1918,8 @@ function updateSolanaWalletHUD() {
   }
 
   if (elements.circuitDangerHint) {
-    const circuitLimitUsd = wallet.initialEquity * 0.80;
-    elements.circuitDangerHint.textContent = `Halts automatically at $${circuitLimitUsd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (-20%)`;
+    const trailingHaltFloor = Math.max(wallet.initialEquity * 0.80, peak * 0.80);
+    elements.circuitDangerHint.textContent = `Trailing halt floor at $${trailingHaltFloor.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (-20% from peak $${peak.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`;
   }
 
   if (elements.circuitStatusBadge) {

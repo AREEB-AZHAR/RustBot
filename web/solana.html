@@ -1,16 +1,21 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>RustBot · Solana Autonomous HFT Agent &amp; TimesFM Matrix</title>
-  <meta name="description" content="High-frequency autonomous Solana DEX volatility trading agent powered by TimesFM predictive matrix attention, Fair Value Gaps, and 3-stage continuous learning." />
+  <meta name="description"
+    content="High-frequency autonomous Solana DEX volatility trading agent powered by TimesFM predictive matrix attention, Fair Value Gaps, and 3-stage continuous learning." />
   <script src="/theme-init.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap"
+    rel="stylesheet" />
   <link rel="stylesheet" href="/solana.css?v=18" />
 </head>
+
 <body>
   <div class="app-shell">
     <!-- Sidebar Navigation Rail -->
@@ -84,7 +89,8 @@
         </div>
 
         <div class="header-right">
-          <button class="theme-toggle-btn" id="theme-toggle-btn" type="button" aria-label="Toggle theme (Light / Dark)" title="Toggle theme (Light / Dark)">
+          <button class="theme-toggle-btn" id="theme-toggle-btn" type="button" aria-label="Toggle theme (Light / Dark)"
+            title="Toggle theme (Light / Dark)">
             <span class="theme-icon" aria-hidden="true">☀️</span>
           </button>
           <div class="status-pill">
@@ -109,7 +115,8 @@
                 <p>Continuous On-Chain Scanner · Fair Value Gap Exploitation · 20% Loss Circuit Breaker</p>
               </div>
               <div class="solana-header-controls">
-                <div class="solana-db-pill" id="solana-db-pill" title="Autonomous trades and 3-stage memory persist in dedicated solana_trades.db">
+                <div class="solana-db-pill" id="solana-db-pill"
+                  title="Autonomous trades and 3-stage memory persist in dedicated solana_trades.db">
                   <span class="db-dot"></span>
                   <span id="solana-db-text">solana_trades.db (Syncing)</span>
                 </div>
@@ -125,11 +132,13 @@
                   <span class="btn-icon">🛑</span>
                   <span>Stop Bot (Operator Halt)</span>
                 </button>
-                <button type="button" class="btn-set-balance" id="btn-open-set-balance" title="Set custom virtual wallet balance">
+                <button type="button" class="btn-set-balance" id="btn-open-set-balance"
+                  title="Set custom virtual wallet balance">
                   <span class="btn-icon">💵</span>
                   <span>Set Balance</span>
                 </button>
-                <button type="button" class="btn-reset-solana" id="btn-reset-solana-wallet" title="Reset Wallet to baseline">
+                <button type="button" class="btn-reset-solana" id="btn-reset-solana-wallet"
+                  title="Reset Wallet to baseline">
                   <span>↺ Reset</span>
                 </button>
               </div>
@@ -184,7 +193,8 @@
                   <span class="badge-chip" id="solana-active-token-badge">0 / 15 IN PLAY</span>
                 </div>
                 <div class="position-details" id="solana-position-details">
-                  <span class="no-position-label">Bot ready to trade multiple Solana coins (2% margin / $200 each)…</span>
+                  <span class="no-position-label">Bot ready to trade multiple Solana coins (2% margin / $200
+                    each)…</span>
                 </div>
               </div>
             </div>
@@ -201,12 +211,14 @@
                   <p>Continuous trade fact-checking, dynamic margin resizing, and anti-drawdown defense.</p>
                 </div>
                 <div class="sentinel-controls-block">
-                  <label class="autopilot-switch-label" title="When active, the bot starts automatically, recovers from transient faults, scans continuously, and optimizes risk without human input.">
+                  <label class="autopilot-switch-label"
+                    title="When active, the bot starts automatically, recovers from transient faults, scans continuously, and optimizes risk without human input.">
                     <input type="checkbox" id="autopilot-master-toggle" checked />
                     <span class="switch-slider"></span>
                     <span class="switch-text">Auto-Pilot: <strong id="autopilot-status-text">ENGAGED</strong></span>
                   </label>
-                  <button type="button" class="btn-audit-now" id="btn-trigger-ai-audit" title="Trigger immediate OpenRouter AI position history fact-check">
+                  <button type="button" class="btn-audit-now" id="btn-trigger-ai-audit"
+                    title="Trigger immediate OpenRouter AI position history fact-check">
                     <span>⚡ Audit Risk Now</span>
                   </button>
                 </div>
@@ -252,7 +264,8 @@
                   <span class="commentary-time" id="ai-audit-timestamp">Audited: Just now</span>
                 </div>
                 <p class="commentary-body" id="ai-audit-verdict">
-                  Autonomous sentinel initialized. Monitoring Solana DEX order flow, verifying execution slippage against 1:2 R:R targets, and dynamically pacing portfolio deployment across 40+ tokens.
+                  Autonomous sentinel initialized. Monitoring Solana DEX order flow, verifying execution slippage
+                  against 1:2 R:R targets, and dynamically pacing portfolio deployment across 40+ tokens.
                 </p>
                 <div class="sentinel-cooldown-tags" id="ai-cooldown-tags">
                   <!-- Token specific directives will render here -->
@@ -270,7 +283,8 @@
                 <div class="positions-meta-chips">
                   <span class="badge-chip" id="allocated-margin-chip">Allocated Margin: $0.00 (0.0%)</span>
                   <span class="badge-chip" id="unrealized-pnl-chip">Unrealized PnL: +$0.00</span>
-                  <button type="button" class="btn-close-all" id="btn-close-all-positions" style="display: none;" onclick="closeAllPositions('Manual Close All')">Close All</button>
+                  <button type="button" class="btn-close-all" id="btn-close-all-positions" style="display: none;"
+                    onclick="closeAllPositions('Manual Close All')">Close All</button>
                 </div>
               </div>
 
@@ -291,7 +305,8 @@
                   <tbody id="multi-positions-tbody">
                     <tr>
                       <td colspan="8" style="text-align: center; color: var(--muted); padding: 18px;">
-                        No active positions held. Start the Solana Bot to enter concurrent 1/15th balance ($666) trades with asymmetric scale-out exits.
+                        No active positions held. Start the Solana Bot to enter concurrent 1/15th balance ($666) trades
+                        with asymmetric scale-out exits.
                       </td>
                     </tr>
                   </tbody>
@@ -309,9 +324,11 @@
                     <h3>High-Volatility Solana DEX Pairs</h3>
                   </div>
                   <div class="header-actions-inline" style="display: flex; gap: 8px; align-items: center;">
-                    <input type="text" id="solana-token-search" placeholder="Search Solana coins..." style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 8px; color: #fff; padding: 4px 10px; font-size: 0.78rem; width: 170px;" />
+                    <input type="text" id="solana-token-search" placeholder="Search Solana coins..."
+                      style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 8px; color: #fff; padding: 4px 10px; font-size: 0.78rem; width: 170px;" />
                     <span class="badge-chip" id="solana-scanned-count">0 Pairs</span>
-                    <button type="button" class="btn-refresh-scan" id="btn-refresh-solana-scan" title="Force chain scan">🔄 Scan</button>
+                    <button type="button" class="btn-refresh-scan" id="btn-refresh-solana-scan"
+                      title="Force chain scan">🔄 Scan</button>
                   </div>
                 </div>
                 <div class="solana-tokens-scroll">
@@ -363,7 +380,8 @@
                 </div>
 
                 <div class="timesfm-canvas-container">
-                  <canvas id="timesfm-forecast-canvas" height="170" aria-label="TimesFM Multi-Step Forecast &amp; Attention Quantiles"></canvas>
+                  <canvas id="timesfm-forecast-canvas" height="170"
+                    aria-label="TimesFM Multi-Step Forecast &amp; Attention Quantiles"></canvas>
                   <div class="timesfm-legend">
                     <span><span class="legend-dot p90"></span>P90 Upper Quantile</span>
                     <span><span class="legend-dot p50"></span>P50 Median Forecast</span>
@@ -382,11 +400,15 @@
                   <p>STEP 03 · 3-STAGE CONTINUOUS LEARNING ENGINE</p>
                   <h3>Adaptive Mistake Ledger &amp; Pattern Re-test Verification</h3>
                 </div>
-                <div class="learning-counts-group" style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                <div class="learning-counts-group"
+                  style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
                   <span class="stage-tag stage-1" id="tag-stage-1-count">Stage 1: 0 Doubts</span>
                   <span class="stage-tag stage-2" id="tag-stage-2-count">Stage 2: 0 Re-testing</span>
                   <span class="stage-tag stage-3" id="tag-stage-3-count">Stage 3: 0 Permanent Traps</span>
-                  <button type="button" class="btn-refresh-scan" id="btn-reassess-vetoes" style="font-size: 0.75rem; padding: 4px 10px; background: rgba(240, 112, 68, 0.15); border: 1px solid rgba(240, 112, 68, 0.35); color: #fff; border-radius: 8px; cursor: pointer;" title="Re-assess Stage 3 veto records and downgrade them to active re-testing so trades resume">🔄 Re-assess Vetoes</button>
+                  <button type="button" class="btn-refresh-scan" id="btn-reassess-vetoes"
+                    style="font-size: 0.75rem; padding: 4px 10px; background: rgba(240, 112, 68, 0.15); border: 1px solid rgba(240, 112, 68, 0.35); color: #fff; border-radius: 8px; cursor: pointer;"
+                    title="Re-assess Stage 3 veto records and downgrade them to active re-testing so trades resume">🔄
+                    Re-assess Vetoes</button>
                 </div>
               </div>
 
@@ -394,19 +416,22 @@
                 <div class="stage-box">
                   <span class="stage-num">Stage 1</span>
                   <strong>Doubt &amp; Quarantine</strong>
-                  <p>When a trade loses or stops out, the setup is immediately doubted and quarantined so it isn't repeated blindly.</p>
+                  <p>When a trade loses or stops out, the setup is immediately doubted and quarantined so it isn't
+                    repeated blindly.</p>
                 </div>
                 <div class="stage-arrow" aria-hidden="true">→</div>
                 <div class="stage-box">
                   <span class="stage-num">Stage 2</span>
                   <strong>Historical Re-test (2x)</strong>
-                  <p>Replays the pattern across 2 distinct historical windows. If it fails 2x more, it's confirmed a structural trap. If it wins 2x, doubt is cleared.</p>
+                  <p>Replays the pattern across 2 distinct historical windows. If it fails 2x more, it's confirmed a
+                    structural trap. If it wins 2x, doubt is cleared.</p>
                 </div>
                 <div class="stage-arrow" aria-hidden="true">→</div>
                 <div class="stage-box">
                   <span class="stage-num">Stage 3</span>
                   <strong>Permanent Commit &amp; Veto</strong>
-                  <p>Confirmed traps are permanently locked into the Mistake Store to veto future entries via feature cosine distance checks.</p>
+                  <p>Confirmed traps are permanently locked into the Mistake Store to veto future entries via feature
+                    cosine distance checks.</p>
                 </div>
               </div>
 
@@ -474,26 +499,31 @@
     </main>
 
     <!-- Set Custom Wallet Balance Modal -->
-    <div class="modal-backdrop" id="wallet-balance-modal" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="modal-balance-title">
+    <div class="modal-backdrop" id="wallet-balance-modal" style="display: none;" role="dialog" aria-modal="true"
+      aria-labelledby="modal-balance-title">
       <div class="modal-dialog">
         <div class="modal-header">
           <div class="modal-title-group">
             <span class="modal-badge">PORTFOLIO SIZING</span>
             <h3 id="modal-balance-title">Set Virtual Wallet Balance</h3>
           </div>
-          <button type="button" class="modal-close-btn" id="btn-close-balance-modal" aria-label="Close modal">&times;</button>
+          <button type="button" class="modal-close-btn" id="btn-close-balance-modal"
+            aria-label="Close modal">&times;</button>
         </div>
         <div class="modal-body">
           <p class="modal-description">
-            Choose a preset or enter any custom capital. All 15 concurrent trading slots automatically scale to <strong>1/15th (6.67%)</strong> with risk guards active.
+            Choose a preset or enter any custom capital. All 15 concurrent trading slots automatically scale to
+            <strong>1/15th (6.67%)</strong> with risk guards active.
           </p>
-          
+
           <label class="modal-section-label">Quick Presets</label>
           <div class="balance-presets-grid">
+            <button type="button" class="btn-preset" data-amount="5">$5 <small>(Micro)</small></button>
             <button type="button" class="btn-preset" data-amount="500">$500 <small>(Micro)</small></button>
             <button type="button" class="btn-preset" data-amount="1000">$1,000 <small>(Starter)</small></button>
             <button type="button" class="btn-preset" data-amount="5000">$5,000 <small>(Growth)</small></button>
-            <button type="button" class="btn-preset active" data-amount="10000">$10,000 <small>(Standard)</small></button>
+            <button type="button" class="btn-preset active" data-amount="10000">$10,000
+              <small>(Standard)</small></button>
             <button type="button" class="btn-preset" data-amount="25000">$25,000 <small>(Pro)</small></button>
             <button type="button" class="btn-preset" data-amount="50000">$50,000 <small>(Whale)</small></button>
           </div>
@@ -501,12 +531,13 @@
           <label for="custom-wallet-balance-input" class="modal-section-label">Custom Capital (USD)</label>
           <div class="balance-input-wrap">
             <span class="currency-symbol">$</span>
-            <input type="number" id="custom-wallet-balance-input" min="10" max="10000000" step="50" value="10000" />
+            <input type="number" id="custom-wallet-balance-input" min="1" max="10000000" step="any" value="10000" />
           </div>
 
           <div class="balance-preview-box">
             <span class="preview-icon">⚡</span>
-            <span>Allocated trade slot size: <strong id="preview-slot-size">$666.67</strong> per coin (15 concurrent slots). 20% drawdown circuit breaker at <strong id="preview-circuit-limit">$8,000.00</strong>.</span>
+            <span>Allocated trade slot size: <strong id="preview-slot-size">$666.67</strong> per coin (15 concurrent
+              slots). 20% drawdown circuit breaker at <strong id="preview-circuit-limit">$8,000.00</strong>.</span>
           </div>
         </div>
         <div class="modal-footer">
@@ -523,4 +554,5 @@
   <script src="/market_worker.js"></script>
   <script src="/solana.js?v=18"></script>
 </body>
+
 </html>
