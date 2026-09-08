@@ -2098,3 +2098,70 @@ body {
   transform: translateY(-1px);
   box-shadow: 0 6px 18px rgba(240, 112, 68, 0.45);
 }
+
+/* Multi-Timeframe (MTF) Alignment Badges */
+.badge-mtf {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  font-family: var(--font-mono);
+}
+
+.badge-mtf.triple {
+  background: rgba(52, 211, 153, 0.15);
+  border: 1px solid rgba(52, 211, 153, 0.35);
+  color: var(--sage);
+}
+
+.badge-mtf.double {
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  color: var(--cyan);
+}
+
+.badge-mtf.divergent {
+  background: rgba(224, 82, 82, 0.12);
+  border: 1px solid rgba(224, 82, 82, 0.3);
+  color: var(--danger);
+}
+
+/* Cross-DEX Smart Order Routing Badges */
+.badge-sor {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+}
+
+.badge-sor.orca {
+  background: rgba(56, 189, 248, 0.14);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
+.badge-sor.raydium {
+  background: rgba(168, 85, 247, 0.14);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.3);
+}
+
+.badge-sor.pump {
+  background: rgba(240, 112, 68, 0.14);
+  color: var(--ember);
+  border: 1px solid rgba(240, 112, 68, 0.3);
+}
+
+.sor-savings-tag {
+  color: var(--sage);
+  font-size: 0.68rem;
+  font-weight: 600;
+}

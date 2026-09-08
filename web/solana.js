@@ -24,11 +24,13 @@ const solanaBotState = {
     cash: 10000.0,
     realizedPnl: 0.0,
     totalFeesPaid: 0.0,
+    sorSavingsUsd: 0.0,
     peakEquity: 10000.0,
     maxDrawdownPct: 0.0,
     tradesWon: 0,
     tradesLost: 0,
   },
+  priceHistory1m: new Map(),
   learningEngine: {
     stage1Doubts: [],
     stage2Retesting: [],
@@ -175,6 +177,9 @@ const elements = {
   aiAuditTimestamp: document.querySelector("#ai-audit-timestamp"),
   aiAuditVerdict: document.querySelector("#ai-audit-verdict"),
   aiCooldownTags: document.querySelector("#ai-cooldown-tags"),
+  solanaSorSavings: document.querySelector("#solana-sor-savings"),
+  aiMtfFilter: document.querySelector("#ai-mtf-filter"),
+  aiSorStatus: document.querySelector("#ai-sor-status"),
 };
 
 document.addEventListener("DOMContentLoaded", initialize);
@@ -1036,9 +1041,183 @@ function computeTokenRvol(candidate) {
   return rounded;
 }
 
+/* ==========================================================================
+   Quantitative Multi-Timeframe Trend Confirmation Engine (1m · 5m · 15m)
+   ========================================================================== */
+
+function recordTokenPriceTick(symbol, price) {
+  if (!symbol || typeof price !== "number" || isNaN(price)) return;
+  if (!solanaBotState.priceHistory1m.has(symbol)) {
+    solanaBotState.priceHistory1m.set(symbol, []);
+  }
+  const history = solanaBotState.priceHistory1m.get(symbol);
+  const now = Date.now();
+  history.push({ price, time: now });
+
+  // Retain last 120 ticks (~60 seconds at 500ms cadence)
+  while (history.length > 120 || (history.length > 0 && now - history[0].time > 65000)) {
+    history.shift();
+  }
+}
+
+function computeMultiTimeframeConfluence(candidate) {
+  const symbol = candidate.symbol;
+  const currentPrice = candidate.price_usd || 1.0;
+  recordTokenPriceTick(symbol, currentPrice);
+
+  // 1. Timeframe 1: 1-Minute Micro-Timing (Tick Momentum)
+  const history = solanaBotState.priceHistory1m.get(symbol) || [];
+  let delta1m = 0.0;
+  if (history.length >= 4) {
+    const oldestPrice = history[0].price;
+    delta1m = ((currentPrice - oldestPrice) / Math.max(1e-8, oldestPrice)) * 100;
+  } else {
+    // Warm start estimate based on 5m drift velocity
+    delta1m = (candidate.price_change_5m || 0) * 0.20;
+  }
+  const is1mBullish = delta1m >= -0.06; // Turning up or holding micro support
+
+  // 2. Timeframe 2: 5-Minute Setup Trigger (Pullback Retest / Momentum Continuation)
+  const delta5m = candidate.price_change_5m || 0;
+  const is5mBullish = delta5m >= -2.5 && delta5m <= 5.5; // Healthy pullback or controlled breakout
+
+  // 3. Timeframe 3: 15-Minute Macro Regime Anchor
+  const delta1h = candidate.price_change_1h || 0;
+  const delta15m = (delta1h * 0.25) + (delta5m * 0.50);
+  const is15mBullish = delta15m >= -0.85; // Macro uptrend or consolidation
+
+  const alignedCount = (is1mBullish ? 1 : 0) + (is5mBullish ? 1 : 0) + (is15mBullish ? 1 : 0);
+
+  let status = "DIVERGENT";
+  let label = "1/3 Divergent";
+  let scoreBonus = -12;
+  let convictionMultiplier = 0.80;
+
+  if (alignedCount === 3) {
+    status = "TRIPLE_ALIGNED";
+    label = "3/3 Triple MTF";
+    scoreBonus = 15;
+    convictionMultiplier = 1.20;
+  } else if (alignedCount === 2) {
+    status = "DOUBLE_ALIGNED";
+    label = "2/3 Double MTF";
+    scoreBonus = 6;
+    convictionMultiplier = 1.00;
+  }
+
+  return {
+    status,
+    label,
+    alignedCount,
+    is1mBullish,
+    is5mBullish,
+    is15mBullish,
+    delta1m,
+    delta5m,
+    delta15m,
+    scoreBonus,
+    convictionMultiplier,
+  };
+}
+
+function renderMtfBadge(mtf) {
+  if (!mtf) {
+    return `<span class="badge-mtf double" title="Multi-Timeframe Evaluation">⏱️ 2/3 MTF</span>`;
+  }
+  if (mtf.status === "TRIPLE_ALIGNED") {
+    const d1m = (mtf.delta1m >= 0 ? "+" : "") + mtf.delta1m.toFixed(2);
+    const d5m = (mtf.delta5m >= 0 ? "+" : "") + mtf.delta5m.toFixed(2);
+    const d15m = (mtf.delta15m >= 0 ? "+" : "") + mtf.delta15m.toFixed(2);
+    return `<span class="badge-mtf triple" title="1m (${d1m}%) · 5m (${d5m}%) · 15m (${d15m}%)">🎯 3/3 TRIPLE</span>`;
+  }
+  if (mtf.status === "DOUBLE_ALIGNED") {
+    const d1m = (mtf.delta1m >= 0 ? "+" : "") + mtf.delta1m.toFixed(2);
+    const d5m = (mtf.delta5m >= 0 ? "+" : "") + mtf.delta5m.toFixed(2);
+    const d15m = (mtf.delta15m >= 0 ? "+" : "") + mtf.delta15m.toFixed(2);
+    return `<span class="badge-mtf double" title="1m (${d1m}%) · 5m (${d5m}%) · 15m (${d15m}%)">⏱️ 2/3 ALIGNED</span>`;
+  }
+  return `<span class="badge-mtf divergent" title="Conflicting momentum across timeframes">⚠️ DIVERGENT</span>`;
+}
+
+/* ==========================================================================
+   Cross-DEX Smart Order Routing (SOR) Engine
+   Simulates & routes orders across Orca Whirlpools, Raydium CLMM/CPMM, and pump.fun
+   ========================================================================== */
+
+function routeBestExecutionVenue(candidate, marginUsd) {
+  const tokenDex = (candidate.dex || "raydium").toLowerCase();
+  const liqUsd = Math.max(5000, candidate.liquidity_usd || 50000);
+  const isPumpToken = tokenDex.includes("pump") || (candidate.address || "").endsWith("pump");
+
+  const venues = [];
+
+  // Venue 1: Orca Whirlpool (Concentrated Liquidity)
+  // Low fee tiers (16 bps default, 4 bps for major pairs), 1.5x depth efficiency
+  const orcaFeeRate = (candidate.symbol === "SOL" || candidate.symbol === "MSOL" || candidate.symbol === "JITOSOL") ? 0.0004 : 0.0016;
+  const orcaPriceImpactPct = (marginUsd / (liqUsd * 1.5)) * 100;
+  const orcaTotalCostUsd = (marginUsd * orcaFeeRate) + (marginUsd * (orcaPriceImpactPct / 100));
+  venues.push({
+    venueName: "Orca Whirlpool",
+    dexTag: "orca",
+    feeRate: orcaFeeRate,
+    priceImpactPct: orcaPriceImpactPct,
+    totalCostUsd: orcaTotalCostUsd,
+    badgeText: "⚡ ORCA",
+  });
+
+  // Venue 2: Raydium (CLMM / Standard CPMM)
+  // 15 bps for CLMM, 25 bps for standard AMM pools
+  const raydiumFeeRate = liqUsd >= 500000 ? 0.0015 : 0.0025;
+  const raydiumPriceImpactPct = (marginUsd / liqUsd) * 100;
+  const raydiumTotalCostUsd = (marginUsd * raydiumFeeRate) + (marginUsd * (raydiumPriceImpactPct / 100));
+  venues.push({
+    venueName: "Raydium AMM",
+    dexTag: "raydium",
+    feeRate: raydiumFeeRate,
+    priceImpactPct: raydiumPriceImpactPct,
+    totalCostUsd: raydiumTotalCostUsd,
+    badgeText: "🌊 RAYDIUM",
+  });
+
+  // Venue 3: pump.fun (Bonding curve, only if token originated on pump.fun)
+  if (isPumpToken) {
+    const pumpFeeRate = 0.0100; // 1% bonding curve fee
+    const pumpPriceImpactPct = 0.20; // fixed curve step
+    const pumpTotalCostUsd = (marginUsd * pumpFeeRate) + (marginUsd * (pumpPriceImpactPct / 100));
+    venues.push({
+      venueName: "pump.fun Bonding",
+      dexTag: "pump",
+      feeRate: pumpFeeRate,
+      priceImpactPct: pumpPriceImpactPct,
+      totalCostUsd: pumpTotalCostUsd,
+      badgeText: "💊 PUMP.FUN",
+    });
+  }
+
+  // Sort by lowest total execution cost (Fee + Price Impact)
+  venues.sort((a, b) => a.totalCostUsd - b.totalCostUsd);
+  const bestRoute = venues[0];
+
+  // Baseline standard fee is 25 bps (0.25%)
+  const standardBaselineCost = marginUsd * 0.0025;
+  const savedUsd = Math.max(0, standardBaselineCost - bestRoute.totalCostUsd);
+  const bpsSaved = Math.round((savedUsd / Math.max(0.01, marginUsd)) * 10000);
+
+  return {
+    ...bestRoute,
+    savedUsd,
+    bpsSaved,
+    displayBadge: bpsSaved > 0 ? `${bestRoute.badgeText} (-${bpsSaved} bps)` : bestRoute.badgeText,
+  };
+}
+
 function scoreCandidateSetup(candidate, isSolBullish, timesfmInsight = null) {
   const rvol = computeTokenRvol(candidate);
   candidate.rvol = rvol;
+
+  // Compute Multi-Timeframe Alignment (1m micro + 5m setup + 15m macro)
+  const mtf = computeMultiTimeframeConfluence(candidate);
+  candidate.mtf = mtf;
 
   let score = 50;
 
@@ -1046,34 +1225,37 @@ function scoreCandidateSetup(candidate, isSolBullish, timesfmInsight = null) {
   if (rvol >= 2.5) score += 25;
   else if (rvol >= 1.8) score += 18;
   else if (rvol >= 1.4) score += 10;
-  else score -= 20; // Stagnant volume / liquidity trap
+  else if (rvol < 0.9) score -= 15;
 
-  // 2. Liquidity Depth Protection (Up to +15 pts)
+  // 2. Multi-Timeframe Alignment Bonus/Penalty (+15 / +6 / -12)
+  score += mtf.scoreBonus;
+
+  // 3. Liquidity Depth Protection (Up to +15 pts)
   const liq = candidate.liquidity_usd || 50000;
   if (liq >= 10000000) score += 15;
   else if (liq >= 1000000) score += 10;
   else if (liq >= 150000) score += 5;
-  else if (liq < 40000) score -= 15;
+  else if (liq < 10000) score -= 15;
 
-  // 3. Price Action Quality (Up to +25 pts)
+  // 4. Price Action Quality (Up to +25 pts)
   const ch5m = candidate.price_change_5m || 0;
   const ch1h = candidate.price_change_1h || 0;
 
   if (ch1h > 1.5 && ch5m >= 0.4 && ch5m <= 4.0) {
-    score += 25; // Clean momentum continuation breakout
+    score += 20; // Clean momentum continuation breakout
   } else if (ch1h > 0.0 && ch5m >= -2.2 && ch5m < 0.4) {
-    score += 20; // Bullish FVG dip pullback retest
+    score += 18; // Bullish FVG dip pullback retest
   } else if (ch5m > 6.0 || ch1h > 30.0) {
-    score -= 25; // Overbought wick blowoff top
+    score -= 20; // Overbought wick blowoff top
   } else if (ch5m < -3.0) {
-    score -= 20; // Panic sell-off knife
+    score -= 15; // Panic sell-off knife
   }
 
-  // 4. Macro Synergy with SOL Trend (+/- 10 pts)
-  if (isSolBullish) score += 10;
-  else score -= 10;
+  // 5. Macro Synergy with SOL Trend (+/- 8 pts)
+  if (isSolBullish) score += 8;
+  else score -= 8;
 
-  // 5. TimesFM Foundation Model Quantile Synergy (+/- 15 pts)
+  // 6. TimesFM Foundation Model Quantile Synergy (+/- 15 pts)
   candidate.timesfmEdge = "NEUTRAL";
   if (timesfmInsight) {
     const isTargetToken = candidate.symbol === "SOL" || (solanaBotState.selectedToken && candidate.symbol === solanaBotState.selectedToken.symbol);
@@ -1273,12 +1455,20 @@ async function runSolanaAutonomousTick() {
         continue;
       }
 
-      // CONVICTION SIZING (Kelly-Adjusted 1/15th Sizing):
-      // Grade A+ (Score >= 80): 1.20x multiplier to aggressively exploit edge
-      // Grade A (Score 70-79): 1.00x base slot
-      // Grade B (Score 60-69): 0.80x starter slot
-      const convictionMultiplier = score >= 80 ? 1.20 : score >= 70 ? 1.00 : 0.80;
+      // CONFLUENCE METRIC 8: Multi-Timeframe Trend Confirmation (1m micro + 5m setup + 15m macro)
+      const mtf = candidate.mtf || computeMultiTimeframeConfluence(candidate);
+      if (mtf && mtf.status === "DIVERGENT") {
+        continue; // Block conflicting momentum entries (<2/3 timeframe confluence)
+      }
+
+      // CONVICTION SIZING (Kelly-Adjusted 1/15th Sizing amplified by MTF alignment):
+      const convictionMultiplier = (score >= 80 ? 1.20 : score >= 70 ? 1.00 : 0.80) * (mtf ? mtf.convictionMultiplier : 1.0);
       const targetSlotUsd = baseSlotEquityUsd * convictionMultiplier;
+
+      // Cross-DEX Smart Order Routing (Simulate Orca Whirlpools, Raydium CLMM/CPMM, pump.fun)
+      const route = routeBestExecutionVenue(candidate, targetSlotUsd);
+      const singleFeeRate = route ? route.feeRate : 0.0015;
+
       const targetMarginUsd = Math.max(0.10, Math.floor((targetSlotUsd / (1 + singleFeeRate)) * 100) / 100);
 
       // Cash Solvency & Trade Allocation Check
@@ -1295,7 +1485,7 @@ async function runSolanaAutonomousTick() {
         }
       }
 
-      // CONFLUENCE METRIC 8: Liquidity Depth & Price Impact Shield (DEX AMM Slippage Defense)
+      // CONFLUENCE METRIC 9: Liquidity Depth & Price Impact Shield (DEX AMM Slippage Defense)
       // Cap position size if estimated price impact > 0.40%
       const priceImpactPct = (tradeMarginUsd / Math.max(1, liqUsd)) * 100;
       if (priceImpactPct > 0.40) {
@@ -1313,7 +1503,7 @@ async function runSolanaAutonomousTick() {
         continue;
       }
 
-      // CONFLUENCE METRIC 7: Learned Memory Veto Check (solana_trades.db)
+      // CONFLUENCE METRIC 10: Learned Memory Veto Check (solana_trades.db)
       const vetoTrap = checkStage3TrapVeto(candidate);
       if (vetoTrap) {
         solanaBotState.learningEngine.avoidedTrapsCount++;
@@ -1344,8 +1534,13 @@ async function runSolanaAutonomousTick() {
         continue;
       }
 
+      // Cumulative Smart Order Routing savings
+      if (route && route.savedUsd > 0) {
+        solanaBotState.wallet.sorSavingsUsd = (solanaBotState.wallet.sorSavingsUsd || 0) + route.savedUsd;
+      }
+
       const patternName = ch5m < 0 ? `Bullish FVG Pullback (${candidate.grade || 'A'} · ${tokenRvol.toFixed(1)}x RVOL)` : `Momentum Surge (${candidate.grade || 'A'} · ${tokenRvol.toFixed(1)}x RVOL)`;
-      openPosition(candidate, tradeMarginUsd, patternName);
+      openPosition(candidate, tradeMarginUsd, patternName, route, mtf);
     }
 
     processThreeStageLearningEngine();
@@ -1368,10 +1563,11 @@ function executePartialTakeProfit(pos, exitPrice) {
   const sellRatio = 0.50; // Sell 50% of position to bank profit and derisk
   const sharesToSell = pos.shares * sellRatio;
   const marginToClose = pos.marginUsd * sellRatio;
+  const feeRate = pos.route ? pos.route.feeRate : 0.0015;
 
-  const exitTakerFee = (sharesToSell * exitPrice) * 0.0015;
+  const exitTakerFee = (sharesToSell * exitPrice) * feeRate;
   const grossPnl = (sharesToSell * exitPrice) - marginToClose;
-  const entryFee = marginToClose * 0.0015;
+  const entryFee = marginToClose * feeRate;
   const netPnlUsd = grossPnl - (entryFee + exitTakerFee);
   const netReturnPct = (netPnlUsd / marginToClose) * 100;
 
@@ -1387,8 +1583,8 @@ function executePartialTakeProfit(pos, exitPrice) {
   pos.tp1Triggered = true;
   pos.tp1BankedProfitUsd = netPnlUsd;
   pos.tp1ExitPrice = exitPrice;
-  // Breakeven price covers original entry price plus roundtrip taker fees (30 bps)
-  pos.breakevenPrice = pos.entryPrice * 1.003;
+  // Breakeven price covers original entry price plus roundtrip taker fees
+  pos.breakevenPrice = pos.entryPrice * (1 + feeRate * 2);
   pos.peakPrice = Math.max(pos.peakPrice || exitPrice, exitPrice);
 
   // Recalculate equity
@@ -1401,12 +1597,13 @@ function executePartialTakeProfit(pos, exitPrice) {
 
   // Record partial take-profit trade in journal & SQLite
   const tradeRef = `SOL-TP1-${Date.now().toString().slice(-6)}`;
+  const tradeDex = pos.route ? pos.route.venueName : (pos.token.dex || "Raydium");
   const tradeEntry = {
     id: solanaBotState.executedTrades.length + 1,
     tradeRef,
     time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
     token: pos.token.symbol,
-    dex: pos.token.dex || "Raydium",
+    dex: tradeDex,
     entryPrice: pos.entryPrice,
     exitPrice,
     marginUsd: marginToClose,
@@ -1426,7 +1623,7 @@ function executePartialTakeProfit(pos, exitPrice) {
       trade_ref: tradeRef,
       token_symbol: pos.token.symbol,
       token_name: pos.token.name || pos.token.symbol,
-      dex: pos.token.dex || "Raydium",
+      dex: tradeDex,
       entry_price: pos.entryPrice,
       exit_price: exitPrice,
       margin_usd: marginToClose,
@@ -1444,12 +1641,15 @@ function executePartialTakeProfit(pos, exitPrice) {
     }
   }).catch((err) => console.warn("Failed to persist TP1 trade to SQLite:", err));
 
-  showToast(`💰 [TP1 BANKED] ${pos.token.symbol} booked +$${netPnlUsd.toFixed(2)} (+${netReturnPct.toFixed(1)}%)! Remaining 50% runner protected at breakeven.`);
+  showToast(`💰 [TP1 BANKED] ${pos.token.symbol} booked +$${netPnlUsd.toFixed(2)} (+${netReturnPct.toFixed(1)}%) via ${tradeDex}! Remaining 50% runner protected at breakeven.`);
 }
 
-function openPosition(token, marginUsd, fvgType = "BULLISH_FVG") {
+function openPosition(token, marginUsd, fvgType = "BULLISH_FVG", route = null, mtf = null) {
   const safeFvg = String(fvgType || "BULLISH_FVG");
-  const takerFeeUsd = marginUsd * 0.0015; // 15 bps fee
+  const effectiveRoute = route || routeBestExecutionVenue(token, marginUsd);
+  const effectiveMtf = mtf || token.mtf || computeMultiTimeframeConfluence(token);
+  const takerFeeRate = effectiveRoute ? effectiveRoute.feeRate : 0.0015;
+  const takerFeeUsd = marginUsd * takerFeeRate;
 
   if (solanaBotState.wallet.cash < marginUsd + takerFeeUsd) {
     return;
@@ -1477,11 +1677,13 @@ function openPosition(token, marginUsd, fvgType = "BULLISH_FVG") {
     peakPrice: entryPrice,
     tp1Triggered: false,
     tp1BankedProfitUsd: 0.0,
-    breakevenPrice: entryPrice * 1.003,
+    breakevenPrice: entryPrice * (1 + takerFeeRate * 2),
     shares,
     entryTime: Date.now(),
     entryFeatures: rawFeatures,
     fvgType: safeFvg,
+    route: effectiveRoute,
+    mtf: effectiveMtf,
     barsHeld: 0,
     unrealizedPnlUsd: 0.0,
     unrealizedReturnPct: 0.0,
@@ -1501,9 +1703,10 @@ function closePosition(pos, exitReason, isEmergencyHalt = false) {
   if (index === -1) return;
 
   const exitPrice = pos.currentPrice;
-  const exitTakerFee = (pos.shares * exitPrice) * 0.0015;
+  const feeRate = pos.route ? pos.route.feeRate : 0.0015;
+  const exitTakerFee = (pos.shares * exitPrice) * feeRate;
   const grossPnl = (pos.shares * exitPrice) - pos.marginUsd;
-  const entryFee = pos.marginUsd * 0.0015;
+  const entryFee = pos.marginUsd * feeRate;
   const netPnlUsd = grossPnl - (entryFee + exitTakerFee);
   const netReturnPct = (netPnlUsd / pos.marginUsd) * 100;
 
@@ -1537,12 +1740,13 @@ function closePosition(pos, exitReason, isEmergencyHalt = false) {
   }
 
   const tradeRef = `SOL-HFT-${Date.now().toString().slice(-6)}`;
+  const tradeDex = pos.route ? pos.route.venueName : (pos.token.dex || "Raydium");
   const tradeEntry = {
     id: solanaBotState.executedTrades.length + 1,
     tradeRef,
     time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
     token: pos.token.symbol,
-    dex: pos.token.dex || "Raydium",
+    dex: tradeDex,
     entryPrice: pos.entryPrice,
     exitPrice,
     marginUsd: pos.marginUsd,
@@ -1564,7 +1768,7 @@ function closePosition(pos, exitReason, isEmergencyHalt = false) {
       trade_ref: tradeRef,
       token_symbol: pos.token.symbol,
       token_name: pos.token.name || pos.token.symbol,
-      dex: pos.token.dex || "Raydium",
+      dex: tradeDex,
       entry_price: pos.entryPrice,
       exit_price: exitPrice,
       margin_usd: pos.marginUsd,
@@ -1829,6 +2033,7 @@ function setCustomWalletBalance(amount) {
     cash: amount,
     realizedPnl: 0.0,
     totalFeesPaid: 0.0,
+    sorSavingsUsd: 0.0,
     peakEquity: amount,
     maxDrawdownPct: 0.0,
     tradesWon: 0,
@@ -1928,6 +2133,11 @@ function updateSolanaWalletHUD() {
     elements.solanaFeeDrag.textContent = `DEX Fees: $${wallet.totalFeesPaid.toFixed(2)}`;
   }
 
+  if (elements.solanaSorSavings) {
+    const saved = wallet.sorSavingsUsd || 0.0;
+    elements.solanaSorSavings.textContent = `⚡ SOR Saved: $${saved.toFixed(2)}`;
+  }
+
   if (elements.circuitBarFill) {
     const meterPct = Math.min(100, (drawdownPct / 20.0) * 100);
     elements.circuitBarFill.style.width = `${meterPct}%`;
@@ -2012,8 +2222,8 @@ function renderMultiPositionsTable() {
   if (activeCount === 0) {
     elements.multiPositionsTbody.innerHTML = `
       <tr>
-        <td colspan="8" style="text-align: center; color: var(--muted); padding: 18px;">
-          No active positions held. Start the Solana Bot to enter concurrent 2% margin ($200) trades with 5-stage loss protection.
+        <td colspan="9" style="text-align: center; color: var(--muted); padding: 18px;">
+          No active positions held. Start the Solana Bot to enter concurrent 1/15th balance trades with multi-timeframe trend confirmation and Smart Order Routing.
         </td>
       </tr>`;
     return;
@@ -2037,12 +2247,20 @@ function renderMultiPositionsTable() {
       ? `<span style="color: var(--sage); font-weight: 700; background: rgba(52, 211, 153, 0.12); padding: 2px 6px; border-radius: 4px;">🛡️ Breakeven ($0 Risk)</span>`
       : `<span style="color: var(--danger); font-weight: 600;">-2.0% Risk Guard</span> <small style="color: var(--muted);">(-$${(pos.marginUsd * 0.02).toFixed(2)})</small>`;
 
+    const mtfHtml = renderMtfBadge(pos.mtf);
+    const routerTag = pos.route ? (pos.route.dexTag || 'raydium') : ((pos.token.dex || 'raydium').toLowerCase());
+    const routerLabel = pos.route ? (pos.route.displayBadge || pos.route.badgeText) : (pos.token.dex ? pos.token.dex.toUpperCase() : 'RAYDIUM');
+
     return `
       <tr>
         <td>
-          <div class="token-cell-title"><strong>${pos.token.symbol}</strong> <span class="token-cell-dex">· ${pos.token.dex || 'Raydium'}</span></div>
+          <div class="token-cell-title">
+            <strong>${pos.token.symbol}</strong>
+            <span class="badge-sor ${routerTag}">${routerLabel}</span>
+          </div>
           <small style="color: var(--muted); font-size: 0.7rem;">${pos.fvgType || 'Bullish Retest'}</small>
         </td>
+        <td>${mtfHtml}</td>
         <td><strong>$${pos.marginUsd.toFixed(2)}</strong> ${isRunner ? '<small style="color: var(--sage); font-weight: 600;">(50% Left)</small>' : '<small style="color: var(--muted);">(1/15th)</small>'}</td>
         <td>$${formattedEntry}</td>
         <td>$${formattedCurrent}</td>

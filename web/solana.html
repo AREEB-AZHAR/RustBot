@@ -167,6 +167,7 @@
                 <div class="wallet-subtext">
                   <span id="solana-winrate-stat">Win Rate: 0.0%</span>
                   <span id="solana-fee-drag">DEX Fees: $0.00</span>
+                  <span id="solana-sor-savings" style="color: var(--sage); font-weight: 600;">⚡ SOR Saved: $0.00</span>
                 </div>
               </div>
 
@@ -246,8 +247,16 @@
                   <span class="chip-val text-success" id="ai-trailing-trigger">+3.5% Net</span>
                 </div>
                 <div class="sentinel-metric-chip">
+                  <span class="chip-label">Multi-TF (1m/5m/15m)</span>
+                  <span class="chip-val text-success" id="ai-mtf-filter">≥ 2/3 Aligned</span>
+                </div>
+                <div class="sentinel-metric-chip">
+                  <span class="chip-label">Smart Order Router</span>
+                  <span class="chip-val text-success" id="ai-sor-status">Orca / Raydium Active</span>
+                </div>
+                <div class="sentinel-metric-chip">
                   <span class="chip-label">Volume Velocity</span>
-                  <span class="chip-val text-success" id="ai-min-rvol">≥ 1.4x RVOL</span>
+                  <span class="chip-val text-success" id="ai-min-rvol">≥ 1.0x RVOL</span>
                 </div>
                 <div class="sentinel-metric-chip">
                   <span class="chip-label">Audit Confidence</span>
@@ -277,7 +286,7 @@
             <div class="solana-panel multi-positions-panel" id="multi-positions-panel">
               <div class="panel-header-line">
                 <div class="card-title-group">
-                  <p>ACTIVE MULTI-TOKEN PORTFOLIO · 2% MARGIN ($200) · MAX 15 COINS</p>
+                  <p>ACTIVE MULTI-TOKEN PORTFOLIO · 1/15th SLOTS · SMART ORDER ROUTING</p>
                   <h3>Simultaneous Solana DEX Positions (<span id="active-positions-count">0 / 15 Active</span>)</h3>
                 </div>
                 <div class="positions-meta-chips">
@@ -292,7 +301,8 @@
                 <table class="multi-positions-table">
                   <thead>
                     <tr>
-                      <th>Token / DEX</th>
+                      <th>Token / Router</th>
+                      <th>MTF Trend (1m·5m·15m)</th>
                       <th>Margin (1/15th)</th>
                       <th>Entry Price</th>
                       <th>Current Price</th>
@@ -304,9 +314,9 @@
                   </thead>
                   <tbody id="multi-positions-tbody">
                     <tr>
-                      <td colspan="8" style="text-align: center; color: var(--muted); padding: 18px;">
-                        No active positions held. Start the Solana Bot to enter concurrent 1/15th balance ($666) trades
-                        with asymmetric scale-out exits.
+                      <td colspan="9" style="text-align: center; color: var(--muted); padding: 18px;">
+                        No active positions held. Start the Solana Bot to enter concurrent 1/15th balance trades
+                        with multi-timeframe trend confirmation and Smart Order Routing.
                       </td>
                     </tr>
                   </tbody>
