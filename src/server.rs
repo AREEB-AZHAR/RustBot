@@ -792,6 +792,7 @@ fn route_request(request: &Request, state: &AppState) -> Response {
         ("POST", "/api/market/solana/learned-memory") => handle_post_solana_learned_memory(request, state),
         ("POST", "/api/market/solana/learned-memory/veto") => handle_post_solana_veto(request, state),
         ("POST", "/api/market/solana/learned-memory/reassess") => handle_reassess_solana_learned_memory(request, state),
+        ("POST", "/api/market/solana/ai-risk-audit") => handle_solana_ai_risk_audit(request, state),
         ("POST", "/api/market/solana/reset-db") => handle_reset_solana_db(request, state),
         ("GET", "/api/market/solana/wallet") => handle_get_solana_wallet(request, state),
         ("POST", "/api/market/solana/wallet") => handle_post_solana_wallet(request, state),
@@ -3212,6 +3213,244 @@ fn handle_post_solana_wallet(request: &Request, state: &AppState) -> Response {
     }
 }
 
+#[derive(Debug, Clone, Deserialize)]
+struct SolanaAiRiskAuditRequest {
+    pub recent_limit: Option<usize>,
+}
+
+fn handle_solana_ai_risk_audit(request: &Request, state: &AppState) -> Response {
+    let req_payload: Option<SolanaAiRiskAuditRequest> = parse_json(&request.body).ok();
+    let limit = req_payload.and_then(|p| p.recent_limit).unwrap_or(30).clamp(5, 100);
+
+    let summary = match state.solana_db.get_audit_summary(limit) {
+        Ok(s) => s,
+        Err(err) => return Response::error(500, "Internal Server Error", &err),
+    };
+
+    // Check if OpenRouter key is available
+    if let Some(ref key) = state.config.openrouter_api_key {
+        let server_key = key.trim();
+        if !server_key.is_empty() {
+            if let Some(_guard) = state.openrouter_semaphore.acquire_timeout(Duration::from_secs(4)) {
+                if let Some(ai_decision) = call_openrouter_for_risk_audit(state, server_key, &summary) {
+                    return Response::json(200, "OK", ai_decision);
+                }
+            }
+        }
+    }
+
+    // High-resilience fallback to quantitative rules engine
+    let fallback_decision = run_fallback_risk_audit(&summary);
+    Response::json(200, "OK", fallback_decision)
+}
+
+fn call_openrouter_for_risk_audit(
+    state: &AppState,
+    server_key: &str,
+    summary: &crate::solana_db::SolanaAuditSummary,
+) -> Option<serde_json::Value> {
+    let mut recent_trades_text = String::new();
+    for t in summary.recent_trades.iter().take(10) {
+        let hold_sec = t.closed_at.saturating_sub(t.created_at);
+        recent_trades_text.push_str(&format!(
+            "- {} ({}): entry ${:.6}, exit ${:.6}, PnL ${:.2} ({:+.2}%), held {}s, exit: {}\n",
+            t.trade_ref, t.token_symbol, t.entry_price, t.exit_price, t.pnl_usd, t.pnl_pct, hold_sec, t.exit_reason
+        ));
+    }
+    if recent_trades_text.is_empty() {
+        recent_trades_text.push_str("No closed trades yet in history database.\n");
+    }
+
+    let top_tokens_str = summary
+        .most_traded_tokens
+        .iter()
+        .take(5)
+        .map(|(sym, count)| format!("{sym} ({count} trades)"))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    let prompt = format!(
+        "Live Solana Trading Ledger Audit:\n\
+         - Total Trades Evaluated: {}\n\
+         - Win Rate: {:.1}% ({} Wins, {} Losses)\n\
+         - Cumulative PnL: ${:.2} | Total Fees: ${:.2} | Net PnL: ${:.2}\n\
+         - Active Anti-Trap Memory Records: {} (Stage 3 Permanent Vetoes: {})\n\
+         - Top Traded Coins: {}\n\
+         - Recent Trades Sample:\n{}\n\n\
+         Fact-check the execution quality and return a JSON object with this EXACT structure:\n\
+         {{\n\
+           \"market_regime\": \"TRENDING_BULLISH\" | \"CHOPPY_MEAN_REVERTING\" | \"EXTREME_VOLATILITY_DEFENSE\",\n\
+           \"fact_check_verdict\": \"concise diagnosis\",\n\
+           \"recommended_margin_pct\": 1.0 to 3.0,\n\
+           \"max_concurrent_positions\": 5 to 15,\n\
+           \"tighten_stop_loss_pct\": -2.0 to -3.5,\n\
+           \"trailing_runner_trigger_pct\": 2.5 to 4.5,\n\
+           \"token_recommendations\": [\n\
+             {{\"symbol\": \"...\", \"action\": \"NORMAL\"|\"REDUCE_SIZE\"|\"COOLDOWN_30M\"|\"BOOST_WEIGHT\", \"reason\": \"...\"}}\n\
+           ],\n\
+           \"audit_confidence\": 0.0 to 1.0\n\
+         }}",
+        summary.total_trades,
+        summary.win_rate_pct,
+        summary.wins,
+        summary.losses,
+        summary.total_pnl_usd,
+        summary.total_fees_usd,
+        summary.net_profit_usd,
+        summary.active_traps_count,
+        summary.stage3_traps_count,
+        if top_tokens_str.is_empty() { "None" } else { &top_tokens_str },
+        recent_trades_text
+    );
+
+    let messages = json!([
+        {
+            "role": "system",
+            "content": "You are the Chief Quantitative Risk Officer & Portfolio Sentinel for an automated high-frequency Solana DEX trading bot. Your responsibility is to rigorously audit recent trade history, fact-check execution patterns, detect toxic order flow, prevent capital drawdowns, and adjust risk limits in real time. Return ONLY a valid JSON object matching the requested schema. Do not enclose in explanations or markdown commentary."
+        },
+        {
+            "role": "user",
+            "content": prompt
+        }
+    ]);
+
+    for &model in OPENROUTER_MODELS {
+        let body = json!({
+            "model": model,
+            "messages": messages,
+            "max_tokens": 800,
+            "temperature": 0.2
+        });
+
+        let resp = state
+            .http_client
+            .post("https://openrouter.ai/api/v1/chat/completions")
+            .header("Authorization", format!("Bearer {server_key}"))
+            .header("Content-Type", "application/json")
+            .header("HTTP-Referer", &state.config.public_origin)
+            .header("X-Title", "RustBot Solana Risk Sentinel")
+            .json(&body)
+            .send();
+
+        if let Ok(r) = resp {
+            if r.status().is_success() {
+                if let Ok(parsed) = r.json::<serde_json::Value>() {
+                    if let Some(content) = parsed["choices"][0]["message"]["content"].as_str() {
+                        let trimmed = content.trim();
+                        let clean = if let Some(stripped) = trimmed.strip_prefix("```json") {
+                            stripped.strip_suffix("```").unwrap_or(stripped).trim()
+                        } else if let Some(stripped) = trimmed.strip_prefix("```") {
+                            stripped.strip_suffix("```").unwrap_or(stripped).trim()
+                        } else {
+                            trimmed
+                        };
+
+                        if let Ok(mut json_val) = serde_json::from_str::<serde_json::Value>(clean) {
+                            if let Some(obj) = json_val.as_object_mut() {
+                                obj.insert("source".to_string(), json!("openrouter"));
+                                obj.insert("model".to_string(), json!(model));
+                                obj.insert("audit_timestamp".to_string(), json!(SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()));
+                                return Some(json_val);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
+fn run_fallback_risk_audit(summary: &crate::solana_db::SolanaAuditSummary) -> serde_json::Value {
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+
+    if summary.total_trades == 0 {
+        return json!({
+            "source": "quantitative_rules_engine",
+            "market_regime": "CHOPPY_MEAN_REVERTING",
+            "fact_check_verdict": "Baseline initialization: Awaiting initial trades. Operating at standard baseline risk parameters (2.0% margin, 15 concurrent coins max, 1:2 R:R asymmetric ratio).",
+            "recommended_margin_pct": 2.0,
+            "max_concurrent_positions": 15,
+            "tighten_stop_loss_pct": -3.0,
+            "trailing_runner_trigger_pct": 3.5,
+            "token_recommendations": [],
+            "audit_confidence": 0.80,
+            "audit_timestamp": now
+        });
+    }
+
+    let win_rate = summary.win_rate_pct;
+    let net = summary.net_profit_usd;
+
+    let (regime, verdict, margin, max_pos, stop_loss, runner_trigger) = if win_rate >= 60.0 && net >= 0.0 {
+        (
+            "TRENDING_BULLISH",
+            format!("Optimal alpha expansion: Win rate at {:.1}% with +${:.2} net PnL. Asymmetric take-profits outpacing slip and fees.", win_rate, net),
+            2.2,
+            15,
+            -3.0,
+            3.5
+        )
+    } else if win_rate < 45.0 || net < -50.0 {
+        (
+            "EXTREME_VOLATILITY_DEFENSE",
+            format!("Defensive drawdown throttle: Win rate slipped to {:.1}% (Net PnL -${:.2}). De-risking margin to 1.2% and tightening stops.", win_rate, net.abs()),
+            1.2,
+            8,
+            -2.2,
+            2.8
+        )
+    } else {
+        (
+            "CHOPPY_MEAN_REVERTING",
+            format!("Standard mean reversion: Win rate at {:.1}% across {} trades (Net PnL ${:.2}). Maintaining disciplined 1.8% margin.", win_rate, summary.total_trades, net),
+            1.8,
+            12,
+            -2.8,
+            3.2
+        )
+    };
+
+    let mut token_recommendations = Vec::new();
+    for (token, count) in summary.most_traded_tokens.iter().take(4) {
+        let token_trades: Vec<_> = summary.recent_trades.iter().filter(|t| &t.token_symbol == token).collect();
+        let token_pnl: f64 = token_trades.iter().map(|t| t.pnl_usd).sum();
+        if token_pnl < -10.0 {
+            token_recommendations.push(json!({
+                "symbol": token,
+                "action": "COOLDOWN_30M",
+                "reason": format!("Negative recent performance (-${:.2} across {} trades)", token_pnl.abs(), count)
+            }));
+        } else if token_pnl > 15.0 {
+            token_recommendations.push(json!({
+                "symbol": token,
+                "action": "BOOST_WEIGHT",
+                "reason": format!("High hit rate (+${:.2} across {} trades)", token_pnl, count)
+            }));
+        } else {
+            token_recommendations.push(json!({
+                "symbol": token,
+                "action": "NORMAL",
+                "reason": format!("Stable performance (${:+.2} across {} trades)", token_pnl, count)
+            }));
+        }
+    }
+
+    json!({
+        "source": "quantitative_rules_engine",
+        "market_regime": regime,
+        "fact_check_verdict": verdict,
+        "recommended_margin_pct": margin,
+        "max_concurrent_positions": max_pos,
+        "tighten_stop_loss_pct": stop_loss,
+        "trailing_runner_trigger_pct": runner_trigger,
+        "token_recommendations": token_recommendations,
+        "audit_confidence": 0.85,
+        "audit_timestamp": now
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -4279,5 +4518,24 @@ mod tests {
         let mem_after_data: serde_json::Value = serde_json::from_slice(&res_mem_after_veto.body).unwrap();
         assert_eq!(mem_after_data["traps"][0]["times_vetoed"], 1);
         assert_eq!(mem_after_data["traps"][0]["saved_capital_usd"], 20.0);
+
+        // 8. Test AI Risk Audit endpoint
+        let req_ai_audit = Request {
+            method: "POST".to_string(),
+            path: "/api/market/solana/ai-risk-audit".to_string(),
+            query: HashMap::new(),
+            headers: HashMap::from([("host".to_string(), "127.0.0.1:7878".to_string())]),
+            host: "127.0.0.1:7878".to_string(),
+            body: serde_json::json!({ "recent_limit": 10 }).to_string().into_bytes(),
+        };
+        let res_ai_audit = route_request(&req_ai_audit, &state);
+        assert_eq!(res_ai_audit.status, 200);
+        let audit_data: serde_json::Value = serde_json::from_slice(&res_ai_audit.body).unwrap();
+        assert!(audit_data.get("market_regime").is_some());
+        assert!(audit_data.get("recommended_margin_pct").is_some());
+        assert!(audit_data.get("max_concurrent_positions").is_some());
+        assert!(audit_data.get("tighten_stop_loss_pct").is_some());
+        assert!(audit_data.get("trailing_runner_trigger_pct").is_some());
+        assert!(audit_data.get("fact_check_verdict").is_some());
     }
 }

@@ -100,6 +100,21 @@ pub struct SolanaWalletState {
     pub updated_at: i64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SolanaAuditSummary {
+    pub total_trades: usize,
+    pub wins: usize,
+    pub losses: usize,
+    pub win_rate_pct: f64,
+    pub total_pnl_usd: f64,
+    pub total_fees_usd: f64,
+    pub net_profit_usd: f64,
+    pub recent_trades: Vec<SolanaTradeRecord>,
+    pub active_traps_count: usize,
+    pub stage3_traps_count: usize,
+    pub most_traded_tokens: Vec<(String, usize)>,
+}
+
 #[derive(Debug, Clone)]
 pub struct SolanaDb {
     conn: Arc<Mutex<Connection>>,
@@ -458,6 +473,47 @@ impl SolanaDb {
              DELETE FROM solana_wallet_state;",
         ).map_err(|e| format!("Failed to clear Solana tables: {e}"))?;
         Ok(())
+    }
+
+    pub fn get_audit_summary(&self, limit: usize) -> Result<SolanaAuditSummary, String> {
+        let recent_trades = self.list_trades(limit)?;
+        let traps = self.list_learned_memory()?;
+
+        let total_trades = recent_trades.len();
+        let wins = recent_trades.iter().filter(|t| t.is_win).count();
+        let losses = total_trades.saturating_sub(wins);
+        let win_rate_pct = if total_trades > 0 {
+            (wins as f64 / total_trades as f64) * 100.0
+        } else {
+            0.0
+        };
+        let total_pnl_usd: f64 = recent_trades.iter().map(|t| t.pnl_usd).sum();
+        let total_fees_usd: f64 = recent_trades.iter().map(|t| t.fees_paid_usd).sum();
+        let net_profit_usd = total_pnl_usd - total_fees_usd;
+
+        let active_traps_count = traps.iter().filter(|t| t.status == "ACTIVE" || t.stage > 0).count();
+        let stage3_traps_count = traps.iter().filter(|t| t.stage == 3).count();
+
+        let mut token_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        for t in &recent_trades {
+            *token_counts.entry(t.token_symbol.clone()).or_insert(0) += 1;
+        }
+        let mut most_traded_tokens: Vec<(String, usize)> = token_counts.into_iter().collect();
+        most_traded_tokens.sort_by(|a, b| b.1.cmp(&a.1));
+
+        Ok(SolanaAuditSummary {
+            total_trades,
+            wins,
+            losses,
+            win_rate_pct,
+            total_pnl_usd,
+            total_fees_usd,
+            net_profit_usd,
+            recent_trades,
+            active_traps_count,
+            stage3_traps_count,
+            most_traded_tokens,
+        })
     }
 }
 

@@ -43,6 +43,15 @@ const solanaBotState = {
     tradesCount: 0,
     trapsCount: 0,
   },
+  autoPilotEnabled: true,
+  dynamicMarginPct: 2.0,
+  maxConcurrentPositions: 15,
+  confluenceStopLossPct: -3.0,
+  trailingRunnerTriggerPct: 3.5,
+  tokenCooldownMap: new Map(),
+  lastAiAuditTimestamp: 0,
+  tradesSinceLastAudit: 0,
+  isAuditingRisk: false,
   toastTimer: null,
 };
 
@@ -142,6 +151,19 @@ const elements = {
   solanaLearningTbody: document.querySelector("#solana-learning-tbody"),
   solanaTradeJournalCount: document.querySelector("#solana-trade-journal-count"),
   solanaJournalTbody: document.querySelector("#solana-journal-tbody"),
+  autopilotMasterToggle: document.querySelector("#autopilot-master-toggle"),
+  autopilotStatusText: document.querySelector("#autopilot-status-text"),
+  btnTriggerAiAudit: document.querySelector("#btn-trigger-ai-audit"),
+  aiMarketRegime: document.querySelector("#ai-market-regime"),
+  aiDynamicMargin: document.querySelector("#ai-dynamic-margin"),
+  aiMaxPositions: document.querySelector("#ai-max-positions"),
+  aiStopLoss: document.querySelector("#ai-stop-loss"),
+  aiTrailingTrigger: document.querySelector("#ai-trailing-trigger"),
+  aiAuditConfidence: document.querySelector("#ai-audit-confidence"),
+  aiAuditSource: document.querySelector("#ai-audit-source"),
+  aiAuditTimestamp: document.querySelector("#ai-audit-timestamp"),
+  aiAuditVerdict: document.querySelector("#ai-audit-verdict"),
+  aiCooldownTags: document.querySelector("#ai-cooldown-tags"),
 };
 
 document.addEventListener("DOMContentLoaded", initialize);
@@ -149,11 +171,21 @@ document.addEventListener("DOMContentLoaded", initialize);
 async function initialize() {
   initTheme();
   bindEvents();
+  initAutoPilotState();
   updateSolanaWalletHUD();
   renderMultiPositionsTable();
   await checkAuth();
   await syncWithDedicatedDb();
   await scanSolanaChain(false);
+
+  // Trigger initial AI Risk Sentinel Audit
+  await triggerAiRiskAudit(false);
+
+  // Auto-Pilot: if engaged, launch autonomous trading loop automatically
+  if (solanaBotState.autoPilotEnabled && !solanaBotState.isRunning) {
+    console.log("[Auto-Pilot] Autonomous execution active: Starting bot without human intervention...");
+    startSolanaAutonomousBot();
+  }
 }
 
 /* ==========================================================================
@@ -229,6 +261,23 @@ function bindEvents() {
       renderSolanaTokensTable();
     });
   }
+  if (elements.autopilotMasterToggle) {
+    elements.autopilotMasterToggle.addEventListener("change", (e) => {
+      solanaBotState.autoPilotEnabled = e.target.checked;
+      try {
+        localStorage.setItem("rustbot_solana_autopilot", e.target.checked ? "true" : "false");
+      } catch (_) { }
+      updateAutoPilotUI();
+      if (solanaBotState.autoPilotEnabled && !solanaBotState.isRunning) {
+        startSolanaAutonomousBot();
+      } else if (!solanaBotState.autoPilotEnabled && solanaBotState.isRunning) {
+        stopSolanaAutonomousBot("OPERATOR_STOP");
+      }
+    });
+  }
+  if (elements.btnTriggerAiAudit) {
+    elements.btnTriggerAiAudit.addEventListener("click", () => triggerAiRiskAudit(true));
+  }
   if (elements.railToggleBtn && elements.sidebarRail) {
     elements.railToggleBtn.addEventListener("click", () => {
       elements.sidebarRail.classList.toggle("is-open");
@@ -239,6 +288,143 @@ function bindEvents() {
       drawTimesfmCanvas(solanaBotState.currentCandles, solanaBotState.latestTimesfmResult);
     }
   });
+}
+
+function initAutoPilotState() {
+  const saved = localStorage.getItem("rustbot_solana_autopilot");
+  if (saved !== null) {
+    solanaBotState.autoPilotEnabled = saved !== "false";
+  } else {
+    solanaBotState.autoPilotEnabled = true;
+  }
+  if (elements.autopilotMasterToggle) {
+    elements.autopilotMasterToggle.checked = solanaBotState.autoPilotEnabled;
+  }
+  updateAutoPilotUI();
+}
+
+function updateAutoPilotUI() {
+  if (elements.autopilotStatusText) {
+    elements.autopilotStatusText.textContent = solanaBotState.autoPilotEnabled ? "ENGAGED" : "DISABLED";
+    elements.autopilotStatusText.style.color = solanaBotState.autoPilotEnabled ? "#a78bfa" : "var(--muted)";
+  }
+}
+
+async function triggerAiRiskAudit(notifyUser = false) {
+  if (solanaBotState.isAuditingRisk) return;
+  solanaBotState.isAuditingRisk = true;
+  if (elements.btnTriggerAiAudit) elements.btnTriggerAiAudit.disabled = true;
+
+  try {
+    const res = await api("/api/market/solana/ai-risk-audit", {
+      method: "POST",
+      body: JSON.stringify({ recent_limit: 30 })
+    });
+
+    if (res) {
+      applyAiRiskDirectives(res);
+      if (notifyUser) {
+        showToast(`AI Risk Sentinel: Market regime identified as ${res.market_regime || 'ADAPTIVE'}`);
+      }
+    }
+  } catch (err) {
+    console.warn("AI Risk Audit warning:", err);
+  } finally {
+    solanaBotState.isAuditingRisk = false;
+    solanaBotState.tradesSinceLastAudit = 0;
+    if (elements.btnTriggerAiAudit) elements.btnTriggerAiAudit.disabled = false;
+  }
+}
+
+function applyAiRiskDirectives(data) {
+  if (!data) return;
+
+  // 1. Dynamic Margin %
+  if (typeof data.recommended_margin_pct === "number") {
+    solanaBotState.dynamicMarginPct = Math.max(1.0, Math.min(3.5, data.recommended_margin_pct));
+    if (elements.aiDynamicMargin) {
+      const marginUsd = (solanaBotState.wallet.currentEquity * (solanaBotState.dynamicMarginPct / 100)).toFixed(2);
+      elements.aiDynamicMargin.textContent = `${solanaBotState.dynamicMarginPct.toFixed(1)}% ($${marginUsd})`;
+    }
+  }
+
+  // 2. Max Concurrent Positions
+  if (typeof data.max_concurrent_positions === "number") {
+    solanaBotState.maxConcurrentPositions = Math.max(5, Math.min(20, data.max_concurrent_positions));
+    if (elements.aiMaxPositions) {
+      elements.aiMaxPositions.textContent = `${solanaBotState.maxConcurrentPositions} Coins`;
+    }
+  }
+
+  // 3. Adaptive Stop Loss
+  if (typeof data.tighten_stop_loss_pct === "number") {
+    solanaBotState.confluenceStopLossPct = data.tighten_stop_loss_pct;
+    if (elements.aiStopLoss) {
+      elements.aiStopLoss.textContent = `${solanaBotState.confluenceStopLossPct.toFixed(1)}% Confluence`;
+    }
+  }
+
+  // 4. Trailing Runner Trigger
+  if (typeof data.trailing_runner_trigger_pct === "number") {
+    solanaBotState.trailingRunnerTriggerPct = data.trailing_runner_trigger_pct;
+    if (elements.aiTrailingTrigger) {
+      elements.aiTrailingTrigger.textContent = `+${solanaBotState.trailingRunnerTriggerPct.toFixed(1)}% Net`;
+    }
+  }
+
+  // 5. Market Regime Pill
+  if (data.market_regime && elements.aiMarketRegime) {
+    elements.aiMarketRegime.textContent = data.market_regime;
+    elements.aiMarketRegime.className = "chip-val regime-pill " + (
+      data.market_regime.includes("BULL") ? "bullish" :
+      data.market_regime.includes("DEFENSE") ? "defense" : ""
+    );
+  }
+
+  // 6. Confidence & Source
+  if (elements.aiAuditConfidence && typeof data.audit_confidence === "number") {
+    elements.aiAuditConfidence.textContent = `${Math.round(data.audit_confidence * 100)}% Confidence`;
+  }
+  if (elements.aiAuditSource) {
+    elements.aiAuditSource.textContent = data.source === "openrouter"
+      ? `OpenRouter Risk Sentinel (${data.model || 'Auto'})`
+      : "Quantitative Risk Rules Engine (Server)";
+  }
+  if (elements.aiAuditTimestamp) {
+    elements.aiAuditTimestamp.textContent = `Audited: ${new Date().toLocaleTimeString()}`;
+  }
+
+  // 7. Fact Check Verdict Commentary
+  if (elements.aiAuditVerdict && data.fact_check_verdict) {
+    elements.aiAuditVerdict.textContent = data.fact_check_verdict;
+  }
+
+  // 8. Token Recommendations (e.g. cooldowns)
+  if (Array.isArray(data.token_recommendations)) {
+    const now = Date.now();
+    if (elements.aiCooldownTags) elements.aiCooldownTags.innerHTML = "";
+
+    for (const rec of data.token_recommendations) {
+      if (rec.action === "COOLDOWN_30M") {
+        solanaBotState.tokenCooldownMap.set(rec.symbol, now + (30 * 60 * 1000));
+        if (elements.aiCooldownTags) {
+          const pill = document.createElement("span");
+          pill.className = "cooldown-pill cooldown";
+          pill.textContent = `⏳ ${rec.symbol}: Cooldown (30m)`;
+          pill.title = rec.reason || "Underperforming";
+          elements.aiCooldownTags.appendChild(pill);
+        }
+      } else if (rec.action === "BOOST_WEIGHT") {
+        if (elements.aiCooldownTags) {
+          const pill = document.createElement("span");
+          pill.className = "cooldown-pill boost";
+          pill.textContent = `🔥 ${rec.symbol}: Boosted Weight`;
+          pill.title = rec.reason || "Strong momentum";
+          elements.aiCooldownTags.appendChild(pill);
+        }
+      }
+    }
+  }
 }
 
 async function checkAuth() {
@@ -774,169 +960,184 @@ function stopSolanaAutonomousBot(haltReason = "OPERATOR_STOP") {
 async function runSolanaAutonomousTick() {
   if (!solanaBotState.isRunning) return;
 
-  solanaBotState.tickCount++;
+  try {
+    solanaBotState.tickCount++;
 
-  // Step 1: Drawdown Check (Strict 20% Max Loss Circuit Breaker: $8,000 threshold)
-  const peak = solanaBotState.wallet.peakEquity;
-  const current = solanaBotState.wallet.currentEquity;
-  const drawdown = (peak - current) / Math.max(1, peak);
+    // Step 1: Drawdown Check (Strict 20% Max Loss Circuit Breaker: $8,000 threshold)
+    const peak = solanaBotState.wallet.peakEquity;
+    const current = solanaBotState.wallet.currentEquity;
+    const drawdown = (peak - current) / Math.max(1, peak);
 
-  if (drawdown >= 0.20 || current <= (solanaBotState.wallet.initialEquity * 0.80)) {
-    stopSolanaAutonomousBot("CIRCUIT_BREAKER_20PCT_LOSS");
-    return;
-  }
-
-  // Step 2: Manage All Active Positions Simultaneously (1:2 R:R + Trailing Runner)
-  const activePositionsCopy = [...solanaBotState.activePositions];
-  for (const pos of activePositionsCopy) {
-    pos.barsHeld++;
-
-    // Realistic volatility micro-jump based on coin's DEX volatility score
-    const vol = (pos.token.volatility_score || 80) / 100;
-    const tokenSeed = pos.token.symbol.charCodeAt(0) + pos.token.symbol.length;
-    const noise = ((Math.sin(solanaBotState.tickCount * 2.2 + tokenSeed) * 0.7) + ((Math.random() - 0.46) * 1.1)) * 0.016 * vol;
-    pos.currentPrice = Math.max(0.0000001, pos.currentPrice * (1 + noise));
-
-    pos.peakPrice = Math.max(pos.peakPrice || pos.entryPrice, pos.currentPrice);
-
-    // Fee calculations: 15 bps (0.15%) taker fee per trade leg
-    const feeRate = 0.0015;
-    const singleFeeUsd = pos.marginUsd * feeRate;
-    const entryFeeUsd = singleFeeUsd;
-    const exitFeeUsd = (pos.shares * pos.currentPrice) * feeRate;
-    const grossPnlUsd = (pos.shares * pos.currentPrice) - pos.marginUsd;
-    const netPnlUsd = grossPnlUsd - (entryFeeUsd + exitFeeUsd);
-
-    pos.unrealizedPnlUsd = netPnlUsd;
-    pos.unrealizedReturnPct = (netPnlUsd / pos.marginUsd) * 100;
-
-    // QUANTITATIVE ASYMMETRIC EXIT SYSTEM (1:2 R:R):
-    // Condition 1: Take-Profit 1 (+2R) -> Lock in profit at +3.5% net, ratchet stop loss to Breakeven (+0.35%)
-    if (!pos.tp1Triggered && pos.unrealizedReturnPct >= 3.5) {
-      pos.tp1Triggered = true;
+    if (drawdown >= 0.20 || current <= (solanaBotState.wallet.initialEquity * 0.80)) {
+      stopSolanaAutonomousBot("CIRCUIT_BREAKER_20PCT_LOSS");
+      return;
     }
 
-    // Condition 2: Trailing Stop Runner -> Once TP1 is triggered, lock if price drops 1.5% from peak
-    const peakRetracePct = ((pos.peakPrice - pos.currentPrice) / pos.peakPrice) * 100;
-    const isTrailingStop = pos.tp1Triggered && (peakRetracePct >= 1.5 || pos.unrealizedReturnPct < 0.5);
+    // Step 2: Manage All Active Positions Simultaneously (Dynamic Risk R:R + Trailing Runner)
+    const activePositionsCopy = [...solanaBotState.activePositions];
+    for (const pos of activePositionsCopy) {
+      pos.barsHeld++;
 
-    // Condition 3: Tight Confluence Stop Loss -> -3.0% (cuts loss to ~$6 on $200 trade, avoiding -15% ruin)
-    const isInitialStopLoss = !pos.tp1Triggered && (pos.unrealizedReturnPct <= -3.0);
+      // Realistic volatility micro-jump based on coin's DEX volatility score
+      const vol = (pos.token.volatility_score || 80) / 100;
+      const tokenSeed = pos.token.symbol.charCodeAt(0) + pos.token.symbol.length;
+      const noise = ((Math.sin(solanaBotState.tickCount * 2.2 + tokenSeed) * 0.7) + ((Math.random() - 0.46) * 1.1)) * 0.016 * vol;
+      pos.currentPrice = Math.max(0.0000001, pos.currentPrice * (1 + noise));
 
-    // Condition 4: HFT Stale Margin Rebalance -> If trade is flat after 24 bars (~12s), free capital
-    const isStaleTimeout = pos.barsHeld >= 24 && Math.abs(pos.unrealizedReturnPct) < 1.0;
+      pos.peakPrice = Math.max(pos.peakPrice || pos.entryPrice, pos.currentPrice);
 
-    if (isTrailingStop) {
-      closePosition(pos, `TAKE_PROFIT (Trailing Runner Locked: +${pos.unrealizedReturnPct.toFixed(2)}% Net)`, false);
-    } else if (isInitialStopLoss) {
-      closePosition(pos, `STOP_LOSS (-3.0% Confluence Defense: ${pos.unrealizedReturnPct.toFixed(2)}%)`, false);
-    } else if (isStaleTimeout) {
-      closePosition(pos, "HFT Stale Margin Rebalance", false);
-    }
-  }
+      // Fee calculations: 15 bps (0.15%) taker fee per trade leg
+      const feeRate = 0.0015;
+      const singleFeeUsd = pos.marginUsd * feeRate;
+      const entryFeeUsd = singleFeeUsd;
+      const exitFeeUsd = (pos.shares * pos.currentPrice) * feeRate;
+      const grossPnlUsd = (pos.shares * pos.currentPrice) - pos.marginUsd;
+      const netPnlUsd = grossPnlUsd - (entryFeeUsd + exitFeeUsd);
 
-  // Recalculate Current Wallet Equity
-  const openPositionsValue = solanaBotState.activePositions.reduce((acc, p) => acc + (p.shares * p.currentPrice), 0);
-  solanaBotState.wallet.currentEquity = solanaBotState.wallet.cash + openPositionsValue;
-  if (solanaBotState.wallet.currentEquity > solanaBotState.wallet.peakEquity) {
-    solanaBotState.wallet.peakEquity = solanaBotState.wallet.currentEquity;
-  }
+      pos.unrealizedPnlUsd = netPnlUsd;
+      pos.unrealizedReturnPct = (netPnlUsd / pos.marginUsd) * 100;
 
-  // Step 3: Scan Chain & Seek Multiple Simultaneous Entries Across Coins (every ~30 seconds)
-  if (solanaBotState.tickCount % 60 === 0) {
-    await scanSolanaChain(false);
-  }
+      // QUANTITATIVE ASYMMETRIC EXIT SYSTEM (Adaptive 1:2 R:R):
+      const runnerTrigger = solanaBotState.trailingRunnerTriggerPct || 3.5;
+      const stopLossPct = solanaBotState.confluenceStopLossPct || -3.0;
 
-  // Comprehensive Top Solana DEX Candidate Coins Pool (20 Tokens)
-  // Comprehensive Top Solana DEX Candidate Coins Pool (Using full scanned universe of 40+ tokens)
-  const candidatePool = solanaBotState.scannedTokens.length > 0 ? solanaBotState.scannedTokens : SOLANA_EXPANDED_CATALOG;
+      // Condition 1: Take-Profit 1 -> Lock in profit at adaptive runner threshold
+      if (!pos.tp1Triggered && pos.unrealizedReturnPct >= runnerTrigger) {
+        pos.tp1Triggered = true;
+      }
 
-  // Quantitative Multi-Position Risk Sizing:
-  // Baseline Equity: $10,000 | 2.0% Margin = $200.00 | Max 15 Concurrent Coins (Max $3,000 deployed / $7,000 buffer)
-  const MAX_CONCURRENT_POSITIONS = 15;
-  const MAX_PORTFOLIO_EXPOSURE_USD = solanaBotState.wallet.initialEquity * 0.35; // $3,500 max deployed
-  const uniformMarginUsd = Math.max(5.0, solanaBotState.wallet.currentEquity * 0.02);
-  const singleFeeUsd = uniformMarginUsd * 0.0015;
+      // Condition 2: Trailing Stop Runner -> Once TP1 is triggered, lock if price retraces 1.5% from peak
+      const peakRetracePct = ((pos.peakPrice - pos.currentPrice) / pos.peakPrice) * 100;
+      const isTrailingStop = pos.tp1Triggered && (peakRetracePct >= 1.5 || pos.unrealizedReturnPct < 0.5);
 
-  // CONFLUENCE METRIC 1: Benchmark Macro Regime Filter
-  const solBenchmark = candidatePool.find((c) => c.symbol === "SOL") || { price_change_5m: 0.5, price_change_1h: 2.0 };
-  const isMacroDumping = (solBenchmark.price_change_5m || 0) < -2.2 || (solBenchmark.price_change_1h || 0) < -5.0;
+      // Condition 3: Adaptive Confluence Stop Loss -> Defends against drawdown
+      const isInitialStopLoss = !pos.tp1Triggered && (pos.unrealizedReturnPct <= stopLossPct);
 
-  for (const candidate of candidatePool) {
-    // Portfolio Constraint 1: Maximum 15 simultaneous open positions
-    if (solanaBotState.activePositions.length >= MAX_CONCURRENT_POSITIONS) {
-      break;
-    }
+      // Condition 4: HFT Stale Margin Rebalance -> If trade is flat after 24 bars (~12s), free capital
+      const isStaleTimeout = pos.barsHeld >= 24 && Math.abs(pos.unrealizedReturnPct) < 1.0;
 
-    // Portfolio Constraint 2: Total allocated margin cap (preserves >= 65% cash buffer)
-    const currentAllocatedMargin = solanaBotState.activePositions.reduce((sum, p) => sum + p.marginUsd, 0);
-    if (currentAllocatedMargin + uniformMarginUsd > MAX_PORTFOLIO_EXPOSURE_USD) {
-      break;
+      if (isTrailingStop) {
+        closePosition(pos, `TAKE_PROFIT (Trailing Runner Locked: +${pos.unrealizedReturnPct.toFixed(2)}% Net)`, false);
+      } else if (isInitialStopLoss) {
+        closePosition(pos, `STOP_LOSS (${stopLossPct.toFixed(1)}% Confluence Defense: ${pos.unrealizedReturnPct.toFixed(2)}%)`, false);
+      } else if (isStaleTimeout) {
+        closePosition(pos, "HFT Stale Margin Rebalance", false);
+      }
     }
 
-    // Portfolio Constraint 3: Cash solvency check
-    if (solanaBotState.wallet.cash < (uniformMarginUsd + singleFeeUsd)) {
-      break;
+    // Recalculate Current Wallet Equity
+    const openPositionsValue = solanaBotState.activePositions.reduce((acc, p) => acc + (p.shares * p.currentPrice), 0);
+    solanaBotState.wallet.currentEquity = solanaBotState.wallet.cash + openPositionsValue;
+    if (solanaBotState.wallet.currentEquity > solanaBotState.wallet.peakEquity) {
+      solanaBotState.wallet.peakEquity = solanaBotState.wallet.currentEquity;
     }
 
-    // Do not open duplicate positions for the same token
-    if (solanaBotState.activePositions.some((p) => p.token.symbol === candidate.symbol)) {
-      continue;
+    // Step 3: Scan Chain & Seek Multiple Simultaneous Entries Across Coins (every ~30 seconds)
+    if (solanaBotState.tickCount % 60 === 0) {
+      await scanSolanaChain(false);
     }
 
-    // CONFLUENCE METRIC 1: Block altcoin longs during macro flush
-    if (isMacroDumping && candidate.symbol !== "SOL") {
-      continue;
+    // Step 4: Autonomous OpenRouter AI Risk Audit (Every 5 minutes)
+    if (solanaBotState.tickCount % 600 === 0) {
+      triggerAiRiskAudit(false);
     }
 
-    // CONFLUENCE METRIC 2: Liquidity Depth & Volume Guard (Protects against micro-slippage)
-    const vol24h = candidate.volume_24h || 500000;
-    const liqUsd = candidate.liquidity_usd || 100000;
-    if (vol24h < 40000 || liqUsd < 15000) {
-      continue;
+    // Candidate Coins Pool (Using full scanned universe of 40+ tokens)
+    const candidatePool = solanaBotState.scannedTokens.length > 0 ? solanaBotState.scannedTokens : SOLANA_EXPANDED_CATALOG;
+
+    // Quantitative Multi-Position Dynamic Risk Sizing
+    const MAX_CONCURRENT_POSITIONS = solanaBotState.maxConcurrentPositions || 15;
+    const MAX_PORTFOLIO_EXPOSURE_USD = solanaBotState.wallet.initialEquity * 0.35; // $3,500 max deployed
+    const uniformMarginUsd = Math.max(5.0, solanaBotState.wallet.currentEquity * (solanaBotState.dynamicMarginPct / 100));
+    const singleFeeUsd = uniformMarginUsd * 0.0015;
+
+    // CONFLUENCE METRIC 1: Benchmark Macro Regime Filter
+    const solBenchmark = candidatePool.find((c) => c.symbol === "SOL") || { price_change_5m: 0.5, price_change_1h: 2.0 };
+    const isMacroDumping = (solBenchmark.price_change_5m || 0) < -2.2 || (solBenchmark.price_change_1h || 0) < -5.0;
+
+    for (const candidate of candidatePool) {
+      if (solanaBotState.activePositions.length >= MAX_CONCURRENT_POSITIONS) {
+        break;
+      }
+
+      // Check AI Sentinel Token Cooldown
+      const cooldownUntil = solanaBotState.tokenCooldownMap.get(candidate.symbol);
+      if (cooldownUntil && Date.now() < cooldownUntil) {
+        continue;
+      }
+
+      // Portfolio Constraint 2: Total allocated margin cap (preserves >= 65% cash buffer)
+      const currentAllocatedMargin = solanaBotState.activePositions.reduce((sum, p) => sum + p.marginUsd, 0);
+      if (currentAllocatedMargin + uniformMarginUsd > MAX_PORTFOLIO_EXPOSURE_USD) {
+        break;
+      }
+
+      // Portfolio Constraint 3: Cash solvency check
+      if (solanaBotState.wallet.cash < (uniformMarginUsd + singleFeeUsd)) {
+        break;
+      }
+
+      // Do not open duplicate positions for the same token
+      if (solanaBotState.activePositions.some((p) => p.token.symbol === candidate.symbol)) {
+        continue;
+      }
+
+      // CONFLUENCE METRIC 1: Block altcoin longs during macro flush
+      if (isMacroDumping && candidate.symbol !== "SOL") {
+        continue;
+      }
+
+      // CONFLUENCE METRIC 2: Liquidity Depth & Volume Guard (Protects against micro-slippage)
+      const vol24h = candidate.volume_24h || 500000;
+      const liqUsd = candidate.liquidity_usd || 100000;
+      if (vol24h < 40000 || liqUsd < 15000) {
+        continue;
+      }
+
+      // CONFLUENCE METRIC 3: Anti-FOMO & Overbought Filter (Never buy extreme tops)
+      const ch5m = candidate.price_change_5m || 0;
+      const ch1h = candidate.price_change_1h || 0;
+      if (ch5m > 8.0 || ch1h > 35.0) {
+        continue; // Overbought wick exhaustion
+      }
+
+      // CONFLUENCE METRIC 4: Learned Memory Veto Check (solana_trades.db)
+      const vetoTrap = checkStage3TrapVeto(candidate);
+      if (vetoTrap) {
+        solanaBotState.learningEngine.avoidedTrapsCount++;
+        solanaBotState.learningEngine.savedCapital += uniformMarginUsd;
+
+        api("/api/market/solana/learned-memory/veto", {
+          method: "POST",
+          body: JSON.stringify({
+            trap_id: vetoTrap.id || vetoTrap.trap_id,
+            saved_capital_usd: uniformMarginUsd,
+          }),
+        }).catch((e) => console.warn("Veto API error:", e));
+
+        showToast(`🛑 [solana_trades.db VETO] Blocked candidate ${candidate.symbol} matching trap ${vetoTrap.id}! Saved $${uniformMarginUsd.toFixed(2)} margin.`);
+        continue;
+      }
+
+      // CONFLUENCE METRIC 5: Valid Retest / Momentum Confluence (Includes FVG pullbacks!)
+      const isQualityConfluence = ch5m >= -2.5 && ch5m <= 5.0 && (candidate.volatility_score || 75) >= 65;
+      if (isQualityConfluence) {
+        const patternName = ch5m < 0 ? "Bullish FVG Pullback" : "Bullish Momentum Retest";
+        openPosition(candidate, uniformMarginUsd, patternName);
+      }
     }
 
-    // CONFLUENCE METRIC 3: Anti-FOMO & Overbought Filter (Never buy extreme tops)
-    const ch5m = candidate.price_change_5m || 0;
-    const ch1h = candidate.price_change_1h || 0;
-    if (ch5m > 8.0 || ch1h > 35.0) {
-      continue; // Overbought wick exhaustion
+    processThreeStageLearningEngine();
+    updateSolanaWalletHUD();
+    renderMultiPositionsTable();
+    renderSolanaJournal();
+    renderLearningLedger();
+  } catch (tickErr) {
+    console.warn("[Auto-Pilot Self-Healing] Recovered from tick error:", tickErr);
+  } finally {
+    if (solanaBotState.isRunning) {
+      solanaBotState.loopTimer = setTimeout(runSolanaAutonomousTick, solanaBotState.tickIntervalMs);
     }
-
-    // CONFLUENCE METRIC 4: Learned Memory Veto Check (solana_trades.db)
-    const vetoTrap = checkStage3TrapVeto(candidate);
-    if (vetoTrap) {
-      solanaBotState.learningEngine.avoidedTrapsCount++;
-      solanaBotState.learningEngine.savedCapital += uniformMarginUsd;
-
-      api("/api/market/solana/learned-memory/veto", {
-        method: "POST",
-        body: JSON.stringify({
-          trap_id: vetoTrap.id || vetoTrap.trap_id,
-          saved_capital_usd: uniformMarginUsd,
-        }),
-      }).catch((e) => console.warn("Veto API error:", e));
-
-      showToast(`🛑 [solana_trades.db VETO] Blocked candidate ${candidate.symbol} matching trap ${vetoTrap.id}! Saved $${uniformMarginUsd.toFixed(2)} margin.`);
-      continue;
-    }
-
-    // CONFLUENCE METRIC 5: Valid Retest / Momentum Confluence (Includes FVG pullbacks!)
-    const isQualityConfluence = ch5m >= -2.5 && ch5m <= 5.0 && (candidate.volatility_score || 75) >= 65;
-    if (isQualityConfluence) {
-      const patternName = ch5m < 0 ? "Bullish FVG Pullback" : "Bullish Momentum Retest";
-      openPosition(candidate, uniformMarginUsd, patternName);
-    }
-  }
-
-  processThreeStageLearningEngine();
-  updateSolanaWalletHUD();
-  renderMultiPositionsTable();
-  renderSolanaJournal();
-  renderLearningLedger();
-
-  if (solanaBotState.isRunning) {
-    solanaBotState.loopTimer = setTimeout(runSolanaAutonomousTick, solanaBotState.tickIntervalMs);
   }
 }
 
@@ -1066,6 +1267,12 @@ function closePosition(pos, exitReason, isEmergencyHalt = false) {
       elements.solanaDbText.textContent = `solana_trades.db (${solanaBotState.databaseInfo.tradesCount} trades, ${solanaBotState.databaseInfo.trapsCount} traps)`;
     }
   }).catch((e) => console.warn("Failed to persist trade to solana_trades.db:", e));
+
+  // Autonomous AI Fact-Check: After every 5 closed trades, run an AI Risk Audit
+  solanaBotState.tradesSinceLastAudit++;
+  if (solanaBotState.tradesSinceLastAudit >= 5) {
+    triggerAiRiskAudit(false);
+  }
 }
 
 function closeAllPositions(reason) {

@@ -185,6 +185,73 @@
               </div>
             </div>
 
+            <!-- Autonomous Sentinel & Dynamic Risk Management HUD -->
+            <div class="solana-sentinel-hud" id="solana-sentinel-hud">
+              <div class="sentinel-header-bar">
+                <div class="sentinel-title-block">
+                  <div class="sentinel-badge">
+                    <span class="sentinel-icon">🤖</span>
+                    <span>QUANTITATIVE SENTINEL &amp; OPENROUTER AUDIT</span>
+                  </div>
+                  <h3>Autonomous Sentinel &amp; Self-Governing Risk Controller</h3>
+                  <p>Continuous trade fact-checking, dynamic margin resizing, and anti-drawdown defense.</p>
+                </div>
+                <div class="sentinel-controls-block">
+                  <label class="autopilot-switch-label" title="When active, the bot starts automatically, recovers from transient faults, scans continuously, and optimizes risk without human input.">
+                    <input type="checkbox" id="autopilot-master-toggle" checked />
+                    <span class="switch-slider"></span>
+                    <span class="switch-text">Auto-Pilot: <strong id="autopilot-status-text">ENGAGED</strong></span>
+                  </label>
+                  <button type="button" class="btn-audit-now" id="btn-trigger-ai-audit" title="Trigger immediate OpenRouter AI position history fact-check">
+                    <span>⚡ Audit Risk Now</span>
+                  </button>
+                </div>
+              </div>
+
+              <div class="sentinel-metrics-grid">
+                <div class="sentinel-metric-chip">
+                  <span class="chip-label">Detected Regime</span>
+                  <span class="chip-val regime-pill" id="ai-market-regime">CHOPPY_MEAN_REVERTING</span>
+                </div>
+                <div class="sentinel-metric-chip">
+                  <span class="chip-label">Dynamic Margin</span>
+                  <span class="chip-val" id="ai-dynamic-margin">2.0% ($200.00)</span>
+                </div>
+                <div class="sentinel-metric-chip">
+                  <span class="chip-label">Max Concurrent Coins</span>
+                  <span class="chip-val" id="ai-max-positions">15 Coins</span>
+                </div>
+                <div class="sentinel-metric-chip">
+                  <span class="chip-label">Adaptive Stop Loss</span>
+                  <span class="chip-val text-danger" id="ai-stop-loss">-3.0% Confluence</span>
+                </div>
+                <div class="sentinel-metric-chip">
+                  <span class="chip-label">Trailing Runner Lock</span>
+                  <span class="chip-val text-success" id="ai-trailing-trigger">+3.5% Net</span>
+                </div>
+                <div class="sentinel-metric-chip">
+                  <span class="chip-label">Audit Confidence</span>
+                  <span class="chip-val" id="ai-audit-confidence">85% (Active)</span>
+                </div>
+              </div>
+
+              <div class="sentinel-commentary-box">
+                <div class="commentary-header">
+                  <div class="commentary-badge">
+                    <span class="pulsing-ai-dot"></span>
+                    <span id="ai-audit-source">OpenRouter Quantitative Risk Officer</span>
+                  </div>
+                  <span class="commentary-time" id="ai-audit-timestamp">Audited: Just now</span>
+                </div>
+                <p class="commentary-body" id="ai-audit-verdict">
+                  Autonomous sentinel initialized. Monitoring Solana DEX order flow, verifying execution slippage against 1:2 R:R targets, and dynamically pacing portfolio deployment across 40+ tokens.
+                </p>
+                <div class="sentinel-cooldown-tags" id="ai-cooldown-tags">
+                  <!-- Token specific directives will render here -->
+                </div>
+              </div>
+            </div>
+
             <!-- Concurrent Live Positions Monitor (Multi-Coin 2% Margin) -->
             <div class="solana-panel multi-positions-panel" id="multi-positions-panel">
               <div class="panel-header-line">
