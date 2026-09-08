@@ -341,6 +341,22 @@ impl SolanaDb {
         Ok(())
     }
 
+    pub fn reassess_learned_memory(&self) -> Result<usize, String> {
+        let conn = self.conn.lock().map_err(|_| "Database mutex poisoned".to_string())?;
+        let now = now_timestamp();
+        let rows = conn.execute(
+            "UPDATE solana_learned_memory
+             SET stage = 2,
+                 status = 'REASSESSED',
+                 times_vetoed = 0,
+                 notes = 'Re-assessed veto: downgraded from Stage 3 to Stage 2 Retest',
+                 updated_at = ?1
+             WHERE stage = 3 OR status = 'PERMANENT_VETO'",
+            params![now],
+        ).map_err(|e| format!("Failed to reassess learned memory: {e}"))?;
+        Ok(rows)
+    }
+
     pub fn list_learned_memory(&self) -> Result<Vec<SolanaMistakeRecord>, String> {
         let conn = self.conn.lock().map_err(|_| "Database mutex poisoned".to_string())?;
         let mut stmt = conn.prepare(

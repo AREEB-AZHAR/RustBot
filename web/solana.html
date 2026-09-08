@@ -233,7 +233,11 @@
                     <p>STEP 01 · ON-CHAIN SCANNER</p>
                     <h3>High-Volatility Solana DEX Pairs</h3>
                   </div>
-                  <button type="button" class="btn-refresh-scan" id="btn-refresh-solana-scan" title="Force chain scan">🔄 Scan</button>
+                  <div class="header-actions-inline" style="display: flex; gap: 8px; align-items: center;">
+                    <input type="text" id="solana-token-search" placeholder="Search Solana coins..." style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 8px; color: #fff; padding: 4px 10px; font-size: 0.78rem; width: 170px;" />
+                    <span class="badge-chip" id="solana-scanned-count">0 Pairs</span>
+                    <button type="button" class="btn-refresh-scan" id="btn-refresh-solana-scan" title="Force chain scan">🔄 Scan</button>
+                  </div>
                 </div>
                 <div class="solana-tokens-scroll">
                   <table class="solana-tokens-table">
@@ -303,10 +307,11 @@
                   <p>STEP 03 · 3-STAGE CONTINUOUS LEARNING ENGINE</p>
                   <h3>Adaptive Mistake Ledger &amp; Pattern Re-test Verification</h3>
                 </div>
-                <div class="learning-counts-group">
+                <div class="learning-counts-group" style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
                   <span class="stage-tag stage-1" id="tag-stage-1-count">Stage 1: 0 Doubts</span>
                   <span class="stage-tag stage-2" id="tag-stage-2-count">Stage 2: 0 Re-testing</span>
                   <span class="stage-tag stage-3" id="tag-stage-3-count">Stage 3: 0 Permanent Traps</span>
+                  <button type="button" class="btn-refresh-scan" id="btn-reassess-vetoes" style="font-size: 0.75rem; padding: 4px 10px; background: rgba(240, 112, 68, 0.15); border: 1px solid rgba(240, 112, 68, 0.35); color: #fff; border-radius: 8px; cursor: pointer;" title="Re-assess Stage 3 veto records and downgrade them to active re-testing so trades resume">🔄 Re-assess Vetoes</button>
                 </div>
               </div>
 
@@ -398,6 +403,6 @@
   </div>
 
   <script src="/market_worker.js"></script>
-  <script src="/solana.js"></script>
+  <script src="/solana.js?v=5"></script>
 </body>
 </html>

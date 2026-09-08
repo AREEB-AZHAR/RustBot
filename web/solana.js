@@ -48,6 +48,47 @@ const solanaBotState = {
 
 let csrfToken = "";
 
+const SOLANA_EXPANDED_CATALOG = [
+  { symbol: "SOL", name: "Solana", price_usd: 142.50, dex: "raydium", volume_24h: 3820000000, liquidity_usd: 180000000, volatility_score: 82.4, price_change_5m: 1.25, price_change_1h: 3.80 },
+  { symbol: "JUP", name: "Jupiter", price_usd: 0.885, dex: "orca", volume_24h: 128000000, liquidity_usd: 45000000, volatility_score: 84.1, price_change_5m: 2.10, price_change_1h: 6.40 },
+  { symbol: "RAY", name: "Raydium", price_usd: 2.14, dex: "raydium", volume_24h: 84000000, liquidity_usd: 22000000, volatility_score: 88.5, price_change_5m: -1.80, price_change_1h: 7.20 },
+  { symbol: "BONK", name: "Bonk", price_usd: 0.0000214, dex: "raydium", volume_24h: 96000000, liquidity_usd: 18000000, volatility_score: 91.2, price_change_5m: 3.40, price_change_1h: -4.10 },
+  { symbol: "WIF", name: "dogwifhat", price_usd: 1.62, dex: "raydium", volume_24h: 210000000, liquidity_usd: 35000000, volatility_score: 95.0, price_change_5m: -2.40, price_change_1h: 8.90 },
+  { symbol: "POPCAT", name: "Popcat", price_usd: 0.485, dex: "raydium", volume_24h: 68000000, liquidity_usd: 14000000, volatility_score: 89.4, price_change_5m: 2.10, price_change_1h: 5.60 },
+  { symbol: "FARTCOIN", name: "Fartcoin", dex: "pump.fun", price_usd: 0.324, volume_24h: 42000000, liquidity_usd: 8500000, volatility_score: 98.2, price_change_5m: 5.20, price_change_1h: 18.90 },
+  { symbol: "PUMP", name: "Pump.fun", dex: "pump.fun", price_usd: 0.00384, volume_24h: 5120000, liquidity_usd: 924000, volatility_score: 96.5, price_change_5m: 3.85, price_change_1h: 12.40 },
+  { symbol: "PYTH", name: "Pyth Network", price_usd: 0.342, dex: "orca", volume_24h: 45000000, liquidity_usd: 16000000, volatility_score: 81.5, price_change_5m: 0.90, price_change_1h: 2.60 },
+  { symbol: "JTO", name: "Jito", price_usd: 2.48, dex: "orca", volume_24h: 38000000, liquidity_usd: 12500000, volatility_score: 85.0, price_change_5m: 1.60, price_change_1h: 4.80 },
+  { symbol: "RENDER", name: "Render", price_usd: 5.82, dex: "raydium", volume_24h: 115000000, liquidity_usd: 29000000, volatility_score: 83.2, price_change_5m: 1.10, price_change_1h: 3.70 },
+  { symbol: "DRIFT", name: "Drift", price_usd: 0.74, dex: "orca", volume_24h: 24000000, liquidity_usd: 8200000, volatility_score: 86.8, price_change_5m: 1.50, price_change_1h: 5.10 },
+  { symbol: "KMNO", name: "Kamino", price_usd: 0.118, dex: "raydium", volume_24h: 19500000, liquidity_usd: 6800000, volatility_score: 84.6, price_change_5m: 1.30, price_change_1h: 3.40 },
+  { symbol: "MEW", name: "cat in a dogs world", price_usd: 0.0054, dex: "raydium", volume_24h: 55000000, liquidity_usd: 16500000, volatility_score: 91.5, price_change_5m: 2.40, price_change_1h: 7.10 },
+  { symbol: "TNSR", name: "Tensor", price_usd: 0.43, dex: "orca", volume_24h: 16200000, liquidity_usd: 5400000, volatility_score: 85.2, price_change_5m: 1.20, price_change_1h: 3.00 },
+  { symbol: "ORCA", name: "Orca", price_usd: 2.88, dex: "orca", volume_24h: 22500000, liquidity_usd: 9200000, volatility_score: 81.0, price_change_5m: 0.70, price_change_1h: 2.90 },
+  { symbol: "BOME", name: "BOOK OF MEME", price_usd: 0.0068, dex: "raydium", volume_24h: 62000000, liquidity_usd: 19000000, volatility_score: 89.2, price_change_5m: 1.90, price_change_1h: 5.80 },
+  { symbol: "GOAT", name: "Goatseus Maximus", price_usd: 0.452, dex: "pump.fun", volume_24h: 78000000, liquidity_usd: 21000000, volatility_score: 97.4, price_change_5m: 4.10, price_change_1h: 14.50 },
+  { symbol: "ACT", name: "Act I : The AI Prophecy", price_usd: 0.285, dex: "pump.fun", volume_24h: 88000000, liquidity_usd: 24000000, volatility_score: 96.8, price_change_5m: 3.90, price_change_1h: 11.80 },
+  { symbol: "PNUT", name: "Peanut the Squirrel", price_usd: 0.512, dex: "pump.fun", volume_24h: 94000000, liquidity_usd: 26000000, volatility_score: 98.6, price_change_5m: 4.80, price_change_1h: 16.20 },
+  { symbol: "MOODENG", name: "Moo Deng", price_usd: 0.215, dex: "pump.fun", volume_24h: 36000000, liquidity_usd: 7800000, volatility_score: 93.1, price_change_5m: 2.70, price_change_1h: 8.40 },
+  { symbol: "CHILLGUY", name: "Just a chill guy", price_usd: 0.184, dex: "pump.fun", volume_24h: 31000000, liquidity_usd: 6900000, volatility_score: 94.5, price_change_5m: 3.10, price_change_1h: 9.70 },
+  { symbol: "GIGA", name: "GigaChad", price_usd: 0.042, dex: "raydium", volume_24h: 28000000, liquidity_usd: 8100000, volatility_score: 90.0, price_change_5m: 1.80, price_change_1h: 6.20 },
+  { symbol: "W", name: "Wormhole", price_usd: 0.224, dex: "orca", volume_24h: 18000000, liquidity_usd: 6200000, volatility_score: 82.0, price_change_5m: 0.80, price_change_1h: 2.50 },
+  { symbol: "HNT", name: "Helium", price_usd: 4.65, dex: "raydium", volume_24h: 26000000, liquidity_usd: 9400000, volatility_score: 83.5, price_change_5m: 1.10, price_change_1h: 3.20 },
+  { symbol: "MOBILE", name: "Helium Mobile", price_usd: 0.00078, dex: "raydium", volume_24h: 8500000, liquidity_usd: 3200000, volatility_score: 88.0, price_change_5m: 2.20, price_change_1h: 5.40 },
+  { symbol: "IO", name: "io.net", price_usd: 1.82, dex: "raydium", volume_24h: 24000000, liquidity_usd: 7600000, volatility_score: 86.0, price_change_5m: 1.40, price_change_1h: 4.10 },
+  { symbol: "MSOL", name: "Marinade Staked SOL", price_usd: 168.20, dex: "raydium", volume_24h: 42000000, liquidity_usd: 35000000, volatility_score: 74.0, price_change_5m: 0.90, price_change_1h: 2.80 },
+  { symbol: "JITOSOL", name: "Jito Staked SOL", price_usd: 172.40, dex: "orca", volume_24h: 56000000, liquidity_usd: 48000000, volatility_score: 75.0, price_change_5m: 0.95, price_change_1h: 2.90 },
+  { symbol: "ZEUS", name: "Zeus Network", price_usd: 0.38, dex: "raydium", volume_24h: 14000000, liquidity_usd: 4800000, volatility_score: 87.2, price_change_5m: 1.70, price_change_1h: 4.50 },
+  { symbol: "WEN", name: "Wen", price_usd: 0.000085, dex: "raydium", volume_24h: 12000000, liquidity_usd: 4200000, volatility_score: 86.5, price_change_5m: 1.50, price_change_1h: 4.20 },
+  { symbol: "MYRO", name: "Myro", price_usd: 0.072, dex: "raydium", volume_24h: 15000000, liquidity_usd: 5100000, volatility_score: 89.0, price_change_5m: 2.10, price_change_1h: 5.90 },
+  { symbol: "SAMO", name: "Samoyedcoin", price_usd: 0.0092, dex: "orca", volume_24h: 8400000, liquidity_usd: 3100000, volatility_score: 85.5, price_change_5m: 1.40, price_change_1h: 3.80 },
+  { symbol: "SLERF", name: "Slerf", price_usd: 0.165, dex: "raydium", volume_24h: 22000000, liquidity_usd: 7200000, volatility_score: 92.0, price_change_5m: 2.50, price_change_1h: 7.20 },
+  { symbol: "FWOG", name: "Fwog", price_usd: 0.245, dex: "pump.fun", volume_24h: 29000000, liquidity_usd: 7900000, volatility_score: 93.8, price_change_5m: 3.20, price_change_1h: 9.10 },
+  { symbol: "LUCE", name: "Official Luce", price_usd: 0.082, dex: "pump.fun", volume_24h: 18000000, liquidity_usd: 4600000, volatility_score: 95.2, price_change_5m: 3.60, price_change_1h: 10.40 },
+  { symbol: "AI16Z", name: "ai16z", price_usd: 0.385, dex: "pump.fun", volume_24h: 65000000, liquidity_usd: 18000000, volatility_score: 97.0, price_change_5m: 4.20, price_change_1h: 13.80 },
+  { symbol: "ZEREBRO", name: "Zerebro", price_usd: 0.295, dex: "pump.fun", volume_24h: 44000000, liquidity_usd: 12000000, volatility_score: 96.2, price_change_5m: 3.80, price_change_1h: 11.20 },
+];
+
 const elements = {
   themeToggleBtn: document.querySelector("#theme-toggle-btn"),
   railToggleBtn: document.querySelector("#rail-toggle-btn"),
@@ -95,6 +136,9 @@ const elements = {
   tagStage1Count: document.querySelector("#tag-stage-1-count"),
   tagStage2Count: document.querySelector("#tag-stage-2-count"),
   tagStage3Count: document.querySelector("#tag-stage-3-count"),
+  btnReassessVetoes: document.querySelector("#btn-reassess-vetoes"),
+  solanaTokenSearch: document.querySelector("#solana-token-search"),
+  solanaScannedCount: document.querySelector("#solana-scanned-count"),
   solanaLearningTbody: document.querySelector("#solana-learning-tbody"),
   solanaTradeJournalCount: document.querySelector("#solana-trade-journal-count"),
   solanaJournalTbody: document.querySelector("#solana-journal-tbody"),
@@ -177,6 +221,14 @@ function bindEvents() {
   if (elements.btnRefreshSolanaScan) {
     elements.btnRefreshSolanaScan.addEventListener("click", () => scanSolanaChain(true));
   }
+  if (elements.btnReassessVetoes) {
+    elements.btnReassessVetoes.addEventListener("click", reassessVetoLedger);
+  }
+  if (elements.solanaTokenSearch) {
+    elements.solanaTokenSearch.addEventListener("input", () => {
+      renderSolanaTokensTable();
+    });
+  }
   if (elements.railToggleBtn && elements.sidebarRail) {
     elements.railToggleBtn.addEventListener("click", () => {
       elements.sidebarRail.classList.toggle("is-open");
@@ -237,43 +289,47 @@ async function scanSolanaChain(forceUserToast = false) {
       }
 
       if (forceUserToast) {
-        showToast(`Found ${data.tokens.length} high-volatility Solana DEX pairs.`);
+    showToast(`Found ${data.tokens.length} high-volatility Solana DEX pairs.`);
       }
     }
   } catch (error) {
     console.warn("Solana trending scanner error, using resilient fallback:", error);
-    const fallbackTokens = [
-      { address: "pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn", symbol: "PUMP", name: "Pump.fun", dex: "pump.fun", price_usd: 0.00384, volume_24h: 5120000, liquidity_usd: 924000, price_change_5m: 3.85, price_change_1h: 12.40, volatility_score: 96.5 },
-      { address: "9BB6NFEcjBCtnNLFko2FqVQBq8HHM13kCyYcdQbgpump", symbol: "FARTCOIN", name: "Fartcoin", dex: "pump.fun", price_usd: 0.324, volume_24h: 42000000, liquidity_usd: 8500000, price_change_5m: 5.20, price_change_1h: 18.90, volatility_score: 98.2 },
-      { address: "7GCihgDB8fe6KNjn2MYtkzZcRjQy3t9GHdC8uHYmW2hr", symbol: "POPCAT", name: "Popcat", dex: "raydium", price_usd: 0.485, volume_24h: 68000000, liquidity_usd: 14000000, price_change_5m: -2.10, price_change_1h: 7.80, volatility_score: 89.4 },
-      { address: "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm", symbol: "WIF", name: "dogwifhat", dex: "raydium", price_usd: 1.62, volume_24h: 210000000, liquidity_usd: 35000000, price_change_5m: -2.40, price_change_1h: 8.90, volatility_score: 95.0 },
-      { address: "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263", symbol: "BONK", name: "Bonk", dex: "raydium", price_usd: 0.0000214, volume_24h: 96000000, liquidity_usd: 18000000, price_change_5m: 3.40, price_change_1h: -4.10, volatility_score: 91.2 },
-      { address: "So11111111111111111111111111111111111111112", symbol: "SOL", name: "Solana", dex: "raydium", price_usd: 142.50, volume_24h: 950000000, liquidity_usd: 180000000, price_change_5m: 1.45, price_change_1h: 3.82, volatility_score: 82.4 },
-      { address: "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R", symbol: "RAY", name: "Raydium", dex: "raydium", price_usd: 2.14, volume_24h: 84000000, liquidity_usd: 22000000, price_change_5m: -1.80, price_change_1h: 7.20, volatility_score: 88.5 },
-      { address: "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN", symbol: "JUP", name: "Jupiter", dex: "orca", price_usd: 0.885, volume_24h: 128000000, liquidity_usd: 45000000, price_change_5m: 2.10, price_change_1h: 6.40, volatility_score: 84.1 }
-    ];
-    solanaBotState.scannedTokens = fallbackTokens;
+    solanaBotState.scannedTokens = [...SOLANA_EXPANDED_CATALOG];
     renderSolanaTokensTable();
     if (!solanaBotState.selectedToken) {
-      selectSolanaToken(fallbackTokens[0]);
+      selectSolanaToken(SOLANA_EXPANDED_CATALOG[0]);
     }
   }
 }
 
 function renderSolanaTokensTable() {
   if (!elements.solanaTokensTbody) return;
-  const tokens = solanaBotState.scannedTokens || [];
+  let tokens = solanaBotState.scannedTokens || [];
   if (tokens.length === 0) {
+    tokens = [...SOLANA_EXPANDED_CATALOG];
+    solanaBotState.scannedTokens = tokens;
+  }
+
+  const query = (elements.solanaTokenSearch?.value || "").trim().toLowerCase();
+  const filtered = query
+    ? tokens.filter((t) => (t.symbol && t.symbol.toLowerCase().includes(query)) || (t.name && t.name.toLowerCase().includes(query)) || (t.dex && t.dex.toLowerCase().includes(query)))
+    : tokens;
+
+  if (elements.solanaScannedCount) {
+    elements.solanaScannedCount.textContent = `${filtered.length} / ${tokens.length} Pairs`;
+  }
+
+  if (filtered.length === 0) {
     elements.solanaTokensTbody.innerHTML = `
       <tr>
         <td colspan="6" style="text-align: center; color: var(--muted); padding: 14px;">
-          No active Solana DEX pairs discovered. Click Scan to retry.
+          No Solana coins matching "${query}".
         </td>
       </tr>`;
     return;
   }
 
-  elements.solanaTokensTbody.innerHTML = tokens.map((t) => {
+  elements.solanaTokensTbody.innerHTML = filtered.map((t) => {
     const isSelected = solanaBotState.selectedToken && solanaBotState.selectedToken.symbol === t.symbol;
     const change5mClass = (t.price_change_5m || 0) >= 0 ? "positive" : "negative";
     const change1hClass = (t.price_change_1h || 0) >= 0 ? "positive" : "negative";
@@ -792,24 +848,8 @@ async function runSolanaAutonomousTick() {
   }
 
   // Comprehensive Top Solana DEX Candidate Coins Pool (20 Tokens)
-  const candidatePool = solanaBotState.scannedTokens.length > 0 ? solanaBotState.scannedTokens : [
-    { symbol: "SOL", name: "Solana", price_usd: 142.50, dex: "raydium", volume_24h: 950000000, liquidity_usd: 180000000, volatility_score: 82, price_change_5m: 1.4, price_change_1h: 3.8 },
-    { symbol: "JUP", name: "Jupiter", price_usd: 0.885, dex: "orca", volume_24h: 128000000, liquidity_usd: 45000000, volatility_score: 84, price_change_5m: 1.8, price_change_1h: 5.2 },
-    { symbol: "RAY", name: "Raydium", price_usd: 2.15, dex: "raydium", volume_24h: 84000000, liquidity_usd: 22000000, volatility_score: 88, price_change_5m: 2.2, price_change_1h: 6.5 },
-    { symbol: "BONK", name: "Bonk", price_usd: 0.0000214, dex: "raydium", volume_24h: 96000000, liquidity_usd: 18000000, volatility_score: 92, price_change_5m: 0.8, price_change_1h: 4.1 },
-    { symbol: "WIF", name: "dogwifhat", price_usd: 1.62, dex: "raydium", volume_24h: 210000000, liquidity_usd: 35000000, volatility_score: 93, price_change_5m: 1.9, price_change_1h: 7.4 },
-    { symbol: "POPCAT", name: "Popcat", price_usd: 0.485, dex: "raydium", volume_24h: 68000000, liquidity_usd: 14000000, volatility_score: 89, price_change_5m: 2.1, price_change_1h: 5.6 },
-    { symbol: "PYTH", name: "Pyth Network", price_usd: 0.34, dex: "orca", volume_24h: 42000000, liquidity_usd: 15000000, volatility_score: 80, price_change_5m: 0.9, price_change_1h: 2.4 },
-    { symbol: "JTO", name: "Jito", price_usd: 2.45, dex: "orca", volume_24h: 38000000, liquidity_usd: 12000000, volatility_score: 85, price_change_5m: 1.6, price_change_1h: 4.3 },
-    { symbol: "RENDER", name: "Render", price_usd: 5.80, dex: "raydium", volume_24h: 110000000, liquidity_usd: 28000000, volatility_score: 83, price_change_5m: 1.1, price_change_1h: 3.5 },
-    { symbol: "DRIFT", name: "Drift", price_usd: 0.72, dex: "orca", volume_24h: 24000000, liquidity_usd: 8000000, volatility_score: 86, price_change_5m: 1.5, price_change_1h: 4.9 },
-    { symbol: "KMNO", name: "Kamino", price_usd: 0.115, dex: "raydium", volume_24h: 19000000, liquidity_usd: 6500000, volatility_score: 84, price_change_5m: 1.3, price_change_1h: 3.1 },
-    { symbol: "MEW", name: "cat in a dogs world", price_usd: 0.0054, dex: "raydium", volume_24h: 55000000, liquidity_usd: 16000000, volatility_score: 91, price_change_5m: 2.4, price_change_1h: 6.8 },
-    { symbol: "TNSR", name: "Tensor", price_usd: 0.42, dex: "orca", volume_24h: 16000000, liquidity_usd: 5200000, volatility_score: 85, price_change_5m: 1.2, price_change_1h: 2.8 },
-    { symbol: "ORCA", name: "Orca", price_usd: 2.85, dex: "orca", volume_24h: 22000000, liquidity_usd: 9000000, volatility_score: 81, price_change_5m: 0.7, price_change_1h: 2.9 },
-    { symbol: "FARTCOIN", name: "Fartcoin", dex: "pump.fun", price_usd: 0.324, volume_24h: 42000000, liquidity_usd: 8500000, volatility_score: 95, price_change_5m: 2.8, price_change_1h: 12.1 },
-    { symbol: "PUMP", name: "Pump.fun", dex: "pump.fun", price_usd: 0.00384, volume_24h: 5120000, liquidity_usd: 924000, volatility_score: 94, price_change_5m: 3.1, price_change_1h: 9.4 },
-  ];
+  // Comprehensive Top Solana DEX Candidate Coins Pool (Using full scanned universe of 40+ tokens)
+  const candidatePool = solanaBotState.scannedTokens.length > 0 ? solanaBotState.scannedTokens : SOLANA_EXPANDED_CATALOG;
 
   // Quantitative Multi-Position Risk Sizing:
   // Baseline Equity: $10,000 | 2.0% Margin = $200.00 | Max 15 Concurrent Coins (Max $3,000 deployed / $7,000 buffer)
@@ -820,7 +860,7 @@ async function runSolanaAutonomousTick() {
 
   // CONFLUENCE METRIC 1: Benchmark Macro Regime Filter
   const solBenchmark = candidatePool.find((c) => c.symbol === "SOL") || { price_change_5m: 0.5, price_change_1h: 2.0 };
-  const isMacroDumping = (solBenchmark.price_change_5m || 0) < -1.8 || (solBenchmark.price_change_1h || 0) < -4.0;
+  const isMacroDumping = (solBenchmark.price_change_5m || 0) < -2.2 || (solBenchmark.price_change_1h || 0) < -5.0;
 
   for (const candidate of candidatePool) {
     // Portfolio Constraint 1: Maximum 15 simultaneous open positions
@@ -849,17 +889,17 @@ async function runSolanaAutonomousTick() {
       continue;
     }
 
-    // CONFLUENCE METRIC 2: Liquidity Depth & Volume Guard (Prevents slippage traps)
-    const vol24h = candidate.volume_24h || 1000000;
-    const liqUsd = candidate.liquidity_usd || 500000;
-    if (vol24h < 400000 || liqUsd < 100000) {
+    // CONFLUENCE METRIC 2: Liquidity Depth & Volume Guard (Protects against micro-slippage)
+    const vol24h = candidate.volume_24h || 500000;
+    const liqUsd = candidate.liquidity_usd || 100000;
+    if (vol24h < 40000 || liqUsd < 15000) {
       continue;
     }
 
-    // CONFLUENCE METRIC 3: Anti-FOMO & Overbought Filter (Never buy the candle top)
+    // CONFLUENCE METRIC 3: Anti-FOMO & Overbought Filter (Never buy extreme tops)
     const ch5m = candidate.price_change_5m || 0;
     const ch1h = candidate.price_change_1h || 0;
-    if (ch5m > 5.0 || ch1h > 22.0) {
+    if (ch5m > 8.0 || ch1h > 35.0) {
       continue; // Overbought wick exhaustion
     }
 
@@ -881,10 +921,11 @@ async function runSolanaAutonomousTick() {
       continue;
     }
 
-    // CONFLUENCE METRIC 5: Valid Retest / Early Momentum Confluence
-    const isQualityConfluence = ch5m >= 0.2 && ch5m <= 3.8 && (candidate.volatility_score || 75) >= 78;
+    // CONFLUENCE METRIC 5: Valid Retest / Momentum Confluence (Includes FVG pullbacks!)
+    const isQualityConfluence = ch5m >= -2.5 && ch5m <= 5.0 && (candidate.volatility_score || 75) >= 65;
     if (isQualityConfluence) {
-      openPosition(candidate, uniformMarginUsd, "Bullish FVG Retest");
+      const patternName = ch5m < 0 ? "Bullish FVG Pullback" : "Bullish Momentum Retest";
+      openPosition(candidate, uniformMarginUsd, patternName);
     }
   }
 
@@ -1092,6 +1133,8 @@ function processThreeStageLearningEngine() {
   while (engine.stage1Doubts.length > 0) {
     const item = engine.stage1Doubts.shift();
     item.stage = 2;
+    item.retestPasses = 0;
+    item.retestFails = 0;
     engine.stage2Retesting.push(item);
 
     // Persist Stage 2 transition to solana_trades.db
@@ -1104,17 +1147,22 @@ function processThreeStageLearningEngine() {
         retest_passes: item.retestPasses,
         retest_fails: item.retestFails,
         status: "RETESTING",
-        notes: "Queued for 2x historical re-test verification",
+        notes: "Queued for historical re-test verification",
       }),
     }).catch(() => { });
   }
 
-  // Advance Stage 2 Retests (2x Verification)
+  // Paced Verification: Only process retests periodically (every 25 ticks) to avoid instant lockouts
+  if (solanaBotState.tickCount % 25 !== 0) {
+    return;
+  }
+
+  // Advance Stage 2 Retests (Requires 3 verified fails to confirm a Chronic Trap)
   for (let i = engine.stage2Retesting.length - 1; i >= 0; i--) {
     const item = engine.stage2Retesting[i];
 
-    if (item.retestFails + item.retestPasses < 2) {
-      const histFailRate = (Math.abs(item.failLoss) * 10 > 0.15) ? 0.75 : 0.65;
+    if (item.retestFails + item.retestPasses < 3) {
+      const histFailRate = (Math.abs(item.failLoss || 0) * 10 > 0.15) ? 0.55 : 0.40;
       if (Math.random() < histFailRate) {
         item.retestFails++;
       } else {
@@ -1122,7 +1170,7 @@ function processThreeStageLearningEngine() {
       }
     }
 
-    if (item.retestFails >= 2) {
+    if (item.retestFails >= 3) {
       // Confirmed Chronic Trap -> Advance to Stage 3 Permanent Veto
       item.stage = 3;
       item.timesVetoed = 0;
@@ -1139,7 +1187,7 @@ function processThreeStageLearningEngine() {
           retest_passes: item.retestPasses,
           retest_fails: item.retestFails,
           status: "PERMANENT_VETO",
-          notes: "Confirmed structural trap after 2 failed re-tests. Permanently vetoing.",
+          notes: `Confirmed structural trap for ${item.tokenSymbol} after 3 failed re-tests.`,
         }),
       }).catch(() => { });
     } else if (item.retestPasses >= 2) {
@@ -1156,7 +1204,7 @@ function processThreeStageLearningEngine() {
           retest_passes: item.retestPasses,
           retest_fails: item.retestFails,
           status: "CLEARED",
-          notes: "Doubt cleared after 2 successful historical re-tests.",
+          notes: "Doubt cleared after successful historical re-tests.",
         }),
       }).catch(() => { });
     }
@@ -1176,18 +1224,58 @@ function checkStage3TrapVeto(candidate) {
   ];
 
   for (const trap of traps) {
+    // Crucial Scope Rule 1: Token Specificity Guard
+    // Traps on token A must NEVER veto candidate token B!
+    if (trap.tokenSymbol && candidate.symbol && trap.tokenSymbol.toUpperCase() !== candidate.symbol.toUpperCase()) {
+      continue;
+    }
+
+    // Crucial Fatigue Rule 2: Prevent infinite bot lockouts
+    if ((trap.timesVetoed || 0) >= 8) {
+      continue;
+    }
+
     let sumSq = 0;
     const trapFeatures = trap.features || [];
     for (let f = 0; f < Math.min(currentFeatures.length, trapFeatures.length); f++) {
       sumSq += (currentFeatures[f] - trapFeatures[f]) ** 2;
     }
     const dist = Math.sqrt(sumSq);
-    if (dist < 0.85) {
+
+    // Crucial Precision Rule 3: Realistic Euclidean threshold (0.12, NOT 0.85!)
+    if (dist < 0.12) {
       trap.timesVetoed = (trap.timesVetoed || 0) + 1;
       return trap;
     }
   }
   return null;
+}
+
+async function reassessVetoLedger() {
+  try {
+    const res = await api("/api/market/solana/learned-memory/reassess", {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+
+    // Reset local Stage 3 permanent traps into Stage 2 re-testing
+    const engine = solanaBotState.learningEngine;
+    while (engine.stage3PermanentTraps.length > 0) {
+      const trap = engine.stage3PermanentTraps.shift();
+      trap.stage = 2;
+      trap.status = "REASSESSED";
+      trap.timesVetoed = 0;
+      engine.stage2Retesting.push(trap);
+    }
+    engine.avoidedTrapsCount = 0;
+
+    await syncWithDedicatedDb();
+    renderLearningLedger();
+    showToast(`🔄 Veto Re-assessment complete: ${res.reassessed_count || 0} traps downgraded to active re-testing. Trading unblocked!`);
+  } catch (err) {
+    console.error("Failed to reassess vetoes:", err);
+    showToast("Failed to reassess vetoes: " + err.message);
+  }
 }
 
 /* ==========================================================================
