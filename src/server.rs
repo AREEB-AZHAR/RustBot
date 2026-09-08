@@ -3195,21 +3195,41 @@ fn handle_reset_solana_db(_request: &Request, state: &AppState) -> Response {
     }
 }
 
-fn handle_get_solana_wallet(_request: &Request, state: &AppState) -> Response {
-    match state.solana_db.get_wallet_state() {
-        Ok(Some(w)) => Response::json(200, "OK", json!({ "wallet": w })),
-        Ok(None) => Response::json(200, "OK", json!({ "wallet": null })),
+fn handle_get_solana_wallet(request: &Request, state: &AppState) -> Response {
+    let user_id = match authenticate(request, state) {
+        Ok((_session, user)) => user.id,
+        Err(_) => {
+            // Guest mode: Do NOT sync or share any registered user's wallet!
+            return Response::json(200, "OK", json!({ "wallet": null, "is_guest": true }));
+        }
+    };
+
+    match state.solana_db.get_user_wallet_state(&user_id) {
+        Ok(Some(w)) => Response::json(200, "OK", json!({ "wallet": w, "user_id": user_id, "is_guest": false })),
+        Ok(None) => Response::json(200, "OK", json!({ "wallet": null, "user_id": user_id, "is_guest": false })),
         Err(err) => Response::error(500, "Internal Server Error", &err),
     }
 }
 
 fn handle_post_solana_wallet(request: &Request, state: &AppState) -> Response {
+    let (session, user) = match authenticate(request, state) {
+        Ok(res) => res,
+        Err(_) => {
+            // Guest mode: Keep wallet transient in browser memory, never persist to server DB
+            return Response::json(200, "OK", json!({ "success": true, "is_guest": true, "persisted": false }));
+        }
+    };
+
+    if !validate_session_csrf(request, &session, state) {
+        return Response::error(403, "Forbidden", "Invalid CSRF token.");
+    }
+
     let payload: crate::solana_db::SolanaWalletState = match parse_json(&request.body) {
         Ok(p) => p,
         Err(err) => return Response::error(400, "Bad Request", &err),
     };
-    match state.solana_db.save_wallet_state(&payload) {
-        Ok(_) => Response::json(200, "OK", json!({ "success": true })),
+    match state.solana_db.save_user_wallet_state(&user.id, &payload) {
+        Ok(_) => Response::json(200, "OK", json!({ "success": true, "user_id": user.id })),
         Err(err) => Response::error(500, "Internal Server Error", &err),
     }
 }

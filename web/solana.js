@@ -48,6 +48,7 @@ const solanaBotState = {
     trapsCount: 0,
   },
   autoPilotEnabled: true,
+  currentUser: null,
   dynamicMarginPct: 6.67,
   maxConcurrentPositions: 15,
   confluenceStopLossPct: -2.0,
@@ -485,6 +486,7 @@ async function checkAuth() {
   try {
     const res = await api("/api/auth/me");
     if (res && res.user) {
+      solanaBotState.currentUser = res.user;
       csrfToken = res.csrf_token || "";
       if (elements.userNameDisplay) elements.userNameDisplay.textContent = res.user.username;
       if (elements.userRoleBadge) elements.userRoleBadge.textContent = res.user.role;
@@ -497,8 +499,11 @@ async function checkAuth() {
           window.location.reload();
         };
       }
+    } else {
+      solanaBotState.currentUser = null;
     }
   } catch (err) {
+    solanaBotState.currentUser = null;
     console.debug("User guest mode:", err);
   }
 }
@@ -885,15 +890,22 @@ async function syncWithDedicatedDb() {
       solanaBotState.databaseInfo.trapsCount = memoryRes.count || memoryRes.traps.length;
     }
 
-    // 3. Fetch persisted wallet state from solana_trades.db
+    // 3. Fetch dedicated wallet state for this authenticated user (if logged in)
     try {
-      const walletRes = await api("/api/market/solana/wallet");
-      if (walletRes && walletRes.wallet) {
-        const w = walletRes.wallet;
-        let savedInitial = 0;
-        try {
+      const userKey = solanaBotState.currentUser ? solanaBotState.currentUser.id : "guest";
+      const storageKey = `rustbot_solana_${userKey}_initial_equity`;
+      let savedInitial = 0;
+      try {
+        savedInitial = Number(localStorage.getItem(storageKey)) || 0;
+        if (!savedInitial && !solanaBotState.currentUser) {
           savedInitial = Number(localStorage.getItem("rustbot_solana_initial_equity")) || 0;
-        } catch (_) { }
+        }
+      } catch (_) { }
+
+      const walletRes = await api("/api/market/solana/wallet");
+      if (walletRes && walletRes.wallet && !walletRes.is_guest) {
+        // Authenticated user with dedicated wallet state
+        const w = walletRes.wallet;
         solanaBotState.wallet.initialEquity = savedInitial > 0 ? savedInitial : (w.peak_equity || w.current_equity || 10000.0);
         solanaBotState.wallet.currentEquity = w.current_equity;
         solanaBotState.wallet.cash = w.cash;
@@ -903,9 +915,16 @@ async function syncWithDedicatedDb() {
         solanaBotState.wallet.tradesWon = w.trades_won;
         solanaBotState.wallet.tradesLost = w.trades_lost;
         updateSolanaWalletHUD();
+      } else if (savedInitial > 0) {
+        // User's dedicated local baseline
+        solanaBotState.wallet.initialEquity = savedInitial;
+        solanaBotState.wallet.currentEquity = savedInitial;
+        solanaBotState.wallet.cash = savedInitial;
+        solanaBotState.wallet.peakEquity = savedInitial;
+        updateSolanaWalletHUD();
       }
     } catch (e) {
-      console.debug("No previous wallet state stored yet:", e);
+      console.debug("No previous wallet state stored for this account:", e);
     }
 
     solanaBotState.databaseInfo.connected = true;
@@ -928,6 +947,10 @@ async function syncWithDedicatedDb() {
 }
 
 function persistSolanaWallet() {
+  if (!solanaBotState.currentUser) {
+    // Guest mode: Do NOT sync or persist to server database; keep wallet strictly local
+    return;
+  }
   const w = solanaBotState.wallet;
   api("/api/market/solana/wallet", {
     method: "POST",
@@ -2022,7 +2045,9 @@ function setCustomWalletBalance(amount) {
     stopSolanaAutonomousBot("OPERATOR_STOP");
   }
 
+  const userKey = solanaBotState.currentUser ? solanaBotState.currentUser.id : "guest";
   try {
+    localStorage.setItem(`rustbot_solana_${userKey}_initial_equity`, String(amount));
     localStorage.setItem("rustbot_solana_initial_equity", String(amount));
   } catch (_) { }
 

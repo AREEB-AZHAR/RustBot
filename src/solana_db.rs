@@ -211,6 +211,18 @@ impl SolanaDb {
                 trades_lost INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS solana_user_wallets (
+                user_id TEXT PRIMARY KEY NOT NULL,
+                current_equity REAL NOT NULL,
+                cash REAL NOT NULL,
+                realized_pnl REAL NOT NULL,
+                total_fees REAL NOT NULL,
+                peak_equity REAL NOT NULL,
+                trades_won INTEGER NOT NULL,
+                trades_lost INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
             ",
         ).map_err(|e| format!("Failed to create Solana DB tables: {e}"))?;
 
@@ -465,12 +477,70 @@ impl SolanaDb {
         Ok(())
     }
 
+    pub fn get_user_wallet_state(&self, user_id: &str) -> Result<Option<SolanaWalletState>, String> {
+        let conn = self.conn.lock().map_err(|_| "Database mutex poisoned".to_string())?;
+        let mut stmt = conn
+            .prepare("SELECT current_equity, cash, realized_pnl, total_fees, peak_equity, trades_won, trades_lost, updated_at FROM solana_user_wallets WHERE user_id = ?1")
+            .map_err(|e| format!("Failed to prepare user wallet state select: {e}"))?;
+
+        let mut rows = stmt
+            .query_map(params![user_id], |row| {
+                Ok(SolanaWalletState {
+                    current_equity: row.get(0)?,
+                    cash: row.get(1)?,
+                    realized_pnl: row.get(2)?,
+                    total_fees: row.get(3)?,
+                    peak_equity: row.get(4)?,
+                    trades_won: row.get(5)?,
+                    trades_lost: row.get(6)?,
+                    updated_at: row.get(7)?,
+                })
+            })
+            .map_err(|e| format!("Failed to execute user wallet state query: {e}"))?;
+
+        match rows.next() {
+            Some(res) => Ok(Some(res.map_err(|e| format!("Row mapping error in solana_user_wallets: {e}"))?)),
+            None => Ok(None),
+        }
+    }
+
+    pub fn save_user_wallet_state(&self, user_id: &str, state: &SolanaWalletState) -> Result<(), String> {
+        let conn = self.conn.lock().map_err(|_| "Database mutex poisoned".to_string())?;
+        let now = now_timestamp();
+        conn.execute(
+            "INSERT INTO solana_user_wallets (user_id, current_equity, cash, realized_pnl, total_fees, peak_equity, trades_won, trades_lost, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+             ON CONFLICT(user_id) DO UPDATE SET
+                current_equity = excluded.current_equity,
+                cash = excluded.cash,
+                realized_pnl = excluded.realized_pnl,
+                total_fees = excluded.total_fees,
+                peak_equity = excluded.peak_equity,
+                trades_won = excluded.trades_won,
+                trades_lost = excluded.trades_lost,
+                updated_at = excluded.updated_at",
+            params![
+                user_id,
+                state.current_equity,
+                state.cash,
+                state.realized_pnl,
+                state.total_fees,
+                state.peak_equity,
+                state.trades_won,
+                state.trades_lost,
+                now
+            ],
+        ).map_err(|e| format!("Failed to save user wallet state: {e}"))?;
+        Ok(())
+    }
+
     pub fn clear_all(&self) -> Result<(), String> {
         let conn = self.conn.lock().map_err(|_| "Database mutex poisoned".to_string())?;
         conn.execute_batch(
             "DELETE FROM solana_trades;
              DELETE FROM solana_learned_memory;
-             DELETE FROM solana_wallet_state;",
+             DELETE FROM solana_wallet_state;
+             DELETE FROM solana_user_wallets;",
         ).map_err(|e| format!("Failed to clear Solana tables: {e}"))?;
         Ok(())
     }
