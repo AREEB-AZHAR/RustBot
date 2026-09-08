@@ -19,7 +19,7 @@ const solanaBotState = {
   latestTimesfmResult: null,
   activePositions: [], // Multiple simultaneous positions across scanned coins
   wallet: {
-    initialEquity: 10000.0, // Default baseline $1,000 as requested
+    initialEquity: 10000.0, // Default baseline $10,000 as requested
     currentEquity: 10000.0,
     cash: 10000.0,
     realizedPnl: 0.0,
@@ -35,6 +35,8 @@ const solanaBotState = {
     stage3PermanentTraps: [],
     avoidedTrapsCount: 0,
     savedCapital: 0.0,
+    lastVetoSyncTimes: {},
+    lastVetoToastTimes: {},
   },
   executedTrades: [],
   databaseInfo: {
@@ -1101,30 +1103,45 @@ async function runSolanaAutonomousTick() {
         continue; // Overbought wick exhaustion
       }
 
-      // CONFLUENCE METRIC 4: Learned Memory Veto Check (solana_trades.db)
+      // CONFLUENCE METRIC 4: Valid Retest / Momentum Confluence (Includes FVG pullbacks!)
+      const isQualityConfluence = ch5m >= -2.5 && ch5m <= 5.0 && (candidate.volatility_score || 75) >= 65;
+      if (!isQualityConfluence) {
+        continue;
+      }
+
+      // CONFLUENCE METRIC 5: Learned Memory Veto Check (solana_trades.db)
       const vetoTrap = checkStage3TrapVeto(candidate);
       if (vetoTrap) {
         solanaBotState.learningEngine.avoidedTrapsCount++;
         solanaBotState.learningEngine.savedCapital += uniformMarginUsd;
 
-        api("/api/market/solana/learned-memory/veto", {
-          method: "POST",
-          body: JSON.stringify({
-            trap_id: vetoTrap.id || vetoTrap.trap_id,
-            saved_capital_usd: uniformMarginUsd,
-          }),
-        }).catch((e) => console.warn("Veto API error:", e));
+        const trapKey = vetoTrap.id || vetoTrap.trap_id || "TRAP-UNKNOWN";
+        const nowMs = Date.now();
+        const lastSync = solanaBotState.learningEngine.lastVetoSyncTimes[trapKey] || 0;
 
-        showToast(`🛑 [solana_trades.db VETO] Blocked candidate ${candidate.symbol} matching trap ${vetoTrap.id}! Saved $${uniformMarginUsd.toFixed(2)} margin.`);
+        // Throttled server sync: at most once every 30s per trap ID to avoid 429 rate limits
+        if (nowMs - lastSync > 30000) {
+          solanaBotState.learningEngine.lastVetoSyncTimes[trapKey] = nowMs;
+          api("/api/market/solana/learned-memory/veto", {
+            method: "POST",
+            body: JSON.stringify({
+              trap_id: trapKey,
+              saved_capital_usd: uniformMarginUsd,
+            }),
+          }).catch((e) => console.warn("Veto API sync suppressed:", e));
+        }
+
+        // Throttled UI toast: at most once every 15s per trap ID
+        const lastToast = solanaBotState.learningEngine.lastVetoToastTimes[trapKey] || 0;
+        if (nowMs - lastToast > 15000) {
+          solanaBotState.learningEngine.lastVetoToastTimes[trapKey] = nowMs;
+          showToast(`🛑 [VETO SAVED] Blocked candidate ${candidate.symbol} matching trap ${trapKey}! Saved $${uniformMarginUsd.toFixed(2)} margin.`);
+        }
         continue;
       }
 
-      // CONFLUENCE METRIC 5: Valid Retest / Momentum Confluence (Includes FVG pullbacks!)
-      const isQualityConfluence = ch5m >= -2.5 && ch5m <= 5.0 && (candidate.volatility_score || 75) >= 65;
-      if (isQualityConfluence) {
-        const patternName = ch5m < 0 ? "Bullish FVG Pullback" : "Bullish Momentum Retest";
-        openPosition(candidate, uniformMarginUsd, patternName);
-      }
+      const patternName = ch5m < 0 ? "Bullish FVG Pullback" : "Bullish Momentum Retest";
+      openPosition(candidate, uniformMarginUsd, patternName);
     }
 
     processThreeStageLearningEngine();

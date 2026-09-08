@@ -3134,20 +3134,35 @@ pre.code-block code {
     height: 56px;
     min-height: 56px;
     flex: 0 0 56px;
-    padding: 0 12px;
+    padding: 0 10px;
     gap: 8px;
+    align-items: center;
+    justify-content: space-between;
+    overflow: hidden;
   }
 
   .rail-expand-btn {
     display: inline-flex !important;
     width: 34px;
     height: 34px;
+    min-width: 34px;
     font-size: 16px;
+    flex-shrink: 0;
   }
 
   .header-title-group {
+    display: flex;
+    align-items: center;
     gap: 8px;
+    flex: 1 1 auto;
     min-width: 0;
+    overflow: hidden;
+  }
+
+  .header-title-group > div {
+    min-width: 0;
+    overflow: hidden;
+    flex: 1 1 auto;
   }
 
   .header-eyebrow {
@@ -3156,21 +3171,43 @@ pre.code-block code {
 
   .chat-header h1 {
     font-size: 14px;
-    max-width: 140px;
+    width: 100%;
+    max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     margin: 0;
+    line-height: 1.2;
   }
 
   .header-actions {
+    display: flex;
+    align-items: center;
     gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .theme-toggle-btn {
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+
+  .workspace-toggle {
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    flex-shrink: 0;
   }
 
   .ready-pill {
-    min-height: 30px;
+    min-height: 28px;
     padding: 0 8px;
     font-size: 10px;
+    flex-shrink: 0;
+    gap: 6px;
   }
 
   .ready-pill #ready-label {
@@ -3180,10 +3217,38 @@ pre.code-block code {
     white-space: nowrap;
   }
 
-  .workspace-toggle,
   .knowledge-toggle {
-    width: 34px;
-    height: 34px;
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    flex-shrink: 0;
+  }
+
+  @media (max-width: 480px) {
+    .chat-header {
+      padding: 0 8px;
+      gap: 6px;
+    }
+
+    .header-actions {
+      gap: 4px;
+    }
+
+    /* On phone screens, hide the text of ready pill so it's just a clean status dot */
+    .ready-pill #ready-label {
+      display: none;
+    }
+
+    .ready-pill {
+      min-height: 28px;
+      padding: 0 7px;
+      border-radius: 999px;
+    }
+
+    /* Market lab is already in the drawer nav; hide from small mobile header to give ample title room */
+    .workspace-toggle {
+      display: none !important;
+    }
   }
 
   /* Responsive Mobile Welcome State */
@@ -4388,17 +4453,23 @@ pre.code-block code {
 .rail-conversations-section {
   display: flex;
   flex-direction: column;
-  margin: 0 0 4px 10px;
+  margin: 2px 0 6px 12px;
   padding-left: 10px;
-  border-left: 2px solid rgba(255, 255, 255, 0.08);
+  border-left: 2px solid rgba(255, 255, 255, 0.1);
   transition: border-color 150ms ease;
+}
+
+[data-theme="light"] .rail-conversations-section {
+  border-left-color: rgba(0, 0, 0, 0.12);
 }
 
 .rail-conversations-section .rail-eyebrow {
   margin: 4px 0 6px 4px;
   font-size: 10px;
+  font-weight: 700;
   letter-spacing: 0.1em;
   color: #747f79;
+  text-transform: uppercase;
 }
 
 .rail-conversations-list {

@@ -514,6 +514,8 @@ fn handle_connection(mut stream: TcpStream, state: &AppState) -> Result<(), Stri
         .set_write_timeout(Some(Duration::from_secs(5)))
         .map_err(|error| error.to_string())?;
 
+    let request = read_request(&mut stream)?;
+
     if let Ok(peer) = stream.peer_addr() {
         if !peer.ip().is_loopback() {
             let mut limiter = state.ip_limiter.lock().unwrap_or_else(|p| p.into_inner());
@@ -527,8 +529,6 @@ fn handle_connection(mut stream: TcpStream, state: &AppState) -> Result<(), Stri
             }
         }
     }
-
-    let request = read_request(&mut stream)?;
 
     let is_host_allowed = {
         let clean_host = request.host.split(':').next().unwrap_or(&request.host);
@@ -3329,6 +3329,7 @@ fn call_openrouter_for_risk_audit(
             .header("Content-Type", "application/json")
             .header("HTTP-Referer", &state.config.public_origin)
             .header("X-Title", "RustBot Solana Risk Sentinel")
+            .timeout(Duration::from_secs(4))
             .json(&body)
             .send();
 

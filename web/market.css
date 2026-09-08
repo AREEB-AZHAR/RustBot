@@ -1452,16 +1452,111 @@ canvas {
   }
 
   .top-header {
-    padding: 0 16px;
+    height: auto;
+    min-height: 56px;
+    padding: 10px 14px;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .header-left {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .header-left .page-title-wrap {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .header-left .page-title-wrap h1 {
+    font-size: 0.95rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin: 0;
+  }
+
+  .header-left .page-title-wrap p {
+    display: none;
+  }
+
+  .header-right {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+  }
+
+  .header-right .status-pill span:last-child {
+    display: none;
+  }
+
+  .chat-back-btn {
+    padding: 5px 9px;
+    font-size: 0.75rem;
+    border-radius: 6px;
+    white-space: nowrap;
+  }
+
+  .market-lab-tabs-nav {
+    order: 3;
+    width: 100%;
+    display: flex;
+    margin-top: 4px;
+    padding: 4px;
+    gap: 4px;
+    background: rgba(0, 0, 0, 0.28);
+    border-radius: 10px;
+  }
+
+  .market-lab-tabs-nav .lab-sub-tab {
+    flex: 1;
+    justify-content: center;
+    font-size: 0.76rem;
+    padding: 7px 8px;
+    text-align: center;
+    white-space: nowrap;
   }
 
   .dashboard-scroll {
-    padding: 16px 16px 36px;
+    padding: 14px 12px 36px;
   }
 
   .market-hero-card {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .trades-table-container,
+  .walk-forward-table-container {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    display: block;
+  }
+
+  .trades-table,
+  .walk-forward-table {
+    min-width: 580px;
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .top-header {
+    padding: 8px 10px;
+  }
+
+  .header-left .page-title-wrap h1 {
+    max-width: 130px;
+    font-size: 0.88rem;
   }
 }
 

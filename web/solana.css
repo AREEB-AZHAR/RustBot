@@ -1538,20 +1538,314 @@ body {
   color: #4ade80;
 }
 
+/* ==========================================================================
+   Responsive Adaptations & Multi-Device Breakpoints
+   - Desktop (> 1024px)
+   - Tablet (769px - 1024px)
+   - Mobile Landscape & Portrait (<= 768px)
+   - Small Mobile (<= 480px)
+   ========================================================================== */
+
+@media (max-width: 1024px) {
+  .timesfm-matrix-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .solana-wallet-hud {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
 @media (max-width: 900px) {
   .sidebar-rail {
     position: fixed;
-    left: -240px;
-    box-shadow: 10px 0 30px rgba(0, 0, 0, 0.5);
+    top: 0;
+    left: -260px;
+    bottom: 0;
+    width: 250px;
+    z-index: 1000;
+    box-shadow: 10px 0 40px rgba(0, 0, 0, 0.65);
+    transition: transform 0.26s cubic-bezier(0.2, 0.8, 0.25, 1);
   }
+
   .sidebar-rail.is-open {
-    left: 0;
+    transform: translateX(260px);
   }
+
   .mobile-nav-toggle {
-    display: grid;
+    display: inline-grid;
     place-items: center;
   }
+
   .dashboard-scroll {
-    padding: 16px;
+    padding: 14px 12px 40px;
+  }
+}
+
+@media (max-width: 768px) {
+  /* Multi-Row Clean Header */
+  .top-header {
+    height: auto;
+    min-height: 56px;
+    padding: 10px 14px;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .header-left {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .header-left .page-title-wrap {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .header-left .page-title-wrap h1 {
+    font-size: 0.95rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin: 0;
+    line-height: 1.2;
+  }
+
+  .header-left .page-title-wrap p {
+    display: none; /* Hide subtitle to preserve mobile vertical budget */
+  }
+
+  .header-right {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+  }
+
+  .header-right .status-pill {
+    padding: 4px 8px;
+    font-size: 0.72rem;
+  }
+
+  .header-right .status-pill span:last-child {
+    display: none; /* Icon dot only on mobile screens */
+  }
+
+  .chat-back-btn {
+    padding: 5px 9px;
+    font-size: 0.75rem;
+    border-radius: 6px;
+    white-space: nowrap;
+  }
+
+  /* Sub-tabs take their own dedicated row beneath header buttons */
+  .market-lab-tabs-nav {
+    order: 3;
+    width: 100%;
+    display: flex;
+    margin-top: 4px;
+    padding: 4px;
+    gap: 4px;
+    background: rgba(0, 0, 0, 0.28);
+    border-radius: 10px;
+    border: 1px solid var(--line);
+  }
+
+  [data-theme="light"] .market-lab-tabs-nav {
+    background: rgba(0, 0, 0, 0.05);
+  }
+
+  .market-lab-tabs-nav .lab-sub-tab {
+    flex: 1;
+    justify-content: center;
+    font-size: 0.76rem;
+    padding: 7px 8px;
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  /* Solana Header Controls */
+  .solana-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+  }
+
+  .solana-title-group h2 {
+    font-size: 1.15rem;
+    line-height: 1.25;
+  }
+
+  .solana-title-group p {
+    font-size: 0.78rem;
+  }
+
+  .solana-header-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .solana-header-controls .btn-solana-start,
+  .solana-header-controls .btn-solana-stop,
+  .solana-header-controls .btn-reset-solana {
+    flex: 1 1 calc(50% - 4px);
+    justify-content: center;
+    min-height: 38px;
+    font-size: 0.8rem;
+  }
+
+  .solana-db-pill,
+  .solana-status-pill {
+    width: 100%;
+    justify-content: center;
+    min-height: 32px;
+    font-size: 0.76rem;
+    text-align: center;
+  }
+
+  /* Single Column HUD Cards on Mobile */
+  .solana-wallet-hud {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .wallet-card {
+    padding: 12px 14px;
+  }
+
+  .wallet-amount {
+    font-size: 1.3rem;
+  }
+
+  .wallet-subtext {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    font-size: 0.74rem;
+  }
+
+  /* Sentinel Autonomous HUD */
+  .sentinel-header-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .sentinel-controls-block {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+  }
+
+  .sentinel-metrics-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .sentinel-metric-chip {
+    padding: 8px 10px;
+  }
+
+  .commentary-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  /* Panel Header Lines & Controls */
+  .tokens-scanner-panel .panel-header-line,
+  .multi-positions-panel .panel-header-line,
+  .three-stage-panel .panel-header-line,
+  .trades-journal-panel .panel-header-line {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .tokens-scanner-panel .panel-controls,
+  .multi-positions-panel .multi-positions-header-chips {
+    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  #solana-token-search {
+    width: 100% !important;
+    max-width: 100%;
+  }
+
+  .stages-explainer-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  /* Touch-Friendly Horizontal Table Scrolling */
+  .multi-positions-scroll,
+  .tokens-table-scroll,
+  .learning-ledger-scroll,
+  .solana-journal-scroll {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    display: block;
+    border-radius: var(--radius-sm);
+  }
+
+  .multi-positions-scroll table,
+  .tokens-table-scroll table,
+  .learning-ledger-scroll table,
+  .solana-journal-scroll table {
+    min-width: 580px;
+    width: 100%;
+  }
+
+  .timesfm-chart-container {
+    height: 220px;
+    min-height: 180px;
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .top-header {
+    padding: 8px 10px;
+  }
+
+  .header-left .page-title-wrap h1 {
+    max-width: 130px;
+    font-size: 0.88rem;
+  }
+
+  .solana-header-controls .btn-solana-start,
+  .solana-header-controls .btn-solana-stop,
+  .solana-header-controls .btn-reset-solana {
+    flex: 1 1 100%;
+  }
+
+  .sentinel-controls-block {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .sentinel-controls-block .btn-audit-now {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .sentinel-metrics-grid {
+    grid-template-columns: 1fr;
+    gap: 6px;
   }
 }
