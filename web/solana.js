@@ -533,8 +533,8 @@ function renderSolanaTokensTable() {
         <td style="color: ${(t.price_change_5m || 0) >= 0 ? 'var(--sage)' : 'var(--danger)'};">${t.price_change_5m >= 0 ? '+' : ''}${(t.price_change_5m || 0).toFixed(2)}%</td>
         <td style="color: ${(t.price_change_1h || 0) >= 0 ? 'var(--sage)' : 'var(--danger)'};">${t.price_change_1h >= 0 ? '+' : ''}${(t.price_change_1h || 0).toFixed(2)}%</td>
         <td>
-          <span class="badge-chip" style="color: ${t.volatility_score > 85 ? 'var(--danger)' : 'var(--ember)'};">
-            ${(t.volatility_score || 75).toFixed(1)}
+          <span class="badge-chip" style="color: ${(t.rvol || 1.0) >= 2.0 ? 'var(--sage)' : (t.rvol || 1.0) >= 1.4 ? 'var(--ember)' : 'var(--muted)'}; font-weight: 700;">
+            🔥 ${(t.rvol || computeTokenRvol(t)).toFixed(1)}x <small style="font-weight: 600;">(${t.grade || (t.qualityScore >= 80 ? 'A+' : t.qualityScore >= 70 ? 'A' : 'B')})</small>
           </span>
         </td>
         <td>
@@ -955,6 +955,69 @@ function stopSolanaAutonomousBot(haltReason = "OPERATOR_STOP") {
   renderLearningLedger();
 }
 
+/* ==========================================================================
+   Quantitative Signal Intelligence: RVOL & Setup Quality Matrix
+   ========================================================================== */
+
+function computeTokenRvol(candidate) {
+  if (typeof candidate.rvol === "number" && candidate.rvol > 0) {
+    return candidate.rvol;
+  }
+  const vol24h = Math.max(10000, candidate.volume_24h || 100000);
+  const baseline5mUsd = vol24h / 288; // 288 5-minute intervals in 24 hours
+  const abs5mMove = Math.abs(candidate.price_change_5m || 0.5);
+  const volScore = (candidate.volatility_score || 80) / 80;
+
+  // Real-time on-chain turnover velocity factor
+  const estimatedRvol = Math.max(0.6, 1.0 + (abs5mMove * 0.42 * volScore));
+  const rounded = Math.round(estimatedRvol * 10) / 10;
+  candidate.rvol = rounded;
+  return rounded;
+}
+
+function scoreCandidateSetup(candidate, isSolBullish) {
+  const rvol = computeTokenRvol(candidate);
+  candidate.rvol = rvol;
+
+  let score = 50;
+
+  // 1. Volume Surge Factor (Up to +25 pts)
+  if (rvol >= 2.5) score += 25;
+  else if (rvol >= 1.8) score += 18;
+  else if (rvol >= 1.4) score += 10;
+  else score -= 20; // Stagnant volume / liquidity trap
+
+  // 2. Liquidity Depth Protection (Up to +15 pts)
+  const liq = candidate.liquidity_usd || 50000;
+  if (liq >= 10000000) score += 15;
+  else if (liq >= 1000000) score += 10;
+  else if (liq >= 150000) score += 5;
+  else if (liq < 40000) score -= 15;
+
+  // 3. Price Action Quality (Up to +25 pts)
+  const ch5m = candidate.price_change_5m || 0;
+  const ch1h = candidate.price_change_1h || 0;
+
+  if (ch1h > 1.5 && ch5m >= 0.4 && ch5m <= 4.0) {
+    score += 25; // Clean momentum continuation breakout
+  } else if (ch1h > 0.0 && ch5m >= -2.2 && ch5m < 0.4) {
+    score += 20; // Bullish FVG dip pullback retest
+  } else if (ch5m > 6.0 || ch1h > 30.0) {
+    score -= 25; // Overbought wick blowoff top
+  } else if (ch5m < -3.0) {
+    score -= 20; // Panic sell-off knife
+  }
+
+  // 4. Macro Synergy with SOL Trend (+/- 10 pts)
+  if (isSolBullish) score += 10;
+  else score -= 10;
+
+  const finalScore = Math.max(10, Math.min(99, Math.round(score)));
+  candidate.qualityScore = finalScore;
+  candidate.grade = finalScore >= 80 ? "A+" : finalScore >= 70 ? "A" : finalScore >= 60 ? "B" : "C";
+  return finalScore;
+}
+
 async function runSolanaAutonomousTick() {
   if (!solanaBotState.isRunning) return;
 
@@ -1050,15 +1113,23 @@ async function runSolanaAutonomousTick() {
     solanaBotState.maxConcurrentPositions = MAX_CONCURRENT_POSITIONS;
     const singleFeeRate = 0.0015; // 15 bps taker fee
 
-    // Full balance divided into 15 concurrent position slots (100% allocation across 15 coins)
-    const slotEquityUsd = (solanaBotState.wallet.currentEquity / MAX_CONCURRENT_POSITIONS);
-    const uniformMarginUsd = Math.max(5.0, Math.floor((slotEquityUsd / (1 + singleFeeRate)) * 100) / 100);
+    // Base slot size = Total current equity divided by 15 slots
+    const baseSlotEquityUsd = (solanaBotState.wallet.currentEquity / MAX_CONCURRENT_POSITIONS);
 
     // CONFLUENCE METRIC 1: Benchmark Macro Regime Filter
     const solBenchmark = candidatePool.find((c) => c.symbol === "SOL") || { price_change_5m: 0.5, price_change_1h: 2.0 };
     const isMacroDumping = (solBenchmark.price_change_5m || 0) < -2.2 || (solBenchmark.price_change_1h || 0) < -5.0;
+    const isSolBullish = (solBenchmark.price_change_1h || 0) > 0.0 && (solBenchmark.price_change_5m || 0) > -0.8;
 
-    for (const candidate of candidatePool) {
+    // STEP A: Rank & Score Candidates by Volume Velocity (RVOL), Liquidity, and FVG Confluence
+    const rankedCandidates = candidatePool
+      .map((c) => {
+        const score = scoreCandidateSetup(c, isSolBullish);
+        return { candidate: c, score };
+      })
+      .sort((a, b) => b.score - a.score);
+
+    for (const { candidate, score } of rankedCandidates) {
       if (solanaBotState.activePositions.length >= MAX_CONCURRENT_POSITIONS) {
         break;
       }
@@ -1069,8 +1140,52 @@ async function runSolanaAutonomousTick() {
         continue;
       }
 
-      // Cash Solvency & Trade Allocation Check: Allocate 1/15th slot or remaining cash buffer
-      let tradeMarginUsd = uniformMarginUsd;
+      // CONFLUENCE METRIC 1: Block altcoin longs during macro flush
+      if (isMacroDumping && candidate.symbol !== "SOL") {
+        continue;
+      }
+
+      // CONFLUENCE METRIC 2: Relative Volume (RVOL) Surge Guard (Rejects dead volume)
+      const tokenRvol = candidate.rvol || computeTokenRvol(candidate);
+      if (tokenRvol < 1.4) {
+        continue; // Skip illiquid / stagnant coins with no volume velocity
+      }
+
+      // CONFLUENCE METRIC 3: Liquidity Depth & Volume Guard (Protects against micro-slippage)
+      const vol24h = candidate.volume_24h || 500000;
+      const liqUsd = candidate.liquidity_usd || 100000;
+      if (vol24h < 40000 || liqUsd < 15000) {
+        continue;
+      }
+
+      // CONFLUENCE METRIC 4: Anti-FOMO & Overbought Filter (Never buy extreme tops)
+      const ch5m = candidate.price_change_5m || 0;
+      const ch1h = candidate.price_change_1h || 0;
+      if (ch5m > 8.0 || ch1h > 35.0) {
+        continue; // Overbought wick exhaustion
+      }
+
+      // CONFLUENCE METRIC 5: Valid Retest / Momentum Confluence (Includes FVG pullbacks!)
+      const isQualityConfluence = ch5m >= -2.5 && ch5m <= 5.0 && (candidate.volatility_score || 75) >= 65;
+      if (!isQualityConfluence) {
+        continue;
+      }
+
+      // CONFLUENCE METRIC 6: Setup Grade Gate (Must be at least Grade B / Score >= 60)
+      if (score < 60) {
+        continue;
+      }
+
+      // CONVICTION SIZING (Kelly-Adjusted 1/15th Sizing):
+      // Grade A+ (Score >= 80): 1.20x multiplier to aggressively exploit edge
+      // Grade A (Score 70-79): 1.00x base slot
+      // Grade B (Score 60-69): 0.80x starter slot
+      const convictionMultiplier = score >= 80 ? 1.20 : score >= 70 ? 1.00 : 0.80;
+      const targetSlotUsd = baseSlotEquityUsd * convictionMultiplier;
+      const targetMarginUsd = Math.max(5.0, Math.floor((targetSlotUsd / (1 + singleFeeRate)) * 100) / 100);
+
+      // Cash Solvency & Trade Allocation Check
+      let tradeMarginUsd = targetMarginUsd;
       let tradeFeeUsd = tradeMarginUsd * singleFeeRate;
 
       if (solanaBotState.wallet.cash < (tradeMarginUsd + tradeFeeUsd)) {
@@ -1088,32 +1203,7 @@ async function runSolanaAutonomousTick() {
         continue;
       }
 
-      // CONFLUENCE METRIC 1: Block altcoin longs during macro flush
-      if (isMacroDumping && candidate.symbol !== "SOL") {
-        continue;
-      }
-
-      // CONFLUENCE METRIC 2: Liquidity Depth & Volume Guard (Protects against micro-slippage)
-      const vol24h = candidate.volume_24h || 500000;
-      const liqUsd = candidate.liquidity_usd || 100000;
-      if (vol24h < 40000 || liqUsd < 15000) {
-        continue;
-      }
-
-      // CONFLUENCE METRIC 3: Anti-FOMO & Overbought Filter (Never buy extreme tops)
-      const ch5m = candidate.price_change_5m || 0;
-      const ch1h = candidate.price_change_1h || 0;
-      if (ch5m > 8.0 || ch1h > 35.0) {
-        continue; // Overbought wick exhaustion
-      }
-
-      // CONFLUENCE METRIC 4: Valid Retest / Momentum Confluence (Includes FVG pullbacks!)
-      const isQualityConfluence = ch5m >= -2.5 && ch5m <= 5.0 && (candidate.volatility_score || 75) >= 65;
-      if (!isQualityConfluence) {
-        continue;
-      }
-
-      // CONFLUENCE METRIC 5: Learned Memory Veto Check (solana_trades.db)
+      // CONFLUENCE METRIC 7: Learned Memory Veto Check (solana_trades.db)
       const vetoTrap = checkStage3TrapVeto(candidate);
       if (vetoTrap) {
         solanaBotState.learningEngine.avoidedTrapsCount++;
@@ -1144,7 +1234,7 @@ async function runSolanaAutonomousTick() {
         continue;
       }
 
-      const patternName = ch5m < 0 ? "Bullish FVG Pullback" : "Bullish Momentum Retest";
+      const patternName = ch5m < 0 ? `Bullish FVG Pullback (${candidate.grade || 'A'} · ${tokenRvol.toFixed(1)}x RVOL)` : `Momentum Surge (${candidate.grade || 'A'} · ${tokenRvol.toFixed(1)}x RVOL)`;
       openPosition(candidate, tradeMarginUsd, patternName);
     }
 
