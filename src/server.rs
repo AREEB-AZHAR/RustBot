@@ -126,6 +126,7 @@ pub struct AppState {
     pub config: AppConfig,
     pub db: Database,
     pub solana_db: Arc<crate::solana_db::SolanaDb>,
+    pub solana_live: Option<Arc<crate::solana_live::SolanaLiveClient>>,
     pub store: Arc<RwLock<KnowledgeStore>>,
     pub openrouter_semaphore: Arc<Semaphore>,
     pub ip_limiter: Arc<Mutex<IpRateLimiter>>,
@@ -325,11 +326,29 @@ pub fn run(
         .build()
         .unwrap_or_else(|_| reqwest::blocking::Client::new());
 
+    let solana_live = if let Some(ref key) = config.solana_private_key {
+        match crate::solana_live::SolanaLiveClient::from_base58_key(key, &config.solana_rpc_url) {
+            Ok(client) => {
+                println!("  Solana Live Trading Client initialized: {}", client.public_key_base58);
+                println!("  RPC Node: {}", client.rpc_url);
+                println!("  Live Execution Enabled: {}", config.solana_live_enabled);
+                Some(Arc::new(client))
+            }
+            Err(e) => {
+                eprintln!("  Warning: Failed to load Solana live client: {e}");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     let bind_addr = config.bind_address();
     let state = AppState {
         config,
         db,
         solana_db,
+        solana_live,
         store: Arc::new(RwLock::new(store)),
         openrouter_semaphore: Arc::new(Semaphore::new(3)),
         ip_limiter: Arc::new(Mutex::new(IpRateLimiter::new())),
@@ -796,6 +815,11 @@ fn route_request(request: &Request, state: &AppState) -> Response {
         ("POST", "/api/market/solana/reset-db") => handle_reset_solana_db(request, state),
         ("GET", "/api/market/solana/wallet") => handle_get_solana_wallet(request, state),
         ("POST", "/api/market/solana/wallet") => handle_post_solana_wallet(request, state),
+        // REAL ON-CHAIN SOLANA TRADING & JUPITER AGGREGATOR ENDPOINTS
+        ("GET", "/api/market/solana/live/status") => handle_get_solana_live_status(request, state),
+        ("GET", "/api/market/solana/live/balance") => handle_get_solana_live_balance(request, state),
+        ("POST", "/api/market/solana/live/swap") => handle_post_solana_live_swap(request, state),
+        ("GET", "/api/market/solana/live/positions") => handle_get_solana_live_positions(request, state),
 
         _ => Response::error(404, "Not Found", "The requested endpoint does not exist."),
     }
@@ -3234,6 +3258,207 @@ fn handle_post_solana_wallet(request: &Request, state: &AppState) -> Response {
     }
 }
 
+// ==========================================
+// REAL ON-CHAIN SOLANA & JUPITER HANDLERS
+// ==========================================
+
+fn handle_get_solana_live_status(_request: &Request, state: &AppState) -> Response {
+    if let Some(ref client) = state.solana_live {
+        let sol_balance = client.get_sol_balance().unwrap_or(0.0);
+        let min_gas = crate::solana_live::MIN_SOL_GAS_RESERVE;
+        let spendable = (sol_balance - min_gas).max(0.0);
+
+        Response::json(200, "OK", json!({
+            "available": true,
+            "live_enabled": state.config.solana_live_enabled,
+            "public_key": client.public_key_base58,
+            "rpc_url": client.rpc_url,
+            "sol_balance": sol_balance,
+            "min_gas_reserve_sol": min_gas,
+            "spendable_sol": spendable,
+        }))
+    } else {
+        Response::json(200, "OK", json!({
+            "available": false,
+            "live_enabled": state.config.solana_live_enabled,
+            "public_key": null,
+            "rpc_url": state.config.solana_rpc_url,
+            "sol_balance": 0.0,
+            "min_gas_reserve_sol": crate::solana_live::MIN_SOL_GAS_RESERVE,
+            "spendable_sol": 0.0,
+            "message": "SOLANA_PRIVATE_KEY is not configured in server .env",
+        }))
+    }
+}
+
+fn handle_get_solana_live_balance(_request: &Request, state: &AppState) -> Response {
+    let client = match state.solana_live {
+        Some(ref c) => c,
+        None => {
+            return Response::error(
+                400,
+                "Bad Request",
+                "Solana live client not initialized. Configure SOLANA_PRIVATE_KEY in .env.",
+            );
+        }
+    };
+
+    let sol_balance = client.get_sol_balance().unwrap_or(0.0);
+    let token_accounts = client.get_token_accounts().unwrap_or_default();
+    let min_gas = crate::solana_live::MIN_SOL_GAS_RESERVE;
+
+    Response::json(200, "OK", json!({
+        "success": true,
+        "public_key": client.public_key_base58,
+        "sol_balance": sol_balance,
+        "min_gas_reserve_sol": min_gas,
+        "spendable_sol": (sol_balance - min_gas).max(0.0),
+        "tokens": token_accounts,
+    }))
+}
+
+#[derive(Debug, Deserialize)]
+struct LiveSwapPayload {
+    pub input_mint: String,
+    pub output_mint: String,
+    pub amount_lamports: u64,
+    pub slippage_bps: Option<u16>,
+    pub token_symbol: Option<String>,
+    pub token_name: Option<String>,
+    pub margin_usd: Option<f64>,
+    pub entry_price: Option<f64>,
+    pub exit_price: Option<f64>,
+    pub exit_reason: Option<String>,
+}
+
+fn handle_post_solana_live_swap(request: &Request, state: &AppState) -> Response {
+    let (session, _user) = match authenticate(request, state) {
+        Ok(res) => res,
+        Err(_) => return Response::error(401, "Unauthorized", "Authentication required for live trading."),
+    };
+
+    if !validate_session_csrf(request, &session, state) {
+        return Response::error(403, "Forbidden", "Invalid CSRF token.");
+    }
+
+    if !state.config.solana_live_enabled {
+        return Response::error(
+            403,
+            "Forbidden",
+            "Live trading is disabled. Set SOLANA_LIVE_ENABLED=true in server .env to execute real money trades.",
+        );
+    }
+
+    let client = match state.solana_live {
+        Some(ref c) => c,
+        None => {
+            return Response::error(
+                400,
+                "Bad Request",
+                "Solana live client not initialized. Check SOLANA_PRIVATE_KEY in .env.",
+            );
+        }
+    };
+
+    let payload: LiveSwapPayload = match parse_json(&request.body) {
+        Ok(p) => p,
+        Err(err) => return Response::error(400, "Bad Request", &err),
+    };
+
+    if payload.amount_lamports == 0 {
+        return Response::error(400, "Bad Request", "Swap amount must be greater than 0 lamports.");
+    }
+
+    // Safety check: When spending native SOL, enforce minimum gas reserve
+    if payload.input_mint == crate::solana_live::SOL_MINT {
+        let current_sol = client.get_sol_balance().unwrap_or(0.0);
+        let requested_sol = payload.amount_lamports as f64 / 1_000_000_000.0;
+        let min_reserve = crate::solana_live::MIN_SOL_GAS_RESERVE;
+        if current_sol < requested_sol + min_reserve {
+            return Response::error(
+                400,
+                "Bad Request",
+                &format!(
+                    "Insufficient SOL. Wallet balance is {:.4} SOL. Swapping {:.4} SOL requires maintaining at least {:.3} SOL gas reserve.",
+                    current_sol, requested_sol, min_reserve
+                ),
+            );
+        }
+    }
+
+    let slippage = payload.slippage_bps.unwrap_or(50);
+    match client.execute_live_swap(
+        &payload.input_mint,
+        &payload.output_mint,
+        payload.amount_lamports,
+        slippage,
+    ) {
+        Ok(res) => {
+            let sym = payload.token_symbol.unwrap_or_else(|| "TOKEN".to_string());
+            let name = payload.token_name.unwrap_or_else(|| sym.clone());
+            let margin = payload.margin_usd.unwrap_or(0.0);
+            let reason = payload.exit_reason.unwrap_or_else(|| "Live Jupiter Swap".to_string());
+            let trade_ref = format!("LIVE-{}", &res.tx_signature[..res.tx_signature.len().min(12)]);
+
+            let new_trade = crate::solana_db::NewSolanaTrade {
+                trade_ref,
+                token_symbol: sym,
+                token_name: name,
+                dex: "jupiter".to_string(),
+                entry_price: payload.entry_price.unwrap_or(0.0),
+                exit_price: payload.exit_price.unwrap_or(0.0),
+                margin_usd: margin,
+                pnl_usd: 0.0,
+                pnl_pct: 0.0,
+                fees_paid_usd: 0.005,
+                exit_reason: reason,
+                is_win: true,
+                features_json: json!({
+                    "input_mint": payload.input_mint,
+                    "output_mint": payload.output_mint,
+                    "in_amount_lamports": payload.amount_lamports,
+                    "out_amount_estimated": res.out_amount_estimated,
+                    "solscan_url": res.solscan_url,
+                    "price_impact_pct": res.price_impact_pct,
+                })
+                .to_string(),
+                is_live: Some(true),
+                tx_signature: Some(res.tx_signature.clone()),
+            };
+
+            let _ = state.solana_db.record_trade(&new_trade);
+
+            Response::json(200, "OK", json!({
+                "success": true,
+                "tx_signature": res.tx_signature,
+                "solscan_url": res.solscan_url,
+                "in_amount_lamports": res.in_amount_lamports,
+                "out_amount_estimated": res.out_amount_estimated,
+                "price_impact_pct": res.price_impact_pct,
+            }))
+        }
+        Err(err) => Response::error(502, "Bad Gateway", &format!("Live swap failed: {err}")),
+    }
+}
+
+fn handle_get_solana_live_positions(_request: &Request, state: &AppState) -> Response {
+    let client = match state.solana_live {
+        Some(ref c) => c,
+        None => {
+            return Response::error(
+                400,
+                "Bad Request",
+                "Solana live client not initialized.",
+            );
+        }
+    };
+
+    match client.get_token_accounts() {
+        Ok(accounts) => Response::json(200, "OK", json!({ "positions": accounts })),
+        Err(err) => Response::error(500, "Internal Server Error", &err),
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 struct SolanaAiRiskAuditRequest {
     pub recent_limit: Option<usize>,
@@ -3536,6 +3761,9 @@ mod tests {
             openrouter_api_key: None,
             coingecko_api_key: None,
             session_pepper: "test_pepper_1234567890".to_string(),
+            solana_private_key: None,
+            solana_rpc_url: "https://api.mainnet-beta.solana.com".to_string(),
+            solana_live_enabled: false,
         };
         let store = Arc::new(RwLock::new(KnowledgeStore::from_memories(&[])));
         let solana_db = Arc::new(crate::solana_db::SolanaDb::open_in_memory().unwrap());
@@ -3543,6 +3771,7 @@ mod tests {
             config,
             db,
             solana_db,
+            solana_live: None,
             store,
             openrouter_semaphore: Arc::new(Semaphore::new(3)),
             ip_limiter: Arc::new(Mutex::new(IpRateLimiter::new())),
@@ -3699,6 +3928,9 @@ mod tests {
             openrouter_api_key: None,
             coingecko_api_key: None,
             session_pepper: "secure_pepper_for_duckdns_prod_123".to_string(),
+            solana_private_key: None,
+            solana_rpc_url: "https://api.mainnet-beta.solana.com".to_string(),
+            solana_live_enabled: false,
         };
         let store = Arc::new(RwLock::new(KnowledgeStore::from_memories(&[])));
         let solana_db = Arc::new(crate::solana_db::SolanaDb::open_in_memory().unwrap());
@@ -3706,6 +3938,7 @@ mod tests {
             config,
             db,
             solana_db,
+            solana_live: None,
             store,
             openrouter_semaphore: Arc::new(Semaphore::new(3)),
             ip_limiter: Arc::new(Mutex::new(IpRateLimiter::new())),
@@ -3798,6 +4031,9 @@ mod tests {
             openrouter_api_key: None,
             coingecko_api_key: None,
             session_pepper: "test_pepper_mem_12345".to_string(),
+            solana_private_key: None,
+            solana_rpc_url: "https://api.mainnet-beta.solana.com".to_string(),
+            solana_live_enabled: false,
         };
         let store = Arc::new(RwLock::new(KnowledgeStore::from_memories(&[])));
         let solana_db = Arc::new(crate::solana_db::SolanaDb::open_in_memory().unwrap());
@@ -3805,6 +4041,7 @@ mod tests {
             config,
             db,
             solana_db,
+            solana_live: None,
             store,
             openrouter_semaphore: Arc::new(Semaphore::new(3)),
             ip_limiter: Arc::new(Mutex::new(IpRateLimiter::new())),
@@ -4081,6 +4318,9 @@ mod tests {
             openrouter_api_key: None,
             coingecko_api_key: None,
             session_pepper: "test_pepper_titling_12345".to_string(),
+            solana_private_key: None,
+            solana_rpc_url: "https://api.mainnet-beta.solana.com".to_string(),
+            solana_live_enabled: false,
         };
         let store = Arc::new(RwLock::new(KnowledgeStore::from_memories(&[])));
         let solana_db = Arc::new(crate::solana_db::SolanaDb::open_in_memory().unwrap());
@@ -4088,6 +4328,7 @@ mod tests {
             config,
             db,
             solana_db,
+            solana_live: None,
             store,
             openrouter_semaphore: Arc::new(Semaphore::new(3)),
             ip_limiter: Arc::new(Mutex::new(IpRateLimiter::new())),
@@ -4217,6 +4458,9 @@ mod tests {
             openrouter_api_key: None,
             coingecko_api_key: None,
             session_pepper: "test_pepper_1234567890".to_string(),
+            solana_private_key: None,
+            solana_rpc_url: "https://api.mainnet-beta.solana.com".to_string(),
+            solana_live_enabled: false,
         };
         let store = Arc::new(RwLock::new(KnowledgeStore::from_memories(&[])));
         let solana_db = Arc::new(crate::solana_db::SolanaDb::open_in_memory().unwrap());
@@ -4224,6 +4468,7 @@ mod tests {
             config,
             db,
             solana_db,
+            solana_live: None,
             store,
             openrouter_semaphore: Arc::new(Semaphore::new(3)),
             ip_limiter: Arc::new(Mutex::new(IpRateLimiter::new())),
@@ -4347,6 +4592,9 @@ mod tests {
             openrouter_api_key: None,
             coingecko_api_key: None,
             session_pepper: "test_pepper_1234567890".to_string(),
+            solana_private_key: None,
+            solana_rpc_url: "https://api.mainnet-beta.solana.com".to_string(),
+            solana_live_enabled: false,
         };
         let store = Arc::new(RwLock::new(KnowledgeStore::from_memories(&[])));
         let solana_db = Arc::new(crate::solana_db::SolanaDb::open_in_memory().unwrap());
@@ -4354,6 +4602,7 @@ mod tests {
             config,
             db,
             solana_db,
+            solana_live: None,
             store,
             openrouter_semaphore: Arc::new(Semaphore::new(3)),
             ip_limiter: Arc::new(Mutex::new(IpRateLimiter::new())),
@@ -4559,5 +4808,56 @@ mod tests {
         assert!(audit_data.get("tighten_stop_loss_pct").is_some());
         assert!(audit_data.get("trailing_runner_trigger_pct").is_some());
         assert!(audit_data.get("fact_check_verdict").is_some());
+    }
+
+    #[test]
+    fn test_solana_live_routes() {
+        let mut state = make_test_state();
+
+        // 1. Live status when not configured
+        let req_status = Request {
+            method: "GET".to_string(),
+            path: "/api/market/solana/live/status".to_string(),
+            query: HashMap::new(),
+            headers: HashMap::from([("host".to_string(), "127.0.0.1:7878".to_string())]),
+            host: "127.0.0.1:7878".to_string(),
+            body: vec![],
+        };
+        let res_status = route_request(&req_status, &state);
+        assert_eq!(res_status.status, 200);
+        let status_json: serde_json::Value = serde_json::from_slice(&res_status.body).unwrap();
+        assert_eq!(status_json["available"], false);
+        assert_eq!(status_json["live_enabled"], false);
+
+        // 2. Configure mock/test client
+        let test_seed = [55u8; 32];
+        let seed_b58 = bs58::encode(&test_seed).into_string();
+        let client = crate::solana_live::SolanaLiveClient::from_base58_key(&seed_b58, "https://api.mainnet-beta.solana.com").unwrap();
+        let expected_pubkey = client.public_key_base58.clone();
+        state.solana_live = Some(Arc::new(client));
+        state.config.solana_live_enabled = false;
+
+        let res_status_configured = route_request(&req_status, &state);
+        assert_eq!(res_status_configured.status, 200);
+        let status_json2: serde_json::Value = serde_json::from_slice(&res_status_configured.body).unwrap();
+        assert_eq!(status_json2["available"], true);
+        assert_eq!(status_json2["public_key"], expected_pubkey);
+        assert_eq!(status_json2["live_enabled"], false);
+
+        // 3. Swap rejected when unauthenticated
+        let req_swap_unauth = Request {
+            method: "POST".to_string(),
+            path: "/api/market/solana/live/swap".to_string(),
+            query: HashMap::new(),
+            headers: HashMap::from([("host".to_string(), "127.0.0.1:7878".to_string())]),
+            host: "127.0.0.1:7878".to_string(),
+            body: serde_json::json!({
+                "input_mint": crate::solana_live::SOL_MINT,
+                "output_mint": "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN",
+                "amount_lamports": 100_000_000u64,
+            }).to_string().into_bytes(),
+        };
+        let res_swap_unauth = route_request(&req_swap_unauth, &state);
+        assert_eq!(res_swap_unauth.status, 401);
     }
 }

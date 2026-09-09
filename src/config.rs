@@ -17,6 +17,9 @@ pub struct AppConfig {
     pub openrouter_api_key: Option<String>,
     pub coingecko_api_key: Option<String>,
     pub session_pepper: String,
+    pub solana_private_key: Option<String>,
+    pub solana_rpc_url: String,
+    pub solana_live_enabled: bool,
 }
 
 impl AppConfig {
@@ -90,6 +93,12 @@ impl AppConfig {
         let openrouter_api_key = get_var("OPENROUTER_API_KEY");
         let coingecko_api_key = get_var("COINGECKO_API_KEY");
         let session_pepper = get_var("RUSTBOT_SESSION_PEPPER").unwrap_or_default();
+        let solana_private_key = get_var("SOLANA_PRIVATE_KEY");
+        let solana_rpc_url = get_var("SOLANA_RPC_URL")
+            .unwrap_or_else(|| "https://api.mainnet-beta.solana.com".to_string());
+        let solana_live_enabled = get_var("SOLANA_LIVE_ENABLED")
+            .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
+            .unwrap_or(false);
 
         let config = Self {
             env,
@@ -100,6 +109,9 @@ impl AppConfig {
             openrouter_api_key,
             coingecko_api_key,
             session_pepper,
+            solana_private_key,
+            solana_rpc_url,
+            solana_live_enabled,
         };
 
         config.validate()?;
@@ -154,6 +166,9 @@ mod tests {
             openrouter_api_key: None,
             coingecko_api_key: None,
             session_pepper: "".to_string(),
+            solana_private_key: None,
+            solana_rpc_url: "https://api.mainnet-beta.solana.com".to_string(),
+            solana_live_enabled: false,
         };
         assert!(config.validate().is_ok());
         assert!(!config.is_production());
@@ -170,6 +185,9 @@ mod tests {
             openrouter_api_key: None,
             coingecko_api_key: None,
             session_pepper: "a-very-long-secret-pepper-string".to_string(),
+            solana_private_key: None,
+            solana_rpc_url: "https://api.mainnet-beta.solana.com".to_string(),
+            solana_live_enabled: false,
         };
         let err = config.validate().unwrap_err();
         assert!(err.contains("must begin with 'https://'"));
@@ -186,6 +204,9 @@ mod tests {
             openrouter_api_key: None,
             coingecko_api_key: None,
             session_pepper: "short".to_string(),
+            solana_private_key: None,
+            solana_rpc_url: "https://api.mainnet-beta.solana.com".to_string(),
+            solana_live_enabled: false,
         };
         let err = config.validate().unwrap_err();
         assert!(err.contains("RUSTBOT_SESSION_PEPPER"));
@@ -202,6 +223,9 @@ mod tests {
             openrouter_api_key: Some("key".to_string()),
             coingecko_api_key: None,
             session_pepper: "super-secret-pepper-phrase-for-auth".to_string(),
+            solana_private_key: None,
+            solana_rpc_url: "https://api.mainnet-beta.solana.com".to_string(),
+            solana_live_enabled: false,
         };
         assert!(config.validate().is_ok());
         assert!(config.is_production());

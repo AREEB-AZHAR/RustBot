@@ -18,6 +18,19 @@ const solanaBotState = {
   currentCandles: [],
   latestTimesfmResult: null,
   activePositions: [], // Multiple simultaneous positions across scanned coins
+  isLiveMode: false,
+  liveWallet: {
+    available: false,
+    liveEnabled: false,
+    publicKey: null,
+    rpcUrl: "",
+    solBalance: 0.0,
+    minGasReserveSol: 0.05,
+    spendableSol: 0.0,
+    solPriceUsd: 142.50,
+    tokens: [],
+    lastSyncTime: 0,
+  },
   wallet: {
     initialEquity: 10000.0, // Default baseline $10,000 as requested
     currentEquity: 10000.0,
@@ -115,6 +128,11 @@ const elements = {
   toastMessage: document.querySelector("#toast-message"),
 
   // Solana Bot Elements
+  btnModePaper: document.querySelector("#btn-mode-paper"),
+  btnModeLive: document.querySelector("#btn-mode-live"),
+  liveWalletPill: document.querySelector("#live-wallet-pill"),
+  liveWalletAddress: document.querySelector("#live-wallet-address"),
+  liveWalletSol: document.querySelector("#live-wallet-sol"),
   btnStartSolanaBot: document.querySelector("#btn-start-solana-bot"),
   btnStopSolanaBot: document.querySelector("#btn-stop-solana-bot"),
   btnResetSolanaWallet: document.querySelector("#btn-reset-solana-wallet"),
@@ -193,6 +211,7 @@ async function initialize() {
   renderMultiPositionsTable();
   await checkAuth();
   await syncWithDedicatedDb();
+  await syncSolanaLiveStatus();
   await scanSolanaChain(false);
 
   // Trigger initial AI Risk Sentinel Audit
@@ -258,6 +277,12 @@ function initTheme() {
 }
 
 function bindEvents() {
+  if (elements.btnModePaper) {
+    elements.btnModePaper.addEventListener("click", switchToPaperMode);
+  }
+  if (elements.btnModeLive) {
+    elements.btnModeLive.addEventListener("click", switchToLiveMode);
+  }
   if (elements.btnStartSolanaBot) {
     elements.btnStartSolanaBot.addEventListener("click", startSolanaAutonomousBot);
   }
@@ -944,6 +969,114 @@ async function syncWithDedicatedDb() {
       elements.solanaDbText.textContent = "solana_trades.db (Local In-Memory)";
     }
   }
+}
+
+/* ==========================================================================
+   Real Solana On-Chain & Live Phantom Wallet Sync
+   ========================================================================== */
+
+async function syncSolanaLiveStatus() {
+  try {
+    const res = await api("/api/market/solana/live/status");
+    if (res) {
+      solanaBotState.liveWallet.available = Boolean(res.available);
+      solanaBotState.liveWallet.liveEnabled = Boolean(res.live_enabled);
+      solanaBotState.liveWallet.publicKey = res.public_key || null;
+      solanaBotState.liveWallet.rpcUrl = res.rpc_url || "";
+      solanaBotState.liveWallet.solBalance = Number(res.sol_balance || 0);
+      solanaBotState.liveWallet.minGasReserveSol = Number(res.min_gas_reserve_sol || 0.05);
+      solanaBotState.liveWallet.spendableSol = Number(res.spendable_sol || 0);
+      solanaBotState.liveWallet.lastSyncTime = Date.now();
+
+      // Dynamically derive current SOL price in USD from catalog or scanned tokens
+      const solToken = (solanaBotState.scannedTokens || []).find((c) => c.symbol === "SOL")
+        || SOLANA_EXPANDED_CATALOG.find((c) => c.symbol === "SOL");
+      if (solToken && solToken.price_usd > 0) {
+        solanaBotState.liveWallet.solPriceUsd = solToken.price_usd;
+      }
+
+      if (res.available && res.public_key) {
+        if (elements.liveWalletPill) {
+          elements.liveWalletPill.style.display = "inline-flex";
+        }
+        if (elements.liveWalletAddress) {
+          const shortPk = res.public_key.slice(0, 4) + "..." + res.public_key.slice(-4);
+          elements.liveWalletAddress.textContent = `Phantom: ${shortPk}`;
+          elements.liveWalletAddress.title = `Full Address: ${res.public_key}\nRPC: ${res.rpc_url}\nMin Gas Reserve: ${solanaBotState.liveWallet.minGasReserveSol} SOL`;
+        }
+        if (elements.liveWalletSol) {
+          elements.liveWalletSol.textContent = `${res.sol_balance.toFixed(3)} SOL`;
+        }
+      } else {
+        if (elements.liveWalletPill) {
+          elements.liveWalletPill.style.display = "none";
+        }
+      }
+
+      if (solanaBotState.isLiveMode) {
+        const liveCashUsd = solanaBotState.liveWallet.spendableSol * (solanaBotState.liveWallet.solPriceUsd || 142.5);
+        solanaBotState.wallet.cash = liveCashUsd;
+        updateSolanaWalletHUD();
+      }
+    }
+  } catch (e) {
+    console.warn("Failed to sync live Solana status:", e);
+  }
+}
+
+async function switchToLiveMode() {
+  if (solanaBotState.isLiveMode) return;
+
+  await syncSolanaLiveStatus();
+
+  if (!solanaBotState.liveWallet.available) {
+    showToast("⚠️ Solana Live Trading is not configured. To trade real funds: export your Phantom base58 private key into server .env as SOLANA_PRIVATE_KEY=... and restart RustBot.");
+    return;
+  }
+
+  if (!solanaBotState.liveWallet.liveEnabled) {
+    showToast("⚠️ Live trading is currently disabled on server. Set SOLANA_LIVE_ENABLED=true in server .env to permit real money transactions.");
+  }
+
+  const spendableUsd = solanaBotState.liveWallet.spendableSol * (solanaBotState.liveWallet.solPriceUsd || 142.5);
+  if (spendableUsd < 0.50) {
+    showToast(`⚠️ Low SOL balance (${solanaBotState.liveWallet.solBalance.toFixed(3)} SOL). You need more than 0.05 SOL to cover gas reserves and trade slots.`);
+  }
+
+  if (solanaBotState.activePositions.length > 0) {
+    closeAllPositions("Switching to Live On-Chain Trading");
+  }
+
+  solanaBotState.isLiveMode = true;
+
+  if (elements.btnModeLive) elements.btnModeLive.classList.add("active", "live");
+  if (elements.btnModePaper) elements.btnModePaper.classList.remove("active");
+
+  const liveCashUsd = solanaBotState.liveWallet.spendableSol * (solanaBotState.liveWallet.solPriceUsd || 142.5);
+  solanaBotState.wallet.cash = liveCashUsd;
+  solanaBotState.wallet.currentEquity = liveCashUsd;
+  solanaBotState.wallet.initialEquity = Math.max(1, liveCashUsd);
+  solanaBotState.wallet.peakEquity = liveCashUsd;
+
+  updateSolanaWalletHUD();
+  showToast(`🔴 [LIVE SOLANA ENGAGED] Using Phantom wallet (${solanaBotState.liveWallet.solBalance.toFixed(3)} SOL = $${liveCashUsd.toFixed(2)}) via Jupiter Aggregator.`);
+}
+
+function switchToPaperMode() {
+  if (!solanaBotState.isLiveMode) return;
+
+  if (solanaBotState.activePositions.length > 0) {
+    closeAllPositions("Switching to Virtual Paper Trading");
+  }
+
+  solanaBotState.isLiveMode = false;
+
+  if (elements.btnModePaper) elements.btnModePaper.classList.add("active");
+  if (elements.btnModeLive) elements.btnModeLive.classList.remove("active", "live");
+
+  syncWithDedicatedDb();
+  updateSolanaWalletHUD();
+  showToast("🧪 [PAPER MODE] Switched back to simulated virtual balance.");
 }
 
 function persistSolanaWallet() {
@@ -1719,6 +1852,40 @@ function openPosition(token, marginUsd, fvgType = "BULLISH_FVG", route = null, m
     solanaBotState.wallet.peakEquity = solanaBotState.wallet.currentEquity;
   }
   persistSolanaWallet();
+
+  // LIVE ON-CHAIN EXECUTION via Jupiter Aggregator API
+  if (solanaBotState.isLiveMode && solanaBotState.liveWallet.available) {
+    const solPrice = solanaBotState.liveWallet.solPriceUsd || 142.5;
+    const lamports = Math.floor((marginUsd / solPrice) * 1_000_000_000);
+    const tokenMint = token.mint || token.address || "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN";
+    if (lamports >= 50_000) {
+      api("/api/market/solana/live/swap", {
+        method: "POST",
+        body: JSON.stringify({
+          input_mint: "So11111111111111111111111111111111111111112",
+          output_mint: tokenMint,
+          amount_lamports: lamports,
+          slippage_bps: 50,
+          token_symbol: token.symbol,
+          token_name: token.name || token.symbol,
+          margin_usd: marginUsd,
+          entry_price: entryPrice,
+          exit_reason: safeFvg,
+        }),
+      }).then((swapRes) => {
+        if (swapRes && swapRes.tx_signature) {
+          pos.txSignature = swapRes.tx_signature;
+          pos.solscanUrl = swapRes.solscan_url;
+          pos.isLive = true;
+          showToast(`🚀 [LIVE JUPITER BUY] ${token.symbol} swapped for ${(lamports / 1e9).toFixed(3)} SOL! Tx: ${swapRes.tx_signature.slice(0, 8)}...`);
+          syncSolanaLiveStatus();
+        }
+      }).catch((swapErr) => {
+        console.error("Live swap error:", swapErr);
+        showToast(`❌ [LIVE SWAP ERROR] ${swapErr.message || swapErr}`);
+      });
+    }
+  }
 }
 
 function closePosition(pos, exitReason, isEmergencyHalt = false) {
@@ -1748,6 +1915,36 @@ function closePosition(pos, exitReason, isEmergencyHalt = false) {
   }
   persistSolanaWallet();
 
+  // LIVE ON-CHAIN SELL: Swap token back to native SOL via Jupiter
+  if (pos.isLive || (solanaBotState.isLiveMode && solanaBotState.liveWallet.available)) {
+    const tokenMint = pos.token.mint || pos.token.address || "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN";
+    const solPrice = solanaBotState.liveWallet.solPriceUsd || 142.5;
+    const lamportsToSell = Math.floor(((pos.shares * exitPrice) / solPrice) * 1_000_000_000);
+    if (lamportsToSell >= 50_000) {
+      api("/api/market/solana/live/swap", {
+        method: "POST",
+        body: JSON.stringify({
+          input_mint: tokenMint,
+          output_mint: "So11111111111111111111111111111111111111112",
+          amount_lamports: lamportsToSell,
+          slippage_bps: 50,
+          token_symbol: pos.token.symbol,
+          token_name: pos.token.name || pos.token.symbol,
+          margin_usd: pos.marginUsd,
+          exit_price: exitPrice,
+          exit_reason: exitReason,
+        }),
+      }).then((sellRes) => {
+        if (sellRes && sellRes.tx_signature) {
+          showToast(`💰 [LIVE JUPITER SELL] ${pos.token.symbol} sold for SOL! Tx: ${sellRes.tx_signature.slice(0, 8)}...`);
+          syncSolanaLiveStatus();
+        }
+      }).catch((sellErr) => {
+        console.warn("Live sell error:", sellErr);
+      });
+    }
+  }
+
   const isWin = netPnlUsd > 0 || Boolean(pos.tp1Triggered);
   if (isWin) {
     solanaBotState.wallet.tradesWon++;
@@ -1764,6 +1961,7 @@ function closePosition(pos, exitReason, isEmergencyHalt = false) {
 
   const tradeRef = `SOL-HFT-${Date.now().toString().slice(-6)}`;
   const tradeDex = pos.route ? pos.route.venueName : (pos.token.dex || "Raydium");
+  const isLiveTrade = Boolean(pos.isLive || solanaBotState.isLiveMode);
   const tradeEntry = {
     id: solanaBotState.executedTrades.length + 1,
     tradeRef,
@@ -1778,6 +1976,8 @@ function closePosition(pos, exitReason, isEmergencyHalt = false) {
     feesPaid: entryFee + exitTakerFee,
     exitReason,
     isWin,
+    isLive: isLiveTrade,
+    txSignature: pos.txSignature || "",
     learningNote: isWin ? (pos.tp1Triggered ? "🛡️ BE Runner Exit" : "🟢 Captured Edge") : "🔴 Doubted (Stage 1)",
   };
 
@@ -1801,6 +2001,8 @@ function closePosition(pos, exitReason, isEmergencyHalt = false) {
       exit_reason: exitReason,
       is_win: isWin,
       features_json: JSON.stringify(pos.entryFeatures),
+      is_live: isLiveTrade,
+      tx_signature: pos.txSignature || "",
     }),
   }).then(() => {
     solanaBotState.databaseInfo.tradesCount++;
@@ -2128,12 +2330,21 @@ function updateSolanaWalletHUD() {
   }
 
   if (elements.solanaBaselineCapital) {
-    elements.solanaBaselineCapital.textContent = `Baseline Capital: $${wallet.initialEquity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    if (solanaBotState.isLiveMode && solanaBotState.liveWallet.available) {
+      elements.solanaBaselineCapital.textContent = `Phantom SOL: ${solanaBotState.liveWallet.solBalance.toFixed(3)} SOL (0.05 SOL Gas Reserved)`;
+    } else {
+      elements.solanaBaselineCapital.textContent = `Baseline Capital: $${wallet.initialEquity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    }
   }
 
   if (elements.solanaCashAllocation) {
-    const cashPct = ((wallet.cash / Math.max(1, current)) * 100).toFixed(0);
-    elements.solanaCashAllocation.textContent = `$${wallet.cash.toFixed(2)} Cash (${cashPct}%)`;
+    if (solanaBotState.isLiveMode && solanaBotState.liveWallet.available) {
+      const perTradeSol = (solanaBotState.liveWallet.spendableSol / (solanaBotState.maxConcurrentPositions || 15)).toFixed(4);
+      elements.solanaCashAllocation.textContent = `${solanaBotState.liveWallet.spendableSol.toFixed(3)} SOL Tradable (${perTradeSol} SOL/slot)`;
+    } else {
+      const cashPct = ((wallet.cash / Math.max(1, current)) * 100).toFixed(0);
+      elements.solanaCashAllocation.textContent = `$${wallet.cash.toFixed(2)} Cash (${cashPct}%)`;
+    }
   }
 
   if (elements.solanaCumPnl) {
@@ -2311,7 +2522,7 @@ function renderSolanaJournal() {
   if (trades.length === 0) {
     elements.solanaJournalTbody.innerHTML = `
       <tr>
-        <td colspan="9" style="text-align: center; color: var(--muted); padding: 14px;">
+        <td colspan="10" style="text-align: center; color: var(--muted); padding: 14px;">
           No live Solana HFT trades executed yet. Click "Start Solana Bot" above to begin.
         </td>
       </tr>`;
@@ -2337,16 +2548,26 @@ function renderSolanaJournal() {
         ? `<span class="token-cell-dex" style="color: var(--ember); font-weight: 700;">💊 PUMP.FUN</span>`
         : `<span class="token-cell-dex" style="text-transform: uppercase;">${t.dex || "RAYDIUM"}</span>`;
 
+      const isLiveTrade = Boolean(t.isLive || (t.txSignature && t.txSignature.length > 0));
+      const liveBadge = isLiveTrade
+        ? `<span style="background: rgba(239, 68, 68, 0.16); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.35); border-radius: 4px; padding: 1px 5px; font-size: 0.68rem; font-weight: 700; margin-left: 4px;">LIVE</span>`
+        : "";
+
+      const txCell = t.txSignature
+        ? `<a href="https://solscan.io/tx/${encodeURIComponent(t.txSignature)}" target="_blank" rel="noopener noreferrer" style="color: var(--gold, #f59e0b); font-size: 0.74rem; text-decoration: none; display: inline-flex; align-items: center; gap: 3px; font-family: monospace;" title="View on Solscan: ${t.txSignature}">🔗 ${t.txSignature.slice(0, 4)}...${t.txSignature.slice(-4)}</a>`
+        : `<span style="color: var(--muted); font-size: 0.72rem;">Paper</span>`;
+
       return `
         <tr>
           <td>#${trades.length - idx}</td>
           <td>${t.time || "--:--:--"}</td>
-          <td><strong>${t.token || "SOL"}</strong></td>
+          <td><strong>${t.token || "SOL"}</strong>${liveBadge}</td>
           <td>${dexBadge}</td>
           <td>$${formattedEntry}</td>
           <td>$${formattedExit}</td>
           <td class="${pnlClass}" style="font-weight: 700;">${pnlSign}$${(t.pnlUsd || 0).toFixed(2)} (${pnlSign}${(t.pnlPct || 0).toFixed(2)}%)</td>
           <td><span class="badge-chip">${t.exitReason || "Closed"}</span></td>
+          <td>${txCell}</td>
           <td>${learningBadge}</td>
         </tr>`;
     })

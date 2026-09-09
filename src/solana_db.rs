@@ -29,6 +29,8 @@ pub struct SolanaTradeRecord {
     pub features_json: String,
     pub created_at: i64,
     pub closed_at: i64,
+    pub is_live: bool,
+    pub tx_signature: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -46,6 +48,10 @@ pub struct NewSolanaTrade {
     pub exit_reason: String,
     pub is_win: bool,
     pub features_json: String,
+    #[serde(default)]
+    pub is_live: Option<bool>,
+    #[serde(default)]
+    pub tx_signature: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -173,7 +179,9 @@ impl SolanaDb {
                 is_win INTEGER NOT NULL,
                 features_json TEXT NOT NULL,
                 created_at INTEGER NOT NULL,
-                closed_at INTEGER NOT NULL
+                closed_at INTEGER NOT NULL,
+                is_live INTEGER NOT NULL DEFAULT 0,
+                tx_signature TEXT NOT NULL DEFAULT ''
             );
 
             CREATE INDEX IF NOT EXISTS idx_solana_trades_token ON solana_trades(token_symbol);
@@ -226,19 +234,28 @@ impl SolanaDb {
             ",
         ).map_err(|e| format!("Failed to create Solana DB tables: {e}"))?;
 
+        // Backward compatibility: migrate existing solana_trades tables if columns missing
+        let _ = conn.execute("ALTER TABLE solana_trades ADD COLUMN is_live INTEGER NOT NULL DEFAULT 0", []);
+        let _ = conn.execute("ALTER TABLE solana_trades ADD COLUMN tx_signature TEXT NOT NULL DEFAULT ''", []);
+
+        // Index for live trades (created after migration guarantees column exists)
+        let _ = conn.execute("CREATE INDEX IF NOT EXISTS idx_solana_trades_live ON solana_trades(is_live)", []);
+
         Ok(())
     }
 
     pub fn record_trade(&self, trade: &NewSolanaTrade) -> Result<i64, String> {
         let conn = self.conn.lock().map_err(|_| "Database mutex poisoned".to_string())?;
         let now = now_timestamp();
+        let is_live_val = if trade.is_live.unwrap_or(false) { 1 } else { 0 };
+        let tx_sig_val = trade.tx_signature.as_deref().unwrap_or("");
 
         conn.execute(
             "INSERT INTO solana_trades (
                 trade_ref, token_symbol, token_name, dex, entry_price, exit_price,
                 margin_usd, pnl_usd, pnl_pct, fees_paid_usd, exit_reason, is_win,
-                features_json, created_at, closed_at
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+                features_json, created_at, closed_at, is_live, tx_signature
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
             params![
                 trade.trade_ref,
                 trade.token_symbol,
@@ -255,6 +272,8 @@ impl SolanaDb {
                 trade.features_json,
                 now,
                 now,
+                is_live_val,
+                tx_sig_val,
             ],
         ).map_err(|e| format!("Failed to insert trade into solana_trades: {e}"))?;
 
@@ -266,7 +285,7 @@ impl SolanaDb {
         let mut stmt = conn.prepare(
             "SELECT id, trade_ref, token_symbol, token_name, dex, entry_price, exit_price,
                     margin_usd, pnl_usd, pnl_pct, fees_paid_usd, exit_reason, is_win,
-                    features_json, created_at, closed_at
+                    features_json, created_at, closed_at, is_live, tx_signature
              FROM solana_trades
              ORDER BY closed_at DESC, id DESC
              LIMIT ?1",
@@ -290,6 +309,8 @@ impl SolanaDb {
                 features_json: row.get(13)?,
                 created_at: row.get(14)?,
                 closed_at: row.get(15)?,
+                is_live: row.get::<_, i64>(16).unwrap_or(0) == 1,
+                tx_signature: row.get::<_, String>(17).unwrap_or_default(),
             })
         }).map_err(|e| format!("Failed to execute query on solana_trades: {e}"))?;
 
@@ -610,6 +631,8 @@ mod tests {
             exit_reason: "TAKE_PROFIT (Breakeven + 5x Fees Covered)".to_string(),
             is_win: true,
             features_json: "[0.02, 0.05, 88.0, 1.0]".to_string(),
+            is_live: Some(false),
+            tx_signature: Some("".to_string()),
         };
 
         let id = db.record_trade(&trade).expect("Trade should be recorded");
@@ -619,6 +642,32 @@ mod tests {
         assert_eq!(trades.len(), 1);
         assert_eq!(trades[0].trade_ref, "TRD-001");
         assert!(trades[0].is_win);
+        assert!(!trades[0].is_live);
+        assert_eq!(trades[0].tx_signature, "");
+
+        // 1b. Record live trade with signature
+        let live_trade = NewSolanaTrade {
+            trade_ref: "TRD-LIVE-001".to_string(),
+            token_symbol: "JUP".to_string(),
+            token_name: "Jupiter".to_string(),
+            dex: "jupiter".to_string(),
+            entry_price: 0.885,
+            exit_price: 0.920,
+            margin_usd: 15.0,
+            pnl_usd: 0.59,
+            pnl_pct: 3.95,
+            fees_paid_usd: 0.04,
+            exit_reason: "TAKE_PROFIT".to_string(),
+            is_win: true,
+            features_json: "[]".to_string(),
+            is_live: Some(true),
+            tx_signature: Some("5abc123def456sig".to_string()),
+        };
+        db.record_trade(&live_trade).expect("Live trade should be recorded");
+        let all_trades = db.list_trades(10).expect("Should list all trades");
+        assert_eq!(all_trades.len(), 2);
+        assert!(all_trades[0].is_live);
+        assert_eq!(all_trades[0].tx_signature, "5abc123def456sig");
 
         // 2. Record learned mistake
         let mistake = NewSolanaMistake {

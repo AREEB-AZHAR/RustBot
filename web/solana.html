@@ -114,7 +114,21 @@
                 <h2 id="solana-heading">⚡ Solana Autonomous Bot &amp; TimesFM Matrix</h2>
                 <p>Continuous On-Chain Scanner · Fair Value Gap Exploitation · 20% Loss Circuit Breaker</p>
               </div>
-              <div class="solana-header-controls">
+                <div class="trading-mode-selector" id="trading-mode-selector" title="Switch between Virtual Paper Trading and Real Solana Live Trading">
+                  <button type="button" class="btn-mode-toggle active" id="btn-mode-paper" title="Paper Trading with Simulated Balances">
+                    <span class="mode-icon">🧪</span>
+                    <span>Paper Mode</span>
+                  </button>
+                  <button type="button" class="btn-mode-toggle" id="btn-mode-live" title="Live On-Chain Trading with Real Solana Wallet via Jupiter">
+                    <span class="mode-icon">🔴</span>
+                    <span>Live Solana</span>
+                  </button>
+                </div>
+                <div class="live-wallet-pill" id="live-wallet-pill" style="display: none;" title="Connected Phantom Wallet via Server">
+                  <span class="live-wallet-dot"></span>
+                  <span id="live-wallet-address">Phantom: Loading...</span>
+                  <span class="live-wallet-sol" id="live-wallet-sol">0.00 SOL</span>
+                </div>
                 <div class="solana-db-pill" id="solana-db-pill"
                   title="Autonomous trades and 3-stage memory persist in dedicated solana_trades.db">
                   <span class="db-dot"></span>
@@ -490,12 +504,13 @@
                       <th>Exit</th>
                       <th>PnL ($ / %)</th>
                       <th>Exit Reason</th>
+                      <th>Tx / Explorer</th>
                       <th>3-Stage Learning Result</th>
                     </tr>
                   </thead>
                   <tbody id="solana-journal-tbody">
                     <tr>
-                      <td colspan="9" style="text-align: center; color: var(--muted); padding: 14px;">
+                      <td colspan="10" style="text-align: center; color: var(--muted); padding: 14px;">
                         No live Solana HFT trades executed yet. Click "Start Solana Bot" above to begin.
                       </td>
                     </tr>

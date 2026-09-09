@@ -5,6 +5,7 @@ mod market_structure;
 mod news_sentiment;
 mod server;
 pub mod solana_db;
+pub mod solana_live;
 pub mod timesfm_matrix;
 
 use config::AppConfig;
