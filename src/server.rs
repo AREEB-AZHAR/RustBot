@@ -3008,25 +3008,28 @@ fn fetch_solana_candles(query: &HashMap<String, String>) -> Result<MarketDataRes
         .build()
         .map_err(|e| format!("HTTP client error: {e}"))?;
 
-    let mapped_binance = match symbol.to_uppercase().as_str() {
-        "SOL" | "SOLANA" => "SOLUSDT",
-        "JUP" => "JUPUSDT",
-        "RAY" => "RAYUSDT",
-        "BONK" => "1000BONKUSDT",
-        "WIF" => "WIFUSDT",
-        "POPCAT" => "POPCATUSDT",
-        "RENDER" => "RENDERUSDT",
-        "PYTH" => "PYTHUSDT",
-        "JTO" => "JTOUSDT",
-        "TNSR" => "TNSRUSDT",
-        "W" => "WUSDT",
-        "BOME" => "BOMEUSDT",
-        "MEW" => "MEWUSDT",
-        "PNUT" => "PNUTUSDT",
-        "GOAT" => "GOATUSDT",
-        "ACT" => "ACTUSDT",
-        "HNT" => "HNTUSDT",
-        _ => "SOLUSDT",
+    let mapped_binance: Option<&str> = match symbol.to_uppercase().as_str() {
+        "SOL" | "SOLANA" => Some("SOLUSDT"),
+        "JUP" => Some("JUPUSDT"),
+        "RAY" => Some("RAYUSDT"),
+        "BONK" => Some("BONKUSDT"),
+        "WIF" => Some("WIFUSDT"),
+        "POPCAT" => Some("POPCATUSDT"),
+        "RENDER" => Some("RENDERUSDT"),
+        "PYTH" => Some("PYTHUSDT"),
+        "JTO" => Some("JTOUSDT"),
+        "TNSR" => Some("TNSRUSDT"),
+        "W" => Some("WUSDT"),
+        "BOME" => Some("BOMEUSDT"),
+        "MEW" => Some("MEWUSDT"),
+        "PNUT" => Some("PNUTUSDT"),
+        "GOAT" => Some("GOATUSDT"),
+        "ACT" => Some("ACTUSDT"),
+        "HNT" => Some("HNTUSDT"),
+        "IO" => Some("IOUSDT"),
+        "DRIFT" => Some("DRIFTUSDT"),
+        "KMNO" => Some("KMNOUSDT"),
+        _ => None,
     };
 
     let binance_interval = match interval {
@@ -3037,14 +3040,21 @@ fn fetch_solana_candles(query: &HashMap<String, String>) -> Result<MarketDataRes
         _ => "5m",
     };
 
-    let mut candles = fetch_binance_candles(&client, mapped_binance, binance_interval, limit).unwrap_or_default();
+    let mut candles = if let Some(binance_sym) = mapped_binance {
+        fetch_binance_candles(&client, binance_sym, binance_interval, limit).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
 
     if candles.is_empty() {
         let now_sec = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-        let base_price = match symbol.to_uppercase().as_str() {
+
+        let query_price = query.get("price").and_then(|p| p.parse::<f64>().ok()).filter(|&p| p > 0.0);
+
+        let base_price = query_price.unwrap_or_else(|| match symbol.to_uppercase().as_str() {
             "SOL" => 142.50,
             "JUP" => 0.885,
             "RAY" => 2.14,
@@ -3053,8 +3063,16 @@ fn fetch_solana_candles(query: &HashMap<String, String>) -> Result<MarketDataRes
             "PUMP" => 0.00384,
             "FARTCOIN" => 0.324,
             "POPCAT" => 0.485,
+            "GOAT" => 0.452,
+            "ACT" => 0.285,
+            "PNUT" => 0.512,
+            "MOODENG" => 0.215,
+            "CHILLGUY" => 0.184,
+            "GIGA" => 0.042,
+            "AI16Z" => 0.385,
+            "ZEREBRO" => 0.295,
             _ => 1.25,
-        };
+        });
 
         let mut curr_p = base_price;
         for i in (0..limit).rev() {

@@ -674,7 +674,7 @@ async function selectSolanaToken(token) {
   }
 
   try {
-    const res = await api(`/api/market/solana/candles?symbol=${token.symbol}&limit=45`);
+    const res = await api(`/api/market/solana/candles?symbol=${token.symbol}&limit=45&price=${token.price_usd || 1.0}`);
     if (res && res.candles && res.candles.length >= 10) {
       solanaBotState.currentCandles = res.candles;
       await predictWithTimesfm(token.symbol, res.candles);
