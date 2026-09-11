@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 pub const SOL_MINT: &str = "So11111111111111111111111111111111111111112";
 
 /// Minimum SOL reserve kept untouched for gas fees and account rent exemptions
-pub const MIN_SOL_GAS_RESERVE: f64 = 0.05;
+pub const MIN_SOL_GAS_RESERVE: f64 = 0.008;
 
 /// Represents an on-chain SPL token account holding
 #[derive(Debug, Clone, Serialize, Deserialize)]

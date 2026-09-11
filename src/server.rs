@@ -3279,7 +3279,7 @@ fn handle_post_solana_wallet(request: &Request, state: &AppState) -> Response {
 fn handle_get_solana_live_status(_request: &Request, state: &AppState) -> Response {
     if let Some(ref client) = state.solana_live {
         let sol_balance = client.get_sol_balance().unwrap_or(0.0);
-        let min_gas = crate::solana_live::MIN_SOL_GAS_RESERVE;
+        let min_gas = state.config.solana_min_gas_reserve_sol;
         let spendable = (sol_balance - min_gas).max(0.0);
 
         Response::json(200, "OK", json!({
@@ -3298,7 +3298,7 @@ fn handle_get_solana_live_status(_request: &Request, state: &AppState) -> Respon
             "public_key": null,
             "rpc_url": state.config.solana_rpc_url,
             "sol_balance": 0.0,
-            "min_gas_reserve_sol": crate::solana_live::MIN_SOL_GAS_RESERVE,
+            "min_gas_reserve_sol": state.config.solana_min_gas_reserve_sol,
             "spendable_sol": 0.0,
             "message": "SOLANA_PRIVATE_KEY is not configured in server .env",
         }))
@@ -3319,7 +3319,7 @@ fn handle_get_solana_live_balance(_request: &Request, state: &AppState) -> Respo
 
     let sol_balance = client.get_sol_balance().unwrap_or(0.0);
     let token_accounts = client.get_token_accounts().unwrap_or_default();
-    let min_gas = crate::solana_live::MIN_SOL_GAS_RESERVE;
+    let min_gas = state.config.solana_min_gas_reserve_sol;
 
     Response::json(200, "OK", json!({
         "success": true,
@@ -3387,7 +3387,7 @@ fn handle_post_solana_live_swap(request: &Request, state: &AppState) -> Response
     if payload.input_mint == crate::solana_live::SOL_MINT {
         let current_sol = client.get_sol_balance().unwrap_or(0.0);
         let requested_sol = payload.amount_lamports as f64 / 1_000_000_000.0;
-        let min_reserve = crate::solana_live::MIN_SOL_GAS_RESERVE;
+        let min_reserve = state.config.solana_min_gas_reserve_sol;
         if current_sol < requested_sol + min_reserve {
             return Response::error(
                 400,
@@ -3400,11 +3400,44 @@ fn handle_post_solana_live_swap(request: &Request, state: &AppState) -> Response
         }
     }
 
+    let mut swap_amount = payload.amount_lamports;
+
+    // Safety check: When selling tokens back to SOL, verify wallet holds the token
+    if payload.input_mint != crate::solana_live::SOL_MINT {
+        if let Ok(accounts) = client.get_token_accounts() {
+            if let Some(token_acc) = accounts.iter().find(|a| a.mint == payload.input_mint) {
+                let actual_raw = token_acc.amount_raw.parse::<u64>().unwrap_or(0);
+                if actual_raw == 0 {
+                    return Response::error(
+                        400,
+                        "Bad Request",
+                        &format!(
+                            "Cannot sell {}: wallet holds 0 balance for this token.",
+                            payload.token_symbol.as_deref().unwrap_or("token")
+                        ),
+                    );
+                }
+                if swap_amount > actual_raw {
+                    swap_amount = actual_raw;
+                }
+            } else {
+                return Response::error(
+                    400,
+                    "Bad Request",
+                    &format!(
+                        "Cannot sell {}: token account not found in wallet (balance is 0).",
+                        payload.token_symbol.as_deref().unwrap_or("token")
+                    ),
+                );
+            }
+        }
+    }
+
     let slippage = payload.slippage_bps.unwrap_or(50);
     match client.execute_live_swap(
         &payload.input_mint,
         &payload.output_mint,
-        payload.amount_lamports,
+        swap_amount,
         slippage,
     ) {
         Ok(res) => {
@@ -3451,7 +3484,13 @@ fn handle_post_solana_live_swap(request: &Request, state: &AppState) -> Response
                 "price_impact_pct": res.price_impact_pct,
             }))
         }
-        Err(err) => Response::error(502, "Bad Gateway", &format!("Live swap failed: {err}")),
+        Err(err) => {
+            if err.contains("no outAmount route") || err.contains("Could not find any route") {
+                Response::error(422, "Unprocessable Entity", &format!("No Jupiter route for token: {err}"))
+            } else {
+                Response::error(502, "Bad Gateway", &format!("Live swap failed: {err}"))
+            }
+        }
     }
 }
 
@@ -3779,6 +3818,7 @@ mod tests {
             solana_rpc_url: "https://api.mainnet-beta.solana.com".to_string(),
             solana_live_enabled: false,
             solana_jupiter_api_key: None,
+            solana_min_gas_reserve_sol: 0.008,
         };
         let store = Arc::new(RwLock::new(KnowledgeStore::from_memories(&[])));
         let solana_db = Arc::new(crate::solana_db::SolanaDb::open_in_memory().unwrap());
@@ -3947,6 +3987,7 @@ mod tests {
             solana_rpc_url: "https://api.mainnet-beta.solana.com".to_string(),
             solana_live_enabled: false,
             solana_jupiter_api_key: None,
+            solana_min_gas_reserve_sol: 0.008,
         };
         let store = Arc::new(RwLock::new(KnowledgeStore::from_memories(&[])));
         let solana_db = Arc::new(crate::solana_db::SolanaDb::open_in_memory().unwrap());
@@ -4051,6 +4092,7 @@ mod tests {
             solana_rpc_url: "https://api.mainnet-beta.solana.com".to_string(),
             solana_live_enabled: false,
             solana_jupiter_api_key: None,
+            solana_min_gas_reserve_sol: 0.008,
         };
         let store = Arc::new(RwLock::new(KnowledgeStore::from_memories(&[])));
         let solana_db = Arc::new(crate::solana_db::SolanaDb::open_in_memory().unwrap());
@@ -4339,6 +4381,7 @@ mod tests {
             solana_rpc_url: "https://api.mainnet-beta.solana.com".to_string(),
             solana_live_enabled: false,
             solana_jupiter_api_key: None,
+            solana_min_gas_reserve_sol: 0.008,
         };
         let store = Arc::new(RwLock::new(KnowledgeStore::from_memories(&[])));
         let solana_db = Arc::new(crate::solana_db::SolanaDb::open_in_memory().unwrap());
@@ -4480,6 +4523,7 @@ mod tests {
             solana_rpc_url: "https://api.mainnet-beta.solana.com".to_string(),
             solana_live_enabled: false,
             solana_jupiter_api_key: None,
+            solana_min_gas_reserve_sol: 0.008,
         };
         let store = Arc::new(RwLock::new(KnowledgeStore::from_memories(&[])));
         let solana_db = Arc::new(crate::solana_db::SolanaDb::open_in_memory().unwrap());
@@ -4628,6 +4672,7 @@ mod tests {
             solana_rpc_url: "https://api.mainnet-beta.solana.com".to_string(),
             solana_live_enabled: false,
             solana_jupiter_api_key: None,
+            solana_min_gas_reserve_sol: 0.008,
         };
         let store = Arc::new(RwLock::new(KnowledgeStore::from_memories(&[])));
         let solana_db = Arc::new(crate::solana_db::SolanaDb::open_in_memory().unwrap());

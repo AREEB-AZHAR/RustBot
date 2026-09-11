@@ -21,6 +21,7 @@ pub struct AppConfig {
     pub solana_rpc_url: String,
     pub solana_live_enabled: bool,
     pub solana_jupiter_api_key: Option<String>,
+    pub solana_min_gas_reserve_sol: f64,
 }
 
 impl AppConfig {
@@ -102,6 +103,9 @@ impl AppConfig {
             .unwrap_or(false);
         let solana_jupiter_api_key = get_var("JUPITER_API_KEY")
             .or_else(|| get_var("SOLANA_JUPITER_API_KEY"));
+        let solana_min_gas_reserve_sol = get_var("SOLANA_MIN_GAS_RESERVE_SOL")
+            .and_then(|v| v.parse::<f64>().ok())
+            .unwrap_or(crate::solana_live::MIN_SOL_GAS_RESERVE);
 
         let config = Self {
             env,
@@ -116,6 +120,7 @@ impl AppConfig {
             solana_rpc_url,
             solana_live_enabled,
             solana_jupiter_api_key,
+            solana_min_gas_reserve_sol,
         };
 
         config.validate()?;
@@ -174,6 +179,7 @@ mod tests {
             solana_rpc_url: "https://api.mainnet-beta.solana.com".to_string(),
             solana_live_enabled: false,
             solana_jupiter_api_key: None,
+            solana_min_gas_reserve_sol: 0.008,
         };
         assert!(config.validate().is_ok());
         assert!(!config.is_production());
@@ -194,6 +200,7 @@ mod tests {
             solana_rpc_url: "https://api.mainnet-beta.solana.com".to_string(),
             solana_live_enabled: false,
             solana_jupiter_api_key: None,
+            solana_min_gas_reserve_sol: 0.008,
         };
         let err = config.validate().unwrap_err();
         assert!(err.contains("must begin with 'https://'"));
@@ -214,6 +221,7 @@ mod tests {
             solana_rpc_url: "https://api.mainnet-beta.solana.com".to_string(),
             solana_live_enabled: false,
             solana_jupiter_api_key: None,
+            solana_min_gas_reserve_sol: 0.008,
         };
         let err = config.validate().unwrap_err();
         assert!(err.contains("RUSTBOT_SESSION_PEPPER"));
@@ -234,6 +242,7 @@ mod tests {
             solana_rpc_url: "https://api.mainnet-beta.solana.com".to_string(),
             solana_live_enabled: false,
             solana_jupiter_api_key: None,
+            solana_min_gas_reserve_sol: 0.008,
         };
         assert!(config.validate().is_ok());
         assert!(config.is_production());

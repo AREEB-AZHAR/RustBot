@@ -39,7 +39,7 @@ const solanaBotState = {
     publicKey: null,
     rpcUrl: "",
     solBalance: 0.0,
-    minGasReserveSol: 0.05,
+    minGasReserveSol: 0.008,
     spendableSol: 0.0,
     solPriceUsd: 142.50,
     tokens: [],
@@ -1007,7 +1007,7 @@ async function syncSolanaLiveStatus() {
       solanaBotState.liveWallet.publicKey = res.public_key || null;
       solanaBotState.liveWallet.rpcUrl = res.rpc_url || "";
       solanaBotState.liveWallet.solBalance = Number(res.sol_balance || 0);
-      solanaBotState.liveWallet.minGasReserveSol = Number(res.min_gas_reserve_sol || 0.05);
+      solanaBotState.liveWallet.minGasReserveSol = Number(res.min_gas_reserve_sol || 0.008);
       solanaBotState.liveWallet.spendableSol = Number(res.spendable_sol || 0);
       solanaBotState.liveWallet.lastSyncTime = Date.now();
 
@@ -1063,7 +1063,8 @@ async function switchToLiveMode() {
 
   const spendableUsd = solanaBotState.liveWallet.spendableSol * (solanaBotState.liveWallet.solPriceUsd || 142.5);
   if (spendableUsd < 0.50) {
-    showToast(`⚠️ Low SOL balance (${solanaBotState.liveWallet.solBalance.toFixed(3)} SOL). You need more than 0.05 SOL to cover gas reserves and trade slots.`);
+    const minReserve = (solanaBotState.liveWallet.minGasReserveSol || 0.008).toFixed(3);
+    showToast(`⚠️ Low SOL balance (${solanaBotState.liveWallet.solBalance.toFixed(3)} SOL). You need more than ${minReserve} SOL to cover gas reserves and trade slots.`);
   }
 
   if (solanaBotState.activePositions.length > 0) {
@@ -1598,6 +1599,11 @@ async function runSolanaAutonomousTick() {
         continue;
       }
 
+      // Filter tokens marked as unroutable on Jupiter (e.g. unbonded pump.fun bonding curves)
+      if (candidate._unroutable) {
+        continue;
+      }
+
       // CONFLUENCE METRIC 2: Relative Volume (RVOL) Surge Guard (Rejects dead volume)
       const tokenRvol = candidate.rvol || computeTokenRvol(candidate);
       if (tokenRvol < 0.9) {
@@ -1774,6 +1780,36 @@ function executePartialTakeProfit(pos, exitPrice) {
   }
   persistSolanaWallet();
 
+  // LIVE ON-CHAIN PARTIAL TP1 SELL: Sell 50% tranche back to SOL if on-chain
+  if (pos.isLive && pos.txSignature && pos.tokenAmountRaw > 0) {
+    const trancheTokens = Math.floor(pos.tokenAmountRaw * sellRatio);
+    if (trancheTokens > 0) {
+      pos.tokenAmountRaw -= trancheTokens;
+      const tokenMint = pos.token.mint || pos.token.address || "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN";
+      api("/api/market/solana/live/swap", {
+        method: "POST",
+        body: JSON.stringify({
+          input_mint: tokenMint,
+          output_mint: "So11111111111111111111111111111111111111112",
+          amount_lamports: trancheTokens,
+          slippage_bps: 50,
+          token_symbol: pos.token.symbol,
+          token_name: pos.token.name || pos.token.symbol,
+          margin_usd: marginToClose,
+          exit_price: exitPrice,
+          exit_reason: "TAKE_PROFIT_1 (50% Tranche)",
+        }),
+      }).then((sellRes) => {
+        if (sellRes && sellRes.tx_signature) {
+          showToast(`💰 [LIVE TP1 SELL] 50% ${pos.token.symbol} sold for SOL! Tx: ${sellRes.tx_signature.slice(0, 8)}...`);
+          syncSolanaLiveStatus();
+        }
+      }).catch((sellErr) => {
+        console.error("Live TP1 sell error:", sellErr);
+      });
+    }
+  }
+
   // Record partial take-profit trade in journal & SQLite
   const tradeRef = generateUniqueTradeRef("SOL-TP1");
   const tradeDex = pos.route ? pos.route.venueName : (pos.token.dex || "Raydium");
@@ -1879,9 +1915,14 @@ function openPosition(token, marginUsd, fvgType = "BULLISH_FVG", route = null, m
   // LIVE ON-CHAIN EXECUTION via Jupiter Aggregator API
   if (solanaBotState.isLiveMode && solanaBotState.liveWallet.available) {
     const solPrice = solanaBotState.liveWallet.solPriceUsd || 142.5;
-    const lamports = Math.floor((marginUsd / solPrice) * 1_000_000_000);
+    const spendableSol = Math.max(0, solanaBotState.liveWallet.spendableSol || 0);
+    const spendableLamports = Math.floor(spendableSol * 1_000_000_000);
+    const targetLamports = Math.floor((marginUsd / solPrice) * 1_000_000_000);
+    // Allocate either target or remaining spendable SOL
+    const lamports = Math.min(targetLamports, spendableLamports);
     const tokenMint = token.mint || token.address || "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN";
-    if (lamports >= 50_000) {
+
+    if (lamports >= 50_000 && !token._unroutable) {
       api("/api/market/solana/live/swap", {
         method: "POST",
         body: JSON.stringify({
@@ -1900,13 +1941,41 @@ function openPosition(token, marginUsd, fvgType = "BULLISH_FVG", route = null, m
           pos.txSignature = swapRes.tx_signature;
           pos.solscanUrl = swapRes.solscan_url;
           pos.isLive = true;
+          pos.tokenAmountRaw = swapRes.out_amount_estimated || 0;
           showToast(`🚀 [LIVE JUPITER BUY] ${token.symbol} swapped for ${(lamports / 1e9).toFixed(3)} SOL! Tx: ${swapRes.tx_signature.slice(0, 8)}...`);
           syncSolanaLiveStatus();
         }
       }).catch((swapErr) => {
         console.error("Live swap error:", swapErr);
-        showToast(`❌ [LIVE SWAP ERROR] ${swapErr.message || swapErr}`);
+        const errStr = String(swapErr.message || swapErr);
+        if (errStr.includes("no outAmount route") || errStr.includes("No Jupiter route") || errStr.includes("Could not find any route")) {
+          token._unroutable = true;
+        } else {
+          showToast(`❌ [LIVE SWAP ERROR] ${errStr}`);
+        }
+        // In live mode, remove ghost position if the live buy transaction failed to execute
+        const ghostIdx = solanaBotState.activePositions.indexOf(pos);
+        if (ghostIdx !== -1) {
+          solanaBotState.activePositions.splice(ghostIdx, 1);
+          solanaBotState.wallet.cash += marginUsd;
+          updateSolanaWalletHUD();
+          renderMultiPositionsTable();
+        }
       });
+    } else {
+      if (token._unroutable) {
+        console.warn(`[Live Mode] Skipped unroutable token ${token.symbol}`);
+      } else if (spendableLamports < 50_000) {
+        console.warn(`[Live Mode] Spendable SOL too low (${spendableSol.toFixed(4)} SOL). Deposit SOL or lower gas reserve to trade live.`);
+      }
+      // Remove ghost position so paper positions don't open in live mode without real funds
+      const ghostIdx = solanaBotState.activePositions.indexOf(pos);
+      if (ghostIdx !== -1) {
+        solanaBotState.activePositions.splice(ghostIdx, 1);
+        solanaBotState.wallet.cash += marginUsd;
+        updateSolanaWalletHUD();
+        renderMultiPositionsTable();
+      }
     }
   }
 }
@@ -1939,17 +2008,17 @@ function closePosition(pos, exitReason, isEmergencyHalt = false) {
   persistSolanaWallet();
 
   // LIVE ON-CHAIN SELL: Swap token back to native SOL via Jupiter
-  if (pos.isLive || (solanaBotState.isLiveMode && solanaBotState.liveWallet.available)) {
+  // ONLY execute live sell if this position was ACTUALLY bought and confirmed on-chain
+  if (pos.isLive && pos.txSignature) {
     const tokenMint = pos.token.mint || pos.token.address || "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN";
-    const solPrice = solanaBotState.liveWallet.solPriceUsd || 142.5;
-    const lamportsToSell = Math.floor(((pos.shares * exitPrice) / solPrice) * 1_000_000_000);
-    if (lamportsToSell >= 50_000) {
+    const rawTokensToSell = pos.tokenAmountRaw ? Math.floor(pos.tokenAmountRaw) : 0;
+    if (rawTokensToSell > 0) {
       api("/api/market/solana/live/swap", {
         method: "POST",
         body: JSON.stringify({
           input_mint: tokenMint,
           output_mint: "So11111111111111111111111111111111111111112",
-          amount_lamports: lamportsToSell,
+          amount_lamports: rawTokensToSell,
           slippage_bps: 50,
           token_symbol: pos.token.symbol,
           token_name: pos.token.name || pos.token.symbol,
@@ -2355,7 +2424,8 @@ function updateSolanaWalletHUD() {
 
   if (elements.solanaBaselineCapital) {
     if (solanaBotState.isLiveMode && solanaBotState.liveWallet.available) {
-      elements.solanaBaselineCapital.textContent = `Phantom SOL: ${solanaBotState.liveWallet.solBalance.toFixed(3)} SOL (0.05 SOL Gas Reserved)`;
+      const gasReserved = (solanaBotState.liveWallet.minGasReserveSol || 0.008).toFixed(3);
+      elements.solanaBaselineCapital.textContent = `Phantom SOL: ${solanaBotState.liveWallet.solBalance.toFixed(3)} SOL (${gasReserved} SOL Gas Reserved)`;
     } else {
       elements.solanaBaselineCapital.textContent = `Baseline Capital: $${wallet.initialEquity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     }
