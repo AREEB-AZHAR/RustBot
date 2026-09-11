@@ -958,14 +958,28 @@ async function syncWithDedicatedDb() {
       if (walletRes && walletRes.wallet && !walletRes.is_guest) {
         // Authenticated user with dedicated wallet state
         const w = walletRes.wallet;
-        solanaBotState.wallet.initialEquity = savedInitial > 0 ? savedInitial : (w.peak_equity || w.current_equity || 10000.0);
-        solanaBotState.wallet.currentEquity = w.current_equity;
-        solanaBotState.wallet.cash = w.cash;
-        solanaBotState.wallet.realizedPnl = w.realized_pnl;
-        solanaBotState.wallet.totalFeesPaid = w.total_fees;
-        solanaBotState.wallet.peakEquity = Math.max(w.peak_equity, w.current_equity);
-        solanaBotState.wallet.tradesWon = w.trades_won;
-        solanaBotState.wallet.tradesLost = w.trades_lost;
+        // Safety guard: if stored DB wallet was overwritten by a live session (e.g. current_equity < 50 while user expects paper), restore $10,000 baseline
+        const isCorruptedFromLive = w.current_equity < 50.0 && (savedInitial >= 100 || !savedInitial);
+        if (isCorruptedFromLive) {
+          solanaBotState.wallet.initialEquity = 10000.0;
+          solanaBotState.wallet.currentEquity = 10000.0;
+          solanaBotState.wallet.cash = 10000.0;
+          solanaBotState.wallet.realizedPnl = 0.0;
+          solanaBotState.wallet.totalFeesPaid = 0.0;
+          solanaBotState.wallet.peakEquity = 10000.0;
+          solanaBotState.wallet.tradesWon = w.trades_won;
+          solanaBotState.wallet.tradesLost = w.trades_lost;
+          persistSolanaWallet();
+        } else {
+          solanaBotState.wallet.initialEquity = savedInitial > 0 ? savedInitial : (w.peak_equity || w.current_equity || 10000.0);
+          solanaBotState.wallet.currentEquity = w.current_equity;
+          solanaBotState.wallet.cash = w.cash;
+          solanaBotState.wallet.realizedPnl = w.realized_pnl;
+          solanaBotState.wallet.totalFeesPaid = w.total_fees;
+          solanaBotState.wallet.peakEquity = Math.max(w.peak_equity, w.current_equity);
+          solanaBotState.wallet.tradesWon = w.trades_won;
+          solanaBotState.wallet.tradesLost = w.trades_lost;
+        }
         updateSolanaWalletHUD();
       } else if (savedInitial > 0) {
         // User's dedicated local baseline
@@ -1075,6 +1089,11 @@ async function switchToLiveMode() {
     closeAllPositions("Switching to Live On-Chain Trading");
   }
 
+  // Backup virtual paper wallet before entering live mode
+  if (!solanaBotState.paperWalletBackup || solanaBotState.paperWalletBackup.currentEquity < 50) {
+    solanaBotState.paperWalletBackup = { ...solanaBotState.wallet };
+  }
+
   solanaBotState.isLiveMode = true;
 
   if (elements.btnModeLive) elements.btnModeLive.classList.add("active", "live");
@@ -1086,6 +1105,7 @@ async function switchToLiveMode() {
   solanaBotState.wallet.currentEquity = liveCashUsd;
   solanaBotState.wallet.initialEquity = Math.max(1, liveCashUsd);
   solanaBotState.wallet.peakEquity = liveCashUsd;
+  solanaBotState.liveWallet.initialSol = solanaBotState.liveWallet.solBalance;
 
   updateSolanaWalletHUD();
   showToast(`🔴 [LIVE SOLANA ENGAGED] Using Phantom wallet (${solanaBotState.liveWallet.solBalance.toFixed(3)} SOL = $${liveCashUsd.toFixed(2)}) via Jupiter Aggregator.`);
@@ -1104,7 +1124,13 @@ function switchToPaperMode() {
   if (elements.btnModeLive) elements.btnModeLive.classList.remove("active", "live");
   if (elements.btnSweepSolanaTokens) elements.btnSweepSolanaTokens.style.display = "none";
 
-  syncWithDedicatedDb();
+  // Restore virtual paper wallet
+  if (solanaBotState.paperWalletBackup && solanaBotState.paperWalletBackup.currentEquity >= 50) {
+    solanaBotState.wallet = { ...solanaBotState.paperWalletBackup };
+    persistSolanaWallet();
+  } else {
+    syncWithDedicatedDb();
+  }
   updateSolanaWalletHUD();
   showToast("🧪 [PAPER MODE] Switched back to simulated virtual balance.");
 }
@@ -1180,6 +1206,10 @@ async function sweepAllTokensToSol() {
 }
 
 function persistSolanaWallet() {
+  if (solanaBotState.isLiveMode) {
+    // In live mode, balance is on-chain on Solana. Never overwrite the user's paper trading state in SQLite!
+    return;
+  }
   if (!solanaBotState.currentUser) {
     // Guest mode: Do NOT sync or persist to server database; keep wallet strictly local
     return;
@@ -1541,15 +1571,25 @@ async function runSolanaAutonomousTick() {
     solanaBotState.tickCount++;
 
     // Step 1: Drawdown Check (Strict 20% Max Loss Circuit Breaker with Dynamic High-Water Mark Ratchet)
-    const initial = solanaBotState.wallet.initialEquity || solanaBotState.wallet.currentEquity || 10.0;
-    const peak = Math.max(initial, solanaBotState.wallet.peakEquity || initial);
-    const current = solanaBotState.wallet.currentEquity || initial;
-    const drawdown = Math.max(0, (peak - current) / Math.max(1, peak));
-    const trailingHaltFloor = Math.max(initial * 0.80, peak * 0.80);
+    if (solanaBotState.isLiveMode && solanaBotState.liveWallet.available) {
+      // In Live Mode: Measure REAL on-chain SOL balance drawdown, never trip from simulated paper noise!
+      const initialSol = solanaBotState.liveWallet.initialSol || solanaBotState.liveWallet.solBalance || 0.1;
+      const currentSol = solanaBotState.liveWallet.solBalance || initialSol;
+      const solDrawdown = Math.max(0, (initialSol - currentSol) / Math.max(0.001, initialSol));
+      if (solDrawdown >= 0.20) {
+        stopSolanaAutonomousBot("CIRCUIT_BREAKER_20PCT_LOSS");
+        return;
+      }
+    } else {
+      const initial = solanaBotState.wallet.initialEquity || solanaBotState.wallet.currentEquity || 10000.0;
+      const peak = Math.max(initial, solanaBotState.wallet.peakEquity || initial);
+      const current = solanaBotState.wallet.currentEquity || initial;
+      const drawdown = Math.max(0, (peak - current) / Math.max(1, peak));
 
-    if (drawdown >= 0.20 || current <= (initial * 0.80)) {
-      stopSolanaAutonomousBot("CIRCUIT_BREAKER_20PCT_LOSS");
-      return;
+      if (drawdown >= 0.20 || current <= (initial * 0.80)) {
+        stopSolanaAutonomousBot("CIRCUIT_BREAKER_20PCT_LOSS");
+        return;
+      }
     }
 
     // Step 2: Manage All Active Positions Simultaneously (Dynamic Risk R:R + Trailing Runner)
@@ -1558,11 +1598,13 @@ async function runSolanaAutonomousTick() {
       if (pos._inFlight) continue; // Skip positions whose live buy is still in flight on-chain
       pos.barsHeld++;
 
-      // Realistic volatility micro-jump based on coin's DEX volatility score
-      const vol = (pos.token.volatility_score || 80) / 100;
-      const tokenSeed = pos.token.symbol.charCodeAt(0) + pos.token.symbol.length;
-      const noise = ((Math.sin(solanaBotState.tickCount * 2.2 + tokenSeed) * 0.7) + ((Math.random() - 0.46) * 1.1)) * 0.016 * vol;
-      pos.currentPrice = Math.max(0.0000001, pos.currentPrice * (1 + noise));
+      // Realistic volatility micro-jump based on coin's DEX volatility score (paper trading only)
+      if (!pos.isLive) {
+        const vol = (pos.token.volatility_score || 80) / 100;
+        const tokenSeed = pos.token.symbol.charCodeAt(0) + pos.token.symbol.length;
+        const noise = ((Math.sin(solanaBotState.tickCount * 2.2 + tokenSeed) * 0.7) + ((Math.random() - 0.46) * 1.1)) * 0.016 * vol;
+        pos.currentPrice = Math.max(0.0000001, pos.currentPrice * (1 + noise));
+      }
 
       pos.peakPrice = Math.max(pos.peakPrice || pos.entryPrice, pos.currentPrice);
 
