@@ -1064,7 +1064,48 @@ async function syncSolanaLiveStatus() {
         const inFlightMargin = solanaBotState.activePositions.filter(p => p._inFlight).reduce((acc, p) => acc + (p.marginUsd || 0), 0);
         const unspentCash = Math.max(0, totalLiveSolUsd - inFlightMargin);
         solanaBotState.wallet.cash = unspentCash;
+
+        // Synchronize on-chain SPL token accounts with active positions
+        if (Array.isArray(res.tokens)) {
+          for (const t of res.tokens) {
+            const existingPos = solanaBotState.activePositions.find(
+              (p) => (p.token.mint || p.token.address) === t.mint
+            );
+            if (existingPos) {
+              existingPos.shares = t.balance_ui;
+              existingPos.tokenAmountRaw = t.amount_raw;
+              if (t.price_usd > 0) {
+                existingPos.currentPrice = t.price_usd;
+                existingPos.peakPrice = Math.max(existingPos.peakPrice || existingPos.entryPrice, t.price_usd);
+              }
+              existingPos.isLive = true;
+              existingPos._inFlight = false;
+              existingPos.unrealizedPnlUsd = (existingPos.shares * existingPos.currentPrice) - existingPos.marginUsd;
+              existingPos.unrealizedReturnPct = existingPos.entryPrice > 0
+                ? ((existingPos.currentPrice - existingPos.entryPrice) / existingPos.entryPrice) * 100
+                : 0.0;
+            }
+          }
+
+          // Purge live positions that hold 0 balance on-chain
+          for (let i = solanaBotState.activePositions.length - 1; i >= 0; i--) {
+            const p = solanaBotState.activePositions[i];
+            if (p.isLive && !p._inFlight && !p._isSelling) {
+              const onChain = res.tokens.find((t) => t.mint === (p.token.mint || p.token.address));
+              if (!onChain || onChain.balance_ui <= 0.0001) {
+                console.warn(`[Live Mode] Active position ${p.token.symbol} has 0 on-chain balance. Removing.`);
+                solanaBotState.activePositions.splice(i, 1);
+              }
+            }
+          }
+        }
+
+        if (res.total_portfolio_usd && res.total_portfolio_usd > 0) {
+          solanaBotState.wallet.currentEquity = res.total_portfolio_usd;
+        }
+
         updateSolanaWalletHUD();
+        renderMultiPositionsTable();
       }
     }
   } catch (e) {
@@ -1645,7 +1686,24 @@ async function runSolanaAutonomousTick() {
       pos.barsHeld++;
 
       // Realistic volatility micro-jump based on coin's DEX volatility score (paper trading only)
-      if (!pos.isLive) {
+      if (pos.isLive) {
+        // Poll real-time on-chain DEX price every 2.5 seconds
+        if (!pos._lastPricePoll || (Date.now() - pos._lastPricePoll > 2500)) {
+          pos._lastPricePoll = Date.now();
+          const tokenMint = pos.token.mint || pos.token.address;
+          if (tokenMint) {
+            api(`/api/market/solana/token-price?mint=${tokenMint}`).then((pRes) => {
+              if (pRes && pRes.price_usd > 0) {
+                pos.currentPrice = pRes.price_usd;
+                pos.peakPrice = Math.max(pos.peakPrice || pos.entryPrice, pos.currentPrice);
+                pos.unrealizedPnlUsd = (pos.shares * pos.currentPrice) - pos.marginUsd;
+                pos.unrealizedReturnPct = pos.entryPrice > 0 ? ((pos.currentPrice - pos.entryPrice) / pos.entryPrice) * 100 : 0.0;
+                updateSolanaWalletHUD();
+              }
+            }).catch(() => {});
+          }
+        }
+      } else {
         const vol = (pos.token.volatility_score || 80) / 100;
         const tokenSeed = pos.token.symbol.charCodeAt(0) + pos.token.symbol.length;
         const noise = ((Math.sin(solanaBotState.tickCount * 2.2 + tokenSeed) * 0.7) + ((Math.random() - 0.46) * 1.1)) * 0.016 * vol;
@@ -1666,8 +1724,9 @@ async function runSolanaAutonomousTick() {
       pos.unrealizedReturnPct = (netPnlUsd / pos.marginUsd) * 100;
 
       // QUANTITATIVE ASYMMETRIC SCALE-OUT EXIT SYSTEM:
-      const runnerTrigger = solanaBotState.trailingRunnerTriggerPct || 3.5;
-      const stopLossPct = solanaBotState.confluenceStopLossPct || -2.0;
+      // In live spot trading, targets must be wide enough to overcome round-trip DEX slippage (~1-2%)
+      const runnerTrigger = solanaBotState.trailingRunnerTriggerPct || 4.5;
+      const stopLossPct = solanaBotState.confluenceStopLossPct || -3.0;
 
       // Pending Live Sell Retry Defense: If a previous live sell encountered network delay, retry automatically
       if (pos._sellPending) {
@@ -1681,11 +1740,11 @@ async function runSolanaAutonomousTick() {
           // Asymmetric Scale-Out: Bank 50% profit immediately and set breakeven stop on runner
           executePartialTakeProfit(pos, pos.currentPrice);
         } else if (pos.unrealizedReturnPct <= stopLossPct) {
-          // Defensive Confluence Stop-Loss (-2.0% Risk Guard)
+          // Defensive Confluence Stop-Loss (-3.0% Risk Guard)
           closePosition(pos, `STOP_LOSS (${stopLossPct.toFixed(1)}% Defense: ${pos.unrealizedReturnPct.toFixed(2)}%)`, false);
-        } else if (pos.barsHeld >= 120 && Math.abs(pos.unrealizedReturnPct) < 0.8) {
-          // HFT Stale Margin Rebalance -> If trade is dead flat after ~60s, free capital
-          closePosition(pos, "HFT Stale Margin Rebalance", false);
+        } else if (!pos.isLive && pos.barsHeld >= 120 && Math.abs(pos.unrealizedReturnPct) < 0.8) {
+          // Paper Trading Stale Margin Rebalance (NEVER force-dump real money trades after 60s!)
+          closePosition(pos, "Paper Stale Margin Rebalance", false);
         }
       } else {
         // Stage 2: Managing the Remaining 50% Runner (Adaptive Volatility Trailing)
@@ -2218,7 +2277,10 @@ function openPosition(token, marginUsd, fvgType = "BULLISH_FVG", route = null, m
           pos.solscanUrl = swapRes.solscan_url;
           pos.isLive = true;
           pos.tokenAmountRaw = swapRes.out_amount_estimated || 0;
-          showToast(`🚀 [LIVE JUPITER BUY] ${token.symbol} swapped for ${(lamports / 1e9).toFixed(3)} SOL! Tx: ${swapRes.tx_signature.slice(0, 8)}...`);
+          const actualSolSpent = lamports / 1e9;
+          const solPrice = solanaBotState.liveWallet.solPriceUsd || 102.75;
+          pos.marginUsd = actualSolSpent * solPrice;
+          showToast(`🚀 [LIVE JUPITER BUY] ${token.symbol} swapped for ${actualSolSpent.toFixed(3)} SOL ($${pos.marginUsd.toFixed(2)})! Tx: ${swapRes.tx_signature.slice(0, 8)}...`);
           syncSolanaLiveStatus();
         } else {
           const ghostIdx = solanaBotState.activePositions.indexOf(pos);

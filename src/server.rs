@@ -834,6 +834,7 @@ fn route_request(request: &Request, state: &AppState) -> Response {
         ("GET", "/api/market/solana/live/balance") => handle_get_solana_live_balance(request, state),
         ("POST", "/api/market/solana/live/swap") => handle_post_solana_live_swap(request, state),
         ("GET", "/api/market/solana/live/positions") => handle_get_solana_live_positions(request, state),
+        ("GET", "/api/market/solana/token-price") => handle_get_solana_token_price(request),
 
         _ => Response::error(404, "Not Found", "The requested endpoint does not exist."),
     }
@@ -3349,12 +3350,118 @@ fn get_current_sol_price_usd() -> f64 {
     102.75
 }
 
+static TOKEN_PRICE_CACHE: Mutex<Option<(std::time::Instant, HashMap<String, (f64, String)>)>> = Mutex::new(None);
+
+fn get_token_price_and_symbol(mint: &str) -> (f64, String) {
+    if mint == "So11111111111111111111111111111111111111112" {
+        return (get_current_sol_price_usd(), "SOL".to_string());
+    }
+
+    if let Ok(guard) = TOKEN_PRICE_CACHE.lock() {
+        if let Some((cached_at, ref map)) = *guard {
+            if cached_at.elapsed() < Duration::from_secs(10) {
+                if let Some(entry) = map.get(mint) {
+                    return entry.clone();
+                }
+            }
+        }
+    }
+
+    let url = format!("https://api.dexscreener.com/latest/dex/tokens/{mint}");
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_millis(1500))
+        .user_agent("RustBot/1.0")
+        .build();
+
+    if let Ok(client) = client {
+        if let Ok(res) = client.get(&url).send() {
+            if let Ok(value) = res.json::<serde_json::Value>() {
+                if let Some(pairs) = value.get("pairs").and_then(|p| p.as_array()) {
+                    if let Some(first_pair) = pairs.first() {
+                        let price = first_pair
+                            .get("priceUsd")
+                            .and_then(|p| p.as_str())
+                            .and_then(|s| s.parse::<f64>().ok())
+                            .unwrap_or(0.0);
+                        let symbol = first_pair
+                            .get("baseToken")
+                            .and_then(|b| b.get("symbol"))
+                            .and_then(|s| s.as_str())
+                            .unwrap_or("TOKEN")
+                            .to_string();
+
+                        if price > 0.0 {
+                            if let Ok(mut guard) = TOKEN_PRICE_CACHE.lock() {
+                                let mut map = if let Some((_, ref old_map)) = *guard {
+                                    old_map.clone()
+                                } else {
+                                    HashMap::new()
+                                };
+                                map.insert(mint.to_string(), (price, symbol.clone()));
+                                *guard = Some((std::time::Instant::now(), map));
+                            }
+                            return (price, symbol);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if let Ok(guard) = TOKEN_PRICE_CACHE.lock() {
+        if let Some((_, ref map)) = *guard {
+            if let Some(entry) = map.get(mint) {
+                return entry.clone();
+            }
+        }
+    }
+
+    (0.0, "TOKEN".to_string())
+}
+
+fn handle_get_solana_token_price(request: &Request) -> Response {
+    let mint = request.query.get("mint").map(String::as_str).unwrap_or("");
+    if mint.is_empty() {
+        return Response::error(400, "Bad Request", "Missing mint parameter");
+    }
+    let (price_usd, symbol) = get_token_price_and_symbol(mint);
+    Response::json(200, "OK", json!({
+        "mint": mint,
+        "symbol": symbol,
+        "price_usd": price_usd,
+    }))
+}
+
 fn handle_get_solana_live_status(_request: &Request, state: &AppState) -> Response {
     let sol_price = get_current_sol_price_usd();
     if let Some(ref client) = state.solana_live {
         let sol_balance = client.get_sol_balance().unwrap_or(0.0);
         let min_gas = state.config.solana_min_gas_reserve_sol;
         let spendable = (sol_balance - min_gas).max(0.0);
+        let native_sol_usd = sol_balance * sol_price;
+
+        let raw_tokens = client.get_token_accounts().unwrap_or_default();
+        let mut tokens_out = Vec::new();
+        let mut tokens_total_usd = 0.0;
+
+        for t in raw_tokens {
+            if t.balance_ui > 0.0001 {
+                let (price_usd, symbol) = get_token_price_and_symbol(&t.mint);
+                let value_usd = t.balance_ui * price_usd;
+                tokens_total_usd += value_usd;
+                tokens_out.push(json!({
+                    "mint": t.mint,
+                    "symbol": symbol,
+                    "balance_ui": t.balance_ui,
+                    "amount_raw": t.amount_raw,
+                    "decimals": t.decimals,
+                    "price_usd": price_usd,
+                    "value_usd": value_usd,
+                }));
+            }
+        }
+
+        let total_portfolio_usd = native_sol_usd + tokens_total_usd;
 
         Response::json(200, "OK", json!({
             "available": true,
@@ -3365,6 +3472,9 @@ fn handle_get_solana_live_status(_request: &Request, state: &AppState) -> Respon
             "min_gas_reserve_sol": min_gas,
             "spendable_sol": spendable,
             "sol_price_usd": sol_price,
+            "native_sol_usd": native_sol_usd,
+            "tokens": tokens_out,
+            "total_portfolio_usd": total_portfolio_usd,
         }))
     } else {
         Response::json(200, "OK", json!({
@@ -3376,6 +3486,9 @@ fn handle_get_solana_live_status(_request: &Request, state: &AppState) -> Respon
             "min_gas_reserve_sol": state.config.solana_min_gas_reserve_sol,
             "spendable_sol": 0.0,
             "sol_price_usd": sol_price,
+            "native_sol_usd": 0.0,
+            "tokens": [],
+            "total_portfolio_usd": 0.0,
             "message": "SOLANA_PRIVATE_KEY is not configured in server .env",
         }))
     }
