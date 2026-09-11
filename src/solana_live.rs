@@ -127,7 +127,12 @@ impl SolanaLiveClient {
 
         let http_client = reqwest::blocking::Client::builder()
             .user_agent("RustBot/1.0 (Solana Autonomous Trading Agent)")
-            .timeout(Duration::from_secs(15))
+            .tcp_nodelay(true)
+            .tcp_keepalive(Some(Duration::from_secs(30)))
+            .pool_idle_timeout(Some(Duration::from_secs(120)))
+            .pool_max_idle_per_host(20)
+            .connect_timeout(Duration::from_secs(4))
+            .timeout(Duration::from_secs(10))
             .build()
             .map_err(|e| format!("Failed to create HTTP client: {e}"))?;
 
@@ -376,8 +381,8 @@ impl SolanaLiveClient {
                 {
                     "encoding": "base64",
                     "skipPreflight": false,
-                    "preflightCommitment": "confirmed",
-                    "maxRetries": 3
+                    "preflightCommitment": "processed",
+                    "maxRetries": 5
                 }
             ]
         });

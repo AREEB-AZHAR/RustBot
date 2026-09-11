@@ -2825,7 +2825,8 @@ fn fetch_solana_trending(query: &HashMap<String, String>) -> Result<SolanaTrendi
     }
 
     let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(6))
+        .tcp_nodelay(true)
+        .timeout(Duration::from_secs(3))
         .user_agent("RustBot/1.0 (Mozilla/5.0; Windows NT 10.0; Win64; x64)")
         .build()
         .map_err(|e| format!("HTTP client error: {e}"))?;
@@ -2847,6 +2848,9 @@ fn fetch_solana_trending(query: &HashMap<String, String>) -> Result<SolanaTrendi
     ];
 
     for endpoint in &search_endpoints {
+        if tokens.len() >= 35 {
+            break;
+        }
         if let Ok(value) = fetch_json(client.get(*endpoint), "DexScreener") {
             if let Some(pairs) = value.get("pairs").and_then(|p| p.as_array()) {
                 for pair in pairs {
@@ -2999,7 +3003,8 @@ fn fetch_solana_candles(query: &HashMap<String, String>) -> Result<MarketDataRes
         .clamp(10, 200);
 
     let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(8))
+        .tcp_nodelay(true)
+        .timeout(Duration::from_secs(3))
         .build()
         .map_err(|e| format!("HTTP client error: {e}"))?;
 
