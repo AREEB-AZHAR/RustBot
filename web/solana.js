@@ -8,6 +8,20 @@
    - 3-Stage Continuous Learning Engine (Doubt -> 2x Re-test -> Mistake Veto)
    ========================================================================== */
 
+let _tradeSequenceCounter = 0;
+
+/**
+ * Generates a collision-proof trade reference incorporating full timestamp,
+ * monotonic sequence counter, and random entropy to prevent SQLite UNIQUE violations.
+ */
+function generateUniqueTradeRef(prefix = "SOL-HFT") {
+  _tradeSequenceCounter = (_tradeSequenceCounter + 1) % 100000;
+  const ts = Date.now();
+  const rand = Math.random().toString(36).substring(2, 7).toUpperCase();
+  const seq = String(_tradeSequenceCounter).padStart(5, "0");
+  return `${prefix}-${ts}-${seq}-${rand}`;
+}
+
 const solanaBotState = {
   isRunning: false,
   loopTimer: null,
@@ -1761,7 +1775,7 @@ function executePartialTakeProfit(pos, exitPrice) {
   persistSolanaWallet();
 
   // Record partial take-profit trade in journal & SQLite
-  const tradeRef = `SOL-TP1-${Date.now().toString().slice(-6)}`;
+  const tradeRef = generateUniqueTradeRef("SOL-TP1");
   const tradeDex = pos.route ? pos.route.venueName : (pos.token.dex || "Raydium");
   const tradeEntry = {
     id: solanaBotState.executedTrades.length + 1,
@@ -1949,7 +1963,8 @@ function closePosition(pos, exitReason, isEmergencyHalt = false) {
           syncSolanaLiveStatus();
         }
       }).catch((sellErr) => {
-        console.warn("Live sell error:", sellErr);
+        console.error("Live sell error:", sellErr);
+        showToast(`❌ [LIVE SELL ERROR] ${sellErr.message || sellErr}`);
       });
     }
   }
@@ -1968,7 +1983,7 @@ function closePosition(pos, exitReason, isEmergencyHalt = false) {
     registerTradeMistakeInStage1(pos.token, pos.entryFeatures, netReturnPct / 100, failurePattern);
   }
 
-  const tradeRef = `SOL-HFT-${Date.now().toString().slice(-6)}`;
+  const tradeRef = generateUniqueTradeRef("SOL-HFT");
   const tradeDex = pos.route ? pos.route.venueName : (pos.token.dex || "Raydium");
   const isLiveTrade = Boolean(pos.isLive || solanaBotState.isLiveMode);
   const tradeEntry = {

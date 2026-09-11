@@ -81,6 +81,7 @@ pub struct SolanaLiveClient {
     pub verifying_key: VerifyingKey,
     pub public_key_base58: String,
     http_client: reqwest::blocking::Client,
+    pub jupiter_api_key: Option<String>,
 }
 
 impl SolanaLiveClient {
@@ -125,6 +126,7 @@ impl SolanaLiveClient {
         let public_key_base58 = bs58::encode(verifying_key.as_bytes()).into_string();
 
         let http_client = reqwest::blocking::Client::builder()
+            .user_agent("RustBot/1.0 (Solana Autonomous Trading Agent)")
             .timeout(Duration::from_secs(15))
             .build()
             .map_err(|e| format!("Failed to create HTTP client: {e}"))?;
@@ -141,7 +143,14 @@ impl SolanaLiveClient {
             verifying_key,
             public_key_base58,
             http_client,
+            jupiter_api_key: None,
         })
+    }
+
+    /// Attaches an optional Jupiter Developer Platform API key for higher rate limits.
+    pub fn with_jupiter_api_key(mut self, api_key: Option<String>) -> Self {
+        self.jupiter_api_key = api_key;
+        self
     }
 
     /// Queries live SOL balance in native SOL units.
@@ -258,7 +267,7 @@ impl SolanaLiveClient {
         Ok(accounts)
     }
 
-    /// Fetches an optimal swap quote from Jupiter Aggregator v6.
+    /// Fetches an optimal swap quote from Jupiter Aggregator API (https://api.jup.ag/swap/v1/quote).
     pub fn get_jupiter_quote(
         &self,
         input_mint: &str,
@@ -268,13 +277,16 @@ impl SolanaLiveClient {
     ) -> Result<serde_json::Value, String> {
         let safe_slippage = slippage_bps.clamp(10, 250); // Min 0.1%, max 2.5% slippage guard
         let url = format!(
-            "https://quote-api.jup.ag/v6/quote?inputMint={}&outputMint={}&amount={}&slippageBps={}",
+            "https://api.jup.ag/swap/v1/quote?inputMint={}&outputMint={}&amount={}&slippageBps={}",
             input_mint, output_mint, amount_lamports, safe_slippage
         );
 
-        let resp: serde_json::Value = self
-            .http_client
-            .get(&url)
+        let mut req = self.http_client.get(&url);
+        if let Some(ref key) = self.jupiter_api_key {
+            req = req.header("x-api-key", key);
+        }
+
+        let resp: serde_json::Value = req
             .send()
             .map_err(|e| format!("Jupiter Quote API request failed: {e}"))?
             .json()
@@ -291,7 +303,7 @@ impl SolanaLiveClient {
         Ok(resp)
     }
 
-    /// Requests an unsigned serialized swap transaction from Jupiter v6 Swap API.
+    /// Requests an unsigned serialized swap transaction from Jupiter API (https://api.jup.ag/swap/v1/swap).
     pub fn build_jupiter_swap(&self, quote_response: &serde_json::Value) -> Result<String, String> {
         let payload = json!({
             "quoteResponse": quote_response,
@@ -301,10 +313,16 @@ impl SolanaLiveClient {
             "prioritizationFeeLamports": "auto"
         });
 
-        let resp: serde_json::Value = self
+        let mut req = self
             .http_client
-            .post("https://quote-api.jup.ag/v6/swap")
-            .json(&payload)
+            .post("https://api.jup.ag/swap/v1/swap")
+            .json(&payload);
+
+        if let Some(ref key) = self.jupiter_api_key {
+            req = req.header("x-api-key", key);
+        }
+
+        let resp: serde_json::Value = req
             .send()
             .map_err(|e| format!("Jupiter Swap API build request failed: {e}"))?
             .json()

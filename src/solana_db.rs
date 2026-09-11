@@ -250,6 +250,35 @@ impl SolanaDb {
         let is_live_val = if trade.is_live.unwrap_or(false) { 1 } else { 0 };
         let tx_sig_val = trade.tx_signature.as_deref().unwrap_or("");
 
+        // Disambiguate trade_ref if it already exists to guarantee idempotency and avoid UNIQUE constraint failure
+        let mut final_trade_ref = trade.trade_ref.clone();
+        let exists: bool = conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM solana_trades WHERE trade_ref = ?1)",
+                params![&final_trade_ref],
+                |row| row.get(0),
+            )
+            .unwrap_or(false);
+
+        if exists {
+            let mut suffix_counter = 1;
+            loop {
+                let candidate = format!("{}-{}-{}", trade.trade_ref, now, suffix_counter);
+                let cand_exists: bool = conn
+                    .query_row(
+                        "SELECT EXISTS(SELECT 1 FROM solana_trades WHERE trade_ref = ?1)",
+                        params![&candidate],
+                        |row| row.get(0),
+                    )
+                    .unwrap_or(false);
+                if !cand_exists {
+                    final_trade_ref = candidate;
+                    break;
+                }
+                suffix_counter += 1;
+            }
+        }
+
         conn.execute(
             "INSERT INTO solana_trades (
                 trade_ref, token_symbol, token_name, dex, entry_price, exit_price,
@@ -257,7 +286,7 @@ impl SolanaDb {
                 features_json, created_at, closed_at, is_live, tx_signature
             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
             params![
-                trade.trade_ref,
+                final_trade_ref,
                 trade.token_symbol,
                 trade.token_name,
                 trade.dex,
@@ -668,6 +697,14 @@ mod tests {
         assert_eq!(all_trades.len(), 2);
         assert!(all_trades[0].is_live);
         assert_eq!(all_trades[0].tx_signature, "5abc123def456sig");
+
+        // 1c. Test duplicate trade_ref collision disambiguation
+        let dup_trade = live_trade.clone();
+        let dup_id = db.record_trade(&dup_trade).expect("Duplicate trade_ref should not fail but be disambiguated");
+        assert!(dup_id > 0);
+        let updated_trades = db.list_trades(10).expect("Should list trades with duplicate inserted safely");
+        assert_eq!(updated_trades.len(), 3);
+        assert!(updated_trades[0].trade_ref.starts_with("TRD-LIVE-001"));
 
         // 2. Record learned mistake
         let mistake = NewSolanaMistake {

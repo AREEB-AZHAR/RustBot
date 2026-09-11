@@ -329,9 +329,15 @@ pub fn run(
     let solana_live = if let Some(ref key) = config.solana_private_key {
         match crate::solana_live::SolanaLiveClient::from_base58_key(key, &config.solana_rpc_url) {
             Ok(client) => {
+                let client = client.with_jupiter_api_key(config.solana_jupiter_api_key.clone());
                 println!("  Solana Live Trading Client initialized: {}", client.public_key_base58);
                 println!("  RPC Node: {}", client.rpc_url);
                 println!("  Live Execution Enabled: {}", config.solana_live_enabled);
+                if client.jupiter_api_key.is_some() {
+                    println!("  Jupiter API Key: Configured (Authenticated Metis Tier)");
+                } else {
+                    println!("  Jupiter API Key: None (Public Metis v1 Tier)");
+                }
                 Some(Arc::new(client))
             }
             Err(e) => {
@@ -720,6 +726,14 @@ fn route_request(request: &Request, state: &AppState) -> Response {
             res
         }
         ("GET", "/og.png") => Response::binary(200, "OK", "image/png", OG_IMAGE),
+        ("GET", "/favicon.ico") => {
+            Response::asset(
+                200,
+                "OK",
+                "image/svg+xml",
+                r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🤖</text></svg>"#,
+            )
+        }
         ("GET", "/api/health") => Response::json(200, "OK", json!({ "status": "ready" })),
 
         // ==========================================
@@ -3764,6 +3778,7 @@ mod tests {
             solana_private_key: None,
             solana_rpc_url: "https://api.mainnet-beta.solana.com".to_string(),
             solana_live_enabled: false,
+            solana_jupiter_api_key: None,
         };
         let store = Arc::new(RwLock::new(KnowledgeStore::from_memories(&[])));
         let solana_db = Arc::new(crate::solana_db::SolanaDb::open_in_memory().unwrap());
@@ -3931,6 +3946,7 @@ mod tests {
             solana_private_key: None,
             solana_rpc_url: "https://api.mainnet-beta.solana.com".to_string(),
             solana_live_enabled: false,
+            solana_jupiter_api_key: None,
         };
         let store = Arc::new(RwLock::new(KnowledgeStore::from_memories(&[])));
         let solana_db = Arc::new(crate::solana_db::SolanaDb::open_in_memory().unwrap());
@@ -4034,6 +4050,7 @@ mod tests {
             solana_private_key: None,
             solana_rpc_url: "https://api.mainnet-beta.solana.com".to_string(),
             solana_live_enabled: false,
+            solana_jupiter_api_key: None,
         };
         let store = Arc::new(RwLock::new(KnowledgeStore::from_memories(&[])));
         let solana_db = Arc::new(crate::solana_db::SolanaDb::open_in_memory().unwrap());
@@ -4321,6 +4338,7 @@ mod tests {
             solana_private_key: None,
             solana_rpc_url: "https://api.mainnet-beta.solana.com".to_string(),
             solana_live_enabled: false,
+            solana_jupiter_api_key: None,
         };
         let store = Arc::new(RwLock::new(KnowledgeStore::from_memories(&[])));
         let solana_db = Arc::new(crate::solana_db::SolanaDb::open_in_memory().unwrap());
@@ -4461,6 +4479,7 @@ mod tests {
             solana_private_key: None,
             solana_rpc_url: "https://api.mainnet-beta.solana.com".to_string(),
             solana_live_enabled: false,
+            solana_jupiter_api_key: None,
         };
         let store = Arc::new(RwLock::new(KnowledgeStore::from_memories(&[])));
         let solana_db = Arc::new(crate::solana_db::SolanaDb::open_in_memory().unwrap());
@@ -4579,6 +4598,19 @@ mod tests {
         let res_solana_js = route_request(&req_solana_js, &state);
         assert_eq!(res_solana_js.status, 200);
         assert_eq!(res_solana_js.content_type, "text/javascript; charset=utf-8");
+
+        // 9. GET /favicon.ico
+        let req_fav = Request {
+            method: "GET".to_string(),
+            path: "/favicon.ico".to_string(),
+            query: HashMap::new(),
+            headers: HashMap::from([("host".to_string(), "127.0.0.1:7878".to_string())]),
+            host: "127.0.0.1:7878".to_string(),
+            body: vec![],
+        };
+        let res_fav = route_request(&req_fav, &state);
+        assert_eq!(res_fav.status, 200);
+        assert_eq!(res_fav.content_type, "image/svg+xml");
     }
 
     fn make_test_state() -> AppState {
@@ -4595,6 +4627,7 @@ mod tests {
             solana_private_key: None,
             solana_rpc_url: "https://api.mainnet-beta.solana.com".to_string(),
             solana_live_enabled: false,
+            solana_jupiter_api_key: None,
         };
         let store = Arc::new(RwLock::new(KnowledgeStore::from_memories(&[])));
         let solana_db = Arc::new(crate::solana_db::SolanaDb::open_in_memory().unwrap());
@@ -4725,11 +4758,15 @@ mod tests {
         let res_post_trade = route_request(&req_post_trade, &state);
         assert_eq!(res_post_trade.status, 201);
 
+        // 2b. Posting duplicate trade_ref should succeed via disambiguation without 500
+        let res_post_dup = route_request(&req_post_trade, &state);
+        assert_eq!(res_post_dup.status, 201);
+
         // 3. Fetch trades again
         let res_list_trades_after = route_request(&req_list_trades, &state);
         let after_data: serde_json::Value = serde_json::from_slice(&res_list_trades_after.body).unwrap();
-        assert_eq!(after_data["count"], 1);
-        assert_eq!(after_data["trades"][0]["trade_ref"], "SOL-HFT-001");
+        assert_eq!(after_data["count"], 2);
+        assert!(after_data["trades"][0]["trade_ref"].as_str().unwrap().starts_with("SOL-HFT-001"));
 
         // 4. Post learned mistake (Stage 1 Doubt)
         let mistake_body = serde_json::json!({

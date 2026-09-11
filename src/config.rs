@@ -20,6 +20,7 @@ pub struct AppConfig {
     pub solana_private_key: Option<String>,
     pub solana_rpc_url: String,
     pub solana_live_enabled: bool,
+    pub solana_jupiter_api_key: Option<String>,
 }
 
 impl AppConfig {
@@ -99,6 +100,8 @@ impl AppConfig {
         let solana_live_enabled = get_var("SOLANA_LIVE_ENABLED")
             .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
             .unwrap_or(false);
+        let solana_jupiter_api_key = get_var("JUPITER_API_KEY")
+            .or_else(|| get_var("SOLANA_JUPITER_API_KEY"));
 
         let config = Self {
             env,
@@ -112,6 +115,7 @@ impl AppConfig {
             solana_private_key,
             solana_rpc_url,
             solana_live_enabled,
+            solana_jupiter_api_key,
         };
 
         config.validate()?;
@@ -169,6 +173,7 @@ mod tests {
             solana_private_key: None,
             solana_rpc_url: "https://api.mainnet-beta.solana.com".to_string(),
             solana_live_enabled: false,
+            solana_jupiter_api_key: None,
         };
         assert!(config.validate().is_ok());
         assert!(!config.is_production());
@@ -188,6 +193,7 @@ mod tests {
             solana_private_key: None,
             solana_rpc_url: "https://api.mainnet-beta.solana.com".to_string(),
             solana_live_enabled: false,
+            solana_jupiter_api_key: None,
         };
         let err = config.validate().unwrap_err();
         assert!(err.contains("must begin with 'https://'"));
@@ -207,6 +213,7 @@ mod tests {
             solana_private_key: None,
             solana_rpc_url: "https://api.mainnet-beta.solana.com".to_string(),
             solana_live_enabled: false,
+            solana_jupiter_api_key: None,
         };
         let err = config.validate().unwrap_err();
         assert!(err.contains("RUSTBOT_SESSION_PEPPER"));
@@ -226,6 +233,7 @@ mod tests {
             solana_private_key: None,
             solana_rpc_url: "https://api.mainnet-beta.solana.com".to_string(),
             solana_live_enabled: false,
+            solana_jupiter_api_key: None,
         };
         assert!(config.validate().is_ok());
         assert!(config.is_production());
