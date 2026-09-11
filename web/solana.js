@@ -1686,13 +1686,13 @@ async function runSolanaAutonomousTick() {
     if (solanaBotState.isLiveMode && solanaBotState.liveWallet.available) {
       const spendableSol = Math.max(0, solanaBotState.liveWallet.spendableSol || 0);
       // Micro-capital optimization: Prevent Solana ATA account rent (0.00204 SOL) from eroding capital
-      if (spendableSol < 0.06) {
-        maxSlots = 1; // Single high-conviction sniper trade (~0.045 SOL)
-      } else if (spendableSol < 0.15) {
-        maxSlots = 2; // Two high-conviction trades (~0.035 - 0.050 SOL each)
-      } else if (spendableSol < 0.35) {
-        maxSlots = 4;
+      if (spendableSol < 0.20) {
+        maxSlots = 1; // Single high-conviction sniper trade for balances under 0.20 SOL (~$28 USD)
+      } else if (spendableSol < 0.50) {
+        maxSlots = 2; // Two trades (~$35 - $70 each)
       } else if (spendableSol < 1.0) {
+        maxSlots = 4;
+      } else {
         maxSlots = 8;
       }
     }
@@ -1725,6 +1725,9 @@ async function runSolanaAutonomousTick() {
     for (const { candidate, score } of rankedCandidates) {
       if (solanaBotState.activePositions.length >= MAX_CONCURRENT_POSITIONS) {
         break;
+      }
+      if (solanaBotState.isLiveMode && (solanaBotState.liveBuyInFlight || solanaBotState.activePositions.some(p => p._inFlight))) {
+        break; // In Live Mode: only process ONE on-chain buy at a time!
       }
 
       // Check AI Sentinel Token Cooldown
@@ -2104,21 +2107,8 @@ function openPosition(token, marginUsd, fvgType = "BULLISH_FVG", route = null, m
 
   // LIVE ON-CHAIN EXECUTION via Jupiter Aggregator API
   if (solanaBotState.isLiveMode && solanaBotState.liveWallet.available) {
-    pos._inFlight = true;
-    const solPrice = solanaBotState.liveWallet.solPriceUsd || 142.5;
-    const spendableSol = Math.max(0, solanaBotState.liveWallet.spendableSol || 0);
-    const maxSlots = solanaBotState.maxConcurrentPositions || 1;
-    const remainingSlots = Math.max(1, maxSlots - solanaBotState.activePositions.length + 1);
-    const slotSol = spendableSol / remainingSlots;
-    const targetLamports = Math.floor(slotSol * 1_000_000_000);
-    const spendableLamports = Math.floor(spendableSol * 1_000_000_000);
-    // Allocate either target slot or remaining spendable SOL
-    const lamports = Math.min(targetLamports, spendableLamports);
-    const tokenMint = token.mint || token.address;
-
-    if (!tokenMint) {
-      pos._inFlight = false;
-      console.warn(`[Live Mode] Skipped ${token.symbol}: missing on-chain mint address`);
+    if (solanaBotState.liveBuyInFlight) {
+      console.warn(`[Live Mode] Skipped ${token.symbol}: Another live swap is currently in flight on-chain.`);
       const ghostIdx = solanaBotState.activePositions.indexOf(pos);
       if (ghostIdx !== -1) {
         solanaBotState.activePositions.splice(ghostIdx, 1);
@@ -2129,9 +2119,40 @@ function openPosition(token, marginUsd, fvgType = "BULLISH_FVG", route = null, m
       return;
     }
 
+    const tokenMint = token.mint || token.address;
+    if (!tokenMint || token.symbol === "SOL" || tokenMint === "So11111111111111111111111111111111111111112") {
+      console.warn(`[Live Mode] Skipped ${token.symbol}: missing mint address or attempt to buy SOL with SOL`);
+      const ghostIdx = solanaBotState.activePositions.indexOf(pos);
+      if (ghostIdx !== -1) {
+        solanaBotState.activePositions.splice(ghostIdx, 1);
+        solanaBotState.wallet.cash += marginUsd;
+        updateSolanaWalletHUD();
+        renderMultiPositionsTable();
+      }
+      return;
+    }
+
+    solanaBotState.liveBuyInFlight = true;
+    pos._inFlight = true;
+
+    const solPrice = solanaBotState.liveWallet.solPriceUsd || 142.5;
+    const spendableSol = Math.max(0, solanaBotState.liveWallet.spendableSol || 0);
+
+    // ATA account creation (0.00204 SOL) + Priority fee (0.0005 SOL) + execution safety buffer (0.0015 SOL) = 0.004 SOL
+    const ataGasBufferSol = 0.004;
+    const safeSpendableSol = Math.max(0, spendableSol - ataGasBufferSol);
+
+    const maxSlots = solanaBotState.maxConcurrentPositions || 1;
+    const remainingSlots = Math.max(1, maxSlots - solanaBotState.activePositions.length + 1);
+    const slotSol = Math.min(safeSpendableSol / remainingSlots, safeSpendableSol * 0.85);
+    const lamports = Math.floor(slotSol * 1_000_000_000);
+
     const slippageBps = computeAdaptiveSlippageBps(token);
 
     if (lamports >= 50_000 && !token._unroutable) {
+      // Deduct immediately from local spendable SOL to prevent subsequent race conditions
+      solanaBotState.liveWallet.spendableSol = Math.max(0, solanaBotState.liveWallet.spendableSol - (lamports / 1e9));
+
       api("/api/market/solana/live/swap", {
         method: "POST",
         body: JSON.stringify({
@@ -2146,6 +2167,7 @@ function openPosition(token, marginUsd, fvgType = "BULLISH_FVG", route = null, m
           exit_reason: safeFvg,
         }),
       }).then((swapRes) => {
+        solanaBotState.liveBuyInFlight = false;
         pos._inFlight = false;
         if (swapRes && swapRes.tx_signature) {
           pos.txSignature = swapRes.tx_signature;
@@ -2162,8 +2184,10 @@ function openPosition(token, marginUsd, fvgType = "BULLISH_FVG", route = null, m
             updateSolanaWalletHUD();
             renderMultiPositionsTable();
           }
+          syncSolanaLiveStatus();
         }
       }).catch((swapErr) => {
+        solanaBotState.liveBuyInFlight = false;
         pos._inFlight = false;
         console.error("Live swap error:", swapErr);
         const errStr = String(swapErr.message || swapErr);
@@ -2180,12 +2204,14 @@ function openPosition(token, marginUsd, fvgType = "BULLISH_FVG", route = null, m
           updateSolanaWalletHUD();
           renderMultiPositionsTable();
         }
+        syncSolanaLiveStatus();
       });
     } else {
+      solanaBotState.liveBuyInFlight = false;
       pos._inFlight = false;
       if (token._unroutable) {
         console.warn(`[Live Mode] Skipped unroutable token ${token.symbol}`);
-      } else if (spendableLamports < 50_000) {
+      } else if (lamports < 50_000) {
         console.warn(`[Live Mode] Spendable SOL too low (${spendableSol.toFixed(4)} SOL). Deposit SOL or lower gas reserve to trade live.`);
       }
       // Remove ghost position so paper positions don't open in live mode without real funds
