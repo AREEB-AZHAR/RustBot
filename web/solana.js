@@ -1724,16 +1724,24 @@ async function runSolanaAutonomousTick() {
       if (vol24h < 8000 || liqUsd < 5000) {
         continue;
       }
+      if (solanaBotState.isLiveMode && (vol24h < 50_000 || liqUsd < 100_000)) {
+        continue; // Enforce institutional liquidity floor in Live Mode
+      }
 
       // CONFLUENCE METRIC 4: Anti-FOMO & Overbought Filter (Never buy extreme tops)
       const ch5m = candidate.price_change_5m || 0;
       const ch1h = candidate.price_change_1h || 0;
-      if (ch5m > 9.0 || ch1h > 45.0) {
+      const volScore = candidate.volatility_score || 80;
+      // High-volatility meme coins (volatility >= 92) get a stricter +4.5% 5m wick cap to avoid buying local tops
+      const max5mPump = volScore >= 92 ? 4.5 : 9.0;
+      if (ch5m > max5mPump || ch1h > 45.0) {
         continue; // Overbought wick exhaustion
       }
 
-      // CONFLUENCE METRIC 5: Valid Retest / Momentum Confluence (Includes FVG pullbacks!)
-      const isQualityConfluence = ch5m >= -3.5 && ch5m <= 6.0 && (candidate.volatility_score || 75) >= 50;
+      // CONFLUENCE METRIC 5: Valid Retest / Momentum Confluence (Rejects falling knives)
+      // High-volatility tokens dropping faster than -2.5% in 5m are flagged as falling knives
+      const min5mDrop = volScore >= 92 ? -2.5 : -3.5;
+      const isQualityConfluence = ch5m >= min5mDrop && ch5m <= 6.0 && volScore >= 50;
       if (!isQualityConfluence) {
         continue;
       }
@@ -1754,8 +1762,10 @@ async function runSolanaAutonomousTick() {
         continue; // Block conflicting momentum entries (<2/3 timeframe confluence)
       }
 
-      // CONVICTION SIZING (Kelly-Adjusted 1/15th Sizing amplified by MTF alignment):
-      const convictionMultiplier = (score >= 80 ? 1.20 : score >= 70 ? 1.00 : 0.80) * (mtf ? mtf.convictionMultiplier : 1.0);
+      // CONVICTION SIZING (Kelly-Adjusted 1/15th Sizing with Volatility-Parity Scaling):
+      // For ultra-volatile coins (vol >= 92), reduce margin by 20% to prevent oversized drawdown impact
+      const volRiskDamping = volScore >= 92 ? 0.80 : 1.0;
+      const convictionMultiplier = (score >= 80 ? 1.20 : score >= 70 ? 1.00 : 0.80) * (mtf ? mtf.convictionMultiplier : 1.0) * volRiskDamping;
       const targetSlotUsd = baseSlotEquityUsd * convictionMultiplier;
 
       // Cross-DEX Smart Order Routing (Simulate Orca Whirlpools, Raydium CLMM/CPMM, pump.fun)
