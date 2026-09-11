@@ -1055,8 +1055,11 @@ async function syncSolanaLiveStatus() {
       }
 
       if (solanaBotState.isLiveMode) {
-        const liveCashUsd = solanaBotState.liveWallet.spendableSol * (solanaBotState.liveWallet.solPriceUsd || 142.5);
-        solanaBotState.wallet.cash = liveCashUsd;
+        const solPrice = solanaBotState.liveWallet.solPriceUsd || 142.5;
+        const totalLiveSolUsd = (solanaBotState.liveWallet.solBalance || 0) * solPrice;
+        const openPositionsMargin = solanaBotState.activePositions.reduce((acc, p) => acc + (p.marginUsd || 0), 0);
+        const unspentCash = Math.max(0, totalLiveSolUsd - (solanaBotState.activePositions.some(p => p._inFlight) ? openPositionsMargin : 0));
+        solanaBotState.wallet.cash = unspentCash;
         updateSolanaWalletHUD();
       }
     }
@@ -1572,19 +1575,31 @@ async function runSolanaAutonomousTick() {
 
     // Step 1: Drawdown Check (Strict 20% Max Loss Circuit Breaker with Dynamic High-Water Mark Ratchet)
     if (solanaBotState.isLiveMode && solanaBotState.liveWallet.available) {
-      // In Live Mode: Total Portfolio Value = Native SOL in USD + Value of open live token positions in USD
       const solPrice = solanaBotState.liveWallet.solPriceUsd || 142.5;
-      const nativeSolUsd = (solanaBotState.liveWallet.solBalance || 0) * solPrice;
-      const openPositionsUsd = solanaBotState.activePositions.reduce((acc, p) => {
-        return acc + (p.shares * p.currentPrice);
-      }, 0);
-      const totalPortfolioUsd = nativeSolUsd + openPositionsUsd;
+      const totalLiveSolUsd = (solanaBotState.liveWallet.solBalance || 0) * solPrice;
+      const openPositionsValue = solanaBotState.activePositions.reduce((acc, p) => acc + (p.shares * p.currentPrice), 0);
+      const openPositionsMargin = solanaBotState.activePositions.reduce((acc, p) => acc + (p.marginUsd || 0), 0);
+
+      // Prevent double-counting if an on-chain buy is still in flight
+      const effectiveCashUsd = Math.max(0, totalLiveSolUsd - (solanaBotState.activePositions.some(p => p._inFlight) ? openPositionsMargin : 0));
+      const totalPortfolioUsd = effectiveCashUsd + openPositionsValue;
+      solanaBotState.wallet.currentEquity = totalPortfolioUsd;
 
       const initialUsd = (solanaBotState.liveWallet.initialSol || solanaBotState.liveWallet.solBalance || 0.1) * solPrice;
-      const livePeakUsd = Math.max(initialUsd, solanaBotState.liveWallet.peakUsd || initialUsd);
-      solanaBotState.liveWallet.peakUsd = Math.max(livePeakUsd, totalPortfolioUsd);
 
-      const liveDrawdown = Math.max(0, (livePeakUsd - totalPortfolioUsd) / Math.max(1, livePeakUsd));
+      // Discard any past corrupted/inflated peak (e.g. > 15% above initial with no trades)
+      if ((solanaBotState.liveWallet.peakUsd || 0) > initialUsd * 1.25 && solanaBotState.wallet.tradesWon === 0) {
+        solanaBotState.liveWallet.peakUsd = initialUsd;
+      }
+      const livePeakUsd = Math.max(initialUsd, solanaBotState.liveWallet.peakUsd || initialUsd);
+
+      // Only ratchet peak upward if genuine portfolio growth
+      if (totalPortfolioUsd > livePeakUsd && totalPortfolioUsd < (livePeakUsd * 1.20)) {
+        solanaBotState.liveWallet.peakUsd = totalPortfolioUsd;
+      }
+
+      const effectivePeak = solanaBotState.liveWallet.peakUsd || initialUsd;
+      const liveDrawdown = Math.max(0, (effectivePeak - totalPortfolioUsd) / Math.max(1, effectivePeak));
 
       if (liveDrawdown >= 0.20) {
         stopSolanaAutonomousBot("CIRCUIT_BREAKER_20PCT_LOSS");
@@ -2723,8 +2738,31 @@ function highlightActivePreset(amount) {
 
 function updateSolanaWalletHUD() {
   const wallet = solanaBotState.wallet;
-  const peak = wallet.peakEquity;
-  const current = wallet.currentEquity;
+  let peak = wallet.peakEquity;
+  let current = wallet.currentEquity;
+
+  if (solanaBotState.isLiveMode && solanaBotState.liveWallet.available) {
+    const solPrice = solanaBotState.liveWallet.solPriceUsd || 142.5;
+    const totalLiveSolUsd = (solanaBotState.liveWallet.solBalance || 0) * solPrice;
+    const openPositionsValue = solanaBotState.activePositions.reduce((acc, p) => acc + (p.shares * p.currentPrice), 0);
+    const openPositionsMargin = solanaBotState.activePositions.reduce((acc, p) => acc + (p.marginUsd || 0), 0);
+
+    const effectiveCashUsd = Math.max(0, totalLiveSolUsd - (solanaBotState.activePositions.some(p => p._inFlight) ? openPositionsMargin : 0));
+    current = effectiveCashUsd + openPositionsValue;
+    wallet.currentEquity = current;
+
+    const initialUsd = (solanaBotState.liveWallet.initialSol || solanaBotState.liveWallet.solBalance || 0.1) * solPrice;
+    // Clear out any previously inflated/corrupted peak from double-counting
+    if ((wallet.peakEquity || 0) > initialUsd * 1.25 && wallet.tradesWon === 0) {
+      wallet.peakEquity = initialUsd;
+    }
+    if ((solanaBotState.liveWallet.peakUsd || 0) > initialUsd * 1.25 && wallet.tradesWon === 0) {
+      solanaBotState.liveWallet.peakUsd = initialUsd;
+    }
+    peak = Math.max(initialUsd, solanaBotState.liveWallet.peakUsd || initialUsd);
+    wallet.peakEquity = peak;
+  }
+
   const drawdownPct = Math.max(0, ((peak - current) / Math.max(1, peak)) * 100);
 
   if (elements.solanaWalletBalance) {
