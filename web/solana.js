@@ -1685,29 +1685,21 @@ async function runSolanaAutonomousTick() {
       if (pos._inFlight) continue; // Skip positions whose live buy is still in flight on-chain
       pos.barsHeld++;
 
-      // Realistic volatility micro-jump based on coin's DEX volatility score (paper trading only)
-      if (pos.isLive) {
-        // Poll real-time on-chain DEX price every 2.5 seconds
-        if (!pos._lastPricePoll || (Date.now() - pos._lastPricePoll > 2500)) {
-          pos._lastPricePoll = Date.now();
-          const tokenMint = pos.token.mint || pos.token.address;
-          if (tokenMint) {
-            api(`/api/market/solana/token-price?mint=${tokenMint}`).then((pRes) => {
-              if (pRes && pRes.price_usd > 0) {
-                pos.currentPrice = pRes.price_usd;
-                pos.peakPrice = Math.max(pos.peakPrice || pos.entryPrice, pos.currentPrice);
-                pos.unrealizedPnlUsd = (pos.shares * pos.currentPrice) - pos.marginUsd;
-                pos.unrealizedReturnPct = pos.entryPrice > 0 ? ((pos.currentPrice - pos.entryPrice) / pos.entryPrice) * 100 : 0.0;
-                updateSolanaWalletHUD();
-              }
-            }).catch(() => {});
-          }
+      // Poll real-time on-chain DEX price every 2.5 seconds for BOTH Live and Paper trades
+      if (!pos._lastPricePoll || (Date.now() - pos._lastPricePoll > 2500)) {
+        pos._lastPricePoll = Date.now();
+        const tokenMint = pos.token.mint || pos.token.address;
+        if (tokenMint) {
+          api(`/api/market/solana/token-price?mint=${tokenMint}`).then((pRes) => {
+            if (pRes && pRes.price_usd > 0) {
+              pos.currentPrice = pRes.price_usd;
+              pos.peakPrice = Math.max(pos.peakPrice || pos.entryPrice, pos.currentPrice);
+              pos.unrealizedPnlUsd = (pos.shares * pos.currentPrice) - pos.marginUsd;
+              pos.unrealizedReturnPct = pos.entryPrice > 0 ? ((pos.currentPrice - pos.entryPrice) / pos.entryPrice) * 100 : 0.0;
+              updateSolanaWalletHUD();
+            }
+          }).catch(() => {});
         }
-      } else {
-        const vol = (pos.token.volatility_score || 80) / 100;
-        const tokenSeed = pos.token.symbol.charCodeAt(0) + pos.token.symbol.length;
-        const noise = ((Math.sin(solanaBotState.tickCount * 2.2 + tokenSeed) * 0.7) + ((Math.random() - 0.46) * 1.1)) * 0.016 * vol;
-        pos.currentPrice = Math.max(0.0000001, pos.currentPrice * (1 + noise));
       }
 
       pos.peakPrice = Math.max(pos.peakPrice || pos.entryPrice, pos.currentPrice);
@@ -1994,7 +1986,7 @@ async function runSolanaAutonomousTick() {
       }
 
       const patternName = ch5m < 0 ? `Bullish FVG Pullback (${candidate.grade || 'A'} · ${tokenRvol.toFixed(1)}x RVOL)` : `Momentum Surge (${candidate.grade || 'A'} · ${tokenRvol.toFixed(1)}x RVOL)`;
-      openPosition(candidate, tradeMarginUsd, patternName, route, mtf);
+      await openPosition(candidate, tradeMarginUsd, patternName, route, mtf);
     }
 
     processThreeStageLearningEngine();
@@ -2157,7 +2149,7 @@ function executePartialTakeProfit(pos, exitPrice) {
   showToast(`💰 [TP1 BANKED] ${pos.token.symbol} booked +$${netPnlUsd.toFixed(2)} (+${netReturnPct.toFixed(1)}%) via ${tradeDex}! Remaining 50% runner protected at breakeven.`);
 }
 
-function openPosition(token, marginUsd, fvgType = "BULLISH_FVG", route = null, mtf = null) {
+async function openPosition(token, marginUsd, fvgType = "BULLISH_FVG", route = null, mtf = null) {
   const safeFvg = String(fvgType || "BULLISH_FVG");
   const effectiveRoute = route || routeBestExecutionVenue(token, marginUsd);
   const effectiveMtf = mtf || token.mtf || computeMultiTimeframeConfluence(token);
@@ -2179,6 +2171,47 @@ function openPosition(token, marginUsd, fvgType = "BULLISH_FVG", route = null, m
   if (solanaBotState.wallet.cash < marginUsd + takerFeeUsd) {
     return;
   }
+
+  const tokenMint = token.mint || token.address;
+  if (!tokenMint) {
+    console.warn(`[Live/Shadow Mode] Skipped ${token.symbol}: missing mint address`);
+    return;
+  }
+
+  // --- PRE-TRADE DEEP VALIDATION ---
+  try {
+    // 1. Deep Rug Check (Freeze Authority & Concentration)
+    const rugRes = await api(`/api/market/solana/rug-check?mint=${tokenMint}`);
+    if (rugRes && rugRes.is_danger) {
+      console.warn(`[RugCheck VETO] Blocked ${token.symbol}. Reason: ${rugRes.danger_reason}`);
+      showToast(`🛡️ [RUG GUARD] Vetoed ${token.symbol}: ${rugRes.danger_reason}`);
+      return;
+    }
+
+    // 2. Pre-Trade Price Impact Quote via Jupiter
+    const solPrice = (solanaBotState.isLiveMode && solanaBotState.liveWallet.available) ? (solanaBotState.liveWallet.solPriceUsd || 102.75) : 102.75;
+    // Calculate required lamports for this trade margin
+    const solRequired = marginUsd / solPrice;
+    const lamports = Math.floor(solRequired * 1_000_000_000);
+
+    const quoteRes = await api(`/api/market/solana/quote?input_mint=So11111111111111111111111111111111111111112&output_mint=${tokenMint}&amount=${lamports}&slippage_bps=50`);
+    if (quoteRes && quoteRes.price_impact_pct > 1.0) {
+      console.warn(`[Impact VETO] Blocked ${token.symbol}. Impact ${quoteRes.price_impact_pct.toFixed(2)}% > 1.0% limit.`);
+      showToast(`🛡️ [SLIPPAGE GUARD] Vetoed ${token.symbol}: ${quoteRes.price_impact_pct.toFixed(2)}% Impact`);
+      return;
+    }
+
+    // 3. Strict 0.5% Fee Guard (Protects against 1% pump.fun curves or high-tier AMM fees)
+    if (takerFeeRate > 0.005) {
+      console.warn(`[Fee VETO] Blocked ${token.symbol}. Fee ${(takerFeeRate*100).toFixed(2)}% > 0.5% limit.`);
+      showToast(`🛡️ [FEE GUARD] Vetoed ${token.symbol}: ${(takerFeeRate*100).toFixed(2)}% Fee`);
+      return;
+    }
+  } catch (err) {
+    console.warn(`[Pre-Trade Validation Failed] for ${token.symbol}:`, err);
+    return; // Block trade on validation API failure
+  }
+  // --- END PRE-TRADE DEEP VALIDATION ---
 
   const entryPrice = token.price_usd || 1.0;
   const shares = marginUsd / entryPrice;

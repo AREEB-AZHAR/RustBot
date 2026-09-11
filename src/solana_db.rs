@@ -12,6 +12,19 @@ fn now_timestamp() -> i64 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EVMetrics {
+    pub total_trades: i64,
+    pub wins: i64,
+    pub losses: i64,
+    pub win_rate: f64,
+    pub avg_win_usd: f64,
+    pub avg_loss_usd: f64,
+    pub avg_friction_usd: f64,
+    pub breakeven_win_rate: f64,
+    pub is_positive_ev: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SolanaTradeRecord {
     pub id: i64,
     pub trade_ref: String,
@@ -261,52 +274,75 @@ impl SolanaDb {
             .unwrap_or(false);
 
         if exists {
-            let mut suffix_counter = 1;
-            loop {
-                let candidate = format!("{}-{}-{}", trade.trade_ref, now, suffix_counter);
-                let cand_exists: bool = conn
-                    .query_row(
-                        "SELECT EXISTS(SELECT 1 FROM solana_trades WHERE trade_ref = ?1)",
-                        params![&candidate],
-                        |row| row.get(0),
-                    )
-                    .unwrap_or(false);
-                if !cand_exists {
-                    final_trade_ref = candidate;
-                    break;
-                }
-                suffix_counter += 1;
-            }
+            final_trade_ref = format!("{}_{}", final_trade_ref, now);
         }
 
         conn.execute(
             "INSERT INTO solana_trades (
-                trade_ref, token_symbol, token_name, dex, entry_price, exit_price,
-                margin_usd, pnl_usd, pnl_pct, fees_paid_usd, exit_reason, is_win,
-                features_json, created_at, closed_at, is_live, tx_signature
+                trade_ref, token_symbol, token_name, dex,
+                entry_price, exit_price, margin_usd, pnl_usd, pnl_pct, fees_paid_usd,
+                exit_reason, is_win, features_json, created_at, closed_at, is_live, tx_signature
             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
             params![
-                final_trade_ref,
-                trade.token_symbol,
-                trade.token_name,
-                trade.dex,
-                trade.entry_price,
-                trade.exit_price,
-                trade.margin_usd,
-                trade.pnl_usd,
-                trade.pnl_pct,
-                trade.fees_paid_usd,
-                trade.exit_reason,
-                if trade.is_win { 1 } else { 0 },
-                trade.features_json,
-                now,
-                now,
-                is_live_val,
-                tx_sig_val,
+                final_trade_ref, trade.token_symbol, trade.token_name, trade.dex,
+                trade.entry_price, trade.exit_price, trade.margin_usd, trade.pnl_usd, trade.pnl_pct, trade.fees_paid_usd,
+                trade.exit_reason, if trade.is_win { 1 } else { 0 }, trade.features_json,
+                now, now, is_live_val, tx_sig_val
             ],
-        ).map_err(|e| format!("Failed to insert trade into solana_trades: {e}"))?;
+        ).map_err(|e| format!("Failed to insert trade: {e}"))?;
 
-        Ok(conn.last_insert_rowid())
+        let id = conn.last_insert_rowid();
+        Ok(id)
+    }
+
+    pub fn get_ev_metrics(&self, is_live: bool) -> Result<EVMetrics, String> {
+        let conn = self.conn.lock().map_err(|_| "Database mutex poisoned".to_string())?;
+        let live_flag = if is_live { 1 } else { 0 };
+
+        let mut stmt = conn.prepare(
+            "SELECT 
+                COUNT(*) as total_trades,
+                SUM(CASE WHEN pnl_usd > 0 THEN 1 ELSE 0 END) as wins,
+                SUM(CASE WHEN pnl_usd <= 0 THEN 1 ELSE 0 END) as losses,
+                AVG(CASE WHEN pnl_usd > 0 THEN pnl_usd ELSE NULL END) as avg_win_usd,
+                AVG(CASE WHEN pnl_usd <= 0 THEN ABS(pnl_usd) ELSE NULL END) as avg_loss_usd,
+                AVG(fees_paid_usd) as avg_friction_usd
+             FROM solana_trades WHERE is_live = ?1"
+        ).map_err(|e| format!("Prepare failed: {e}"))?;
+
+        let mut rows = stmt.query(params![live_flag]).map_err(|e| format!("Query failed: {e}"))?;
+        
+        let row = rows.next().unwrap().unwrap();
+        let total_trades: i64 = row.get(0).unwrap_or(0);
+        let wins: i64 = row.get(1).unwrap_or(0);
+        let losses: i64 = row.get(2).unwrap_or(0);
+        let avg_win_usd: f64 = row.get(3).unwrap_or(0.0);
+        let avg_loss_usd: f64 = row.get(4).unwrap_or(0.0);
+        let avg_friction_usd: f64 = row.get(5).unwrap_or(0.0);
+
+        let win_rate = if total_trades > 0 { (wins as f64) / (total_trades as f64) } else { 0.0 };
+        
+        // Breakeven Win Rate = (Loss + Friction) / (Win + Loss)
+        // Note: avg_loss_usd is already positive due to ABS()
+        let breakeven_win_rate = if (avg_win_usd + avg_loss_usd) > 0.0 {
+            (avg_loss_usd + avg_friction_usd) / (avg_win_usd + avg_loss_usd)
+        } else {
+            0.0
+        };
+
+        let is_positive_ev = total_trades > 0 && win_rate > breakeven_win_rate;
+
+        Ok(EVMetrics {
+            total_trades,
+            wins,
+            losses,
+            win_rate,
+            avg_win_usd,
+            avg_loss_usd,
+            avg_friction_usd,
+            breakeven_win_rate,
+            is_positive_ev,
+        })
     }
 
     pub fn list_trades(&self, limit: usize) -> Result<Vec<SolanaTradeRecord>, String> {
@@ -747,5 +783,64 @@ mod tests {
         db.clear_all().expect("Clear all should succeed");
         assert!(db.list_trades(10).unwrap().is_empty());
         assert!(db.list_learned_memory().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_ev_metrics() {
+        let db = SolanaDb::open_in_memory().expect("In-memory DB should open");
+        
+        let t1 = NewSolanaTrade {
+            trade_ref: "EV-01".to_string(),
+            token_symbol: "WIF".to_string(),
+            token_name: "WIF".to_string(),
+            dex: "raydium".to_string(),
+            entry_price: 1.0,
+            exit_price: 1.1,
+            margin_usd: 100.0,
+            pnl_usd: 10.0, // Win $10
+            pnl_pct: 10.0,
+            fees_paid_usd: 0.3, // $0.3 fee
+            exit_reason: "TP".to_string(),
+            is_win: true,
+            features_json: "[]".to_string(),
+            is_live: Some(false),
+            tx_signature: None,
+        };
+
+        let t2 = NewSolanaTrade {
+            trade_ref: "EV-02".to_string(),
+            token_symbol: "BONK".to_string(),
+            token_name: "BONK".to_string(),
+            dex: "raydium".to_string(),
+            entry_price: 1.0,
+            exit_price: 0.95,
+            margin_usd: 100.0,
+            pnl_usd: -5.0, // Loss $5
+            pnl_pct: -5.0,
+            fees_paid_usd: 0.3, // $0.3 fee
+            exit_reason: "SL".to_string(),
+            is_win: false,
+            features_json: "[]".to_string(),
+            is_live: Some(false),
+            tx_signature: None,
+        };
+
+        db.record_trade(&t1).unwrap();
+        db.record_trade(&t2).unwrap();
+
+        let metrics = db.get_ev_metrics(false).expect("Metrics should calculate");
+        assert_eq!(metrics.total_trades, 2);
+        assert_eq!(metrics.wins, 1);
+        assert_eq!(metrics.losses, 1);
+        assert_eq!(metrics.win_rate, 0.5);
+        assert_eq!(metrics.avg_win_usd, 10.0);
+        assert_eq!(metrics.avg_loss_usd, 5.0); // ABS is 5.0
+        assert_eq!(metrics.avg_friction_usd, 0.3);
+        
+        // Breakeven = (5.0 + 0.3) / (10.0 + 5.0) = 5.3 / 15.0 = 0.3533
+        assert!((metrics.breakeven_win_rate - 0.35333).abs() < 0.001);
+        
+        // Win rate is 0.5, which is > 0.3533, so is_positive_ev should be true
+        assert!(metrics.is_positive_ev);
     }
 }

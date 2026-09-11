@@ -835,6 +835,9 @@ fn route_request(request: &Request, state: &AppState) -> Response {
         ("POST", "/api/market/solana/live/swap") => handle_post_solana_live_swap(request, state),
         ("GET", "/api/market/solana/live/positions") => handle_get_solana_live_positions(request, state),
         ("GET", "/api/market/solana/token-price") => handle_get_solana_token_price(request),
+        ("GET", "/api/market/solana/quote") => handle_get_solana_quote(request, state),
+        ("GET", "/api/market/solana/rug-check") => handle_get_solana_rug_check(request),
+        ("GET", "/api/market/solana/ev-metrics") => handle_get_solana_ev_metrics(request, state),
 
         _ => Response::error(404, "Not Found", "The requested endpoint does not exist."),
     }
@@ -3173,6 +3176,14 @@ fn handle_post_solana_trade(request: &Request, state: &AppState) -> Response {
     }
 }
 
+fn handle_get_solana_ev_metrics(request: &Request, state: &AppState) -> Response {
+    let is_live = request.query.get("is_live").map(|s| s.as_str()) == Some("true");
+    match state.solana_db.get_ev_metrics(is_live) {
+        Ok(metrics) => Response::json(200, "OK", metrics),
+        Err(err) => Response::error(500, "Internal Server Error", &err),
+    }
+}
+
 fn handle_get_solana_learned_memory(_request: &Request, state: &AppState) -> Response {
     match state.solana_db.list_learned_memory() {
         Ok(traps) => {
@@ -3429,6 +3440,99 @@ fn handle_get_solana_token_price(request: &Request) -> Response {
         "mint": mint,
         "symbol": symbol,
         "price_usd": price_usd,
+    }))
+}
+
+fn handle_get_solana_quote(request: &Request, state: &AppState) -> Response {
+    let input_mint = request.query.get("input_mint").map(String::as_str).unwrap_or("");
+    let output_mint = request.query.get("output_mint").map(String::as_str).unwrap_or("So11111111111111111111111111111111111111112");
+    let amount_lamports: u64 = request.query.get("amount").and_then(|a| a.parse().ok()).unwrap_or(0);
+    let slippage_bps: u16 = request.query.get("slippage_bps").and_then(|a| a.parse().ok()).unwrap_or(50);
+
+    if input_mint.is_empty() || amount_lamports == 0 {
+        return Response::error(400, "Bad Request", "Missing input_mint or amount");
+    }
+
+    if let Some(ref client) = state.solana_live {
+        match client.get_jupiter_quote(input_mint, output_mint, amount_lamports, slippage_bps) {
+            Ok(quote_res) => Response::json(200, "OK", quote_res),
+            Err(e) => Response::error(500, "Jupiter Quote Failed", &e),
+        }
+    } else {
+        Response::error(400, "Bad Request", "Solana live client not initialized (no private key).")
+    }
+}
+
+// Basic RugCheck structures
+#[derive(Debug, Deserialize, Default)]
+struct RugCheckToken {
+    #[serde(rename = "freezeAuthority")]
+    freeze_authority: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RugCheckRisk {
+    name: String,
+    level: String,
+    score: i32,
+}
+
+#[derive(Debug, Deserialize)]
+struct RugCheckReport {
+    token: Option<RugCheckToken>,
+    risks: Option<Vec<RugCheckRisk>>,
+}
+
+fn handle_get_solana_rug_check(request: &Request) -> Response {
+    let mint = request.query.get("mint").map(String::as_str).unwrap_or("");
+    if mint.is_empty() {
+        return Response::error(400, "Bad Request", "Missing mint parameter");
+    }
+
+    let url = format!("https://api.rugcheck.xyz/v1/tokens/{}/report", mint);
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(3))
+        .build();
+
+    let Ok(client) = client else {
+        return Response::error(500, "Internal Server Error", "Failed to build HTTP client");
+    };
+
+    let Ok(resp) = client.get(&url).send() else {
+        return Response::error(502, "Bad Gateway", "Failed to contact RugCheck API");
+    };
+
+    let Ok(report) = resp.json::<RugCheckReport>() else {
+        return Response::error(502, "Bad Gateway", "Failed to parse RugCheck response");
+    };
+
+    let mut is_safe = true;
+    let mut reasons = Vec::new();
+
+    // 1. Check Freeze Authority
+    if let Some(token) = &report.token {
+        if let Some(freeze_auth) = &token.freeze_authority {
+            if !freeze_auth.trim().is_empty() {
+                is_safe = false;
+                reasons.push("Mint has active freeze authority.".to_string());
+            }
+        }
+    }
+
+    // 2. Check Risks for "danger"
+    if let Some(risks) = &report.risks {
+        for risk in risks {
+            if risk.level.eq_ignore_ascii_case("danger") {
+                is_safe = false;
+                reasons.push(format!("Danger Risk detected: {}", risk.name));
+            }
+        }
+    }
+
+    Response::json(200, "OK", json!({
+        "mint": mint,
+        "is_safe": is_safe,
+        "reasons": reasons,
     }))
 }
 
