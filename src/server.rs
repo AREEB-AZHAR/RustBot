@@ -1923,7 +1923,7 @@ impl Response {
         }
 
         let headers = format!(
-            "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-Frame-Options: DENY\r\nStrict-Transport-Security: max-age=63072000; includeSubDomains\r\nReferrer-Policy: no-referrer\r\nPermissions-Policy: geolocation=(), camera=(), microphone=()\r\nContent-Security-Policy: default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; script-src 'self' 'unsafe-inline' https://s3.tradingview.com; img-src 'self' data: https:; connect-src 'self' https://telemetry.tradingview.com; frame-src https://s.tradingview.com https://www.tradingview.com https://*.tradingview-widget.com; base-uri 'none'; frame-ancestors 'none'\r\n{}\r\n",
+            "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-Frame-Options: DENY\r\nStrict-Transport-Security: max-age=63072000; includeSubDomains\r\nReferrer-Policy: no-referrer\r\nPermissions-Policy: geolocation=(), camera=(), microphone=()\r\nContent-Security-Policy: default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://s3.tradingview.com; img-src 'self' data: https:; connect-src 'self' https://telemetry.tradingview.com; frame-src https://s.tradingview.com https://www.tradingview.com https://*.tradingview-widget.com; worker-src 'self' blob:; base-uri 'none'; frame-ancestors 'none'\r\n{}\r\n",
             self.status,
             self.reason,
             self.content_type,
