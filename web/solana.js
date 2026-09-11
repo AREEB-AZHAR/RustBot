@@ -1572,11 +1572,21 @@ async function runSolanaAutonomousTick() {
 
     // Step 1: Drawdown Check (Strict 20% Max Loss Circuit Breaker with Dynamic High-Water Mark Ratchet)
     if (solanaBotState.isLiveMode && solanaBotState.liveWallet.available) {
-      // In Live Mode: Measure REAL on-chain SOL balance drawdown, never trip from simulated paper noise!
-      const initialSol = solanaBotState.liveWallet.initialSol || solanaBotState.liveWallet.solBalance || 0.1;
-      const currentSol = solanaBotState.liveWallet.solBalance || initialSol;
-      const solDrawdown = Math.max(0, (initialSol - currentSol) / Math.max(0.001, initialSol));
-      if (solDrawdown >= 0.20) {
+      // In Live Mode: Total Portfolio Value = Native SOL in USD + Value of open live token positions in USD
+      const solPrice = solanaBotState.liveWallet.solPriceUsd || 142.5;
+      const nativeSolUsd = (solanaBotState.liveWallet.solBalance || 0) * solPrice;
+      const openPositionsUsd = solanaBotState.activePositions.reduce((acc, p) => {
+        return acc + (p.shares * p.currentPrice);
+      }, 0);
+      const totalPortfolioUsd = nativeSolUsd + openPositionsUsd;
+
+      const initialUsd = (solanaBotState.liveWallet.initialSol || solanaBotState.liveWallet.solBalance || 0.1) * solPrice;
+      const livePeakUsd = Math.max(initialUsd, solanaBotState.liveWallet.peakUsd || initialUsd);
+      solanaBotState.liveWallet.peakUsd = Math.max(livePeakUsd, totalPortfolioUsd);
+
+      const liveDrawdown = Math.max(0, (livePeakUsd - totalPortfolioUsd) / Math.max(1, livePeakUsd));
+
+      if (liveDrawdown >= 0.20) {
         stopSolanaAutonomousBot("CIRCUIT_BREAKER_20PCT_LOSS");
         return;
       }
