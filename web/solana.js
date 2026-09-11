@@ -98,44 +98,44 @@ const solanaBotState = {
 let csrfToken = "";
 
 const SOLANA_EXPANDED_CATALOG = [
-  { symbol: "SOL", name: "Solana", price_usd: 142.50, dex: "raydium", volume_24h: 3820000000, liquidity_usd: 180000000, volatility_score: 82.4, price_change_5m: 1.25, price_change_1h: 3.80 },
-  { symbol: "JUP", name: "Jupiter", price_usd: 0.885, dex: "orca", volume_24h: 128000000, liquidity_usd: 45000000, volatility_score: 84.1, price_change_5m: 2.10, price_change_1h: 6.40 },
-  { symbol: "RAY", name: "Raydium", price_usd: 2.14, dex: "raydium", volume_24h: 84000000, liquidity_usd: 22000000, volatility_score: 88.5, price_change_5m: -1.80, price_change_1h: 7.20 },
-  { symbol: "BONK", name: "Bonk", price_usd: 0.0000214, dex: "raydium", volume_24h: 96000000, liquidity_usd: 18000000, volatility_score: 91.2, price_change_5m: 3.40, price_change_1h: -4.10 },
-  { symbol: "WIF", name: "dogwifhat", price_usd: 1.62, dex: "raydium", volume_24h: 210000000, liquidity_usd: 35000000, volatility_score: 95.0, price_change_5m: -2.40, price_change_1h: 8.90 },
-  { symbol: "POPCAT", name: "Popcat", price_usd: 0.485, dex: "raydium", volume_24h: 68000000, liquidity_usd: 14000000, volatility_score: 89.4, price_change_5m: 2.10, price_change_1h: 5.60 },
-  { symbol: "FARTCOIN", name: "Fartcoin", dex: "pump.fun", price_usd: 0.324, volume_24h: 42000000, liquidity_usd: 8500000, volatility_score: 98.2, price_change_5m: 5.20, price_change_1h: 18.90 },
-  { symbol: "PUMP", name: "Pump.fun", dex: "pump.fun", price_usd: 0.00384, volume_24h: 5120000, liquidity_usd: 924000, volatility_score: 96.5, price_change_5m: 3.85, price_change_1h: 12.40 },
-  { symbol: "PYTH", name: "Pyth Network", price_usd: 0.342, dex: "orca", volume_24h: 45000000, liquidity_usd: 16000000, volatility_score: 81.5, price_change_5m: 0.90, price_change_1h: 2.60 },
-  { symbol: "JTO", name: "Jito", price_usd: 2.48, dex: "orca", volume_24h: 38000000, liquidity_usd: 12500000, volatility_score: 85.0, price_change_5m: 1.60, price_change_1h: 4.80 },
-  { symbol: "RENDER", name: "Render", price_usd: 5.82, dex: "raydium", volume_24h: 115000000, liquidity_usd: 29000000, volatility_score: 83.2, price_change_5m: 1.10, price_change_1h: 3.70 },
-  { symbol: "DRIFT", name: "Drift", price_usd: 0.74, dex: "orca", volume_24h: 24000000, liquidity_usd: 8200000, volatility_score: 86.8, price_change_5m: 1.50, price_change_1h: 5.10 },
-  { symbol: "KMNO", name: "Kamino", price_usd: 0.118, dex: "raydium", volume_24h: 19500000, liquidity_usd: 6800000, volatility_score: 84.6, price_change_5m: 1.30, price_change_1h: 3.40 },
-  { symbol: "MEW", name: "cat in a dogs world", price_usd: 0.0054, dex: "raydium", volume_24h: 55000000, liquidity_usd: 16500000, volatility_score: 91.5, price_change_5m: 2.40, price_change_1h: 7.10 },
-  { symbol: "TNSR", name: "Tensor", price_usd: 0.43, dex: "orca", volume_24h: 16200000, liquidity_usd: 5400000, volatility_score: 85.2, price_change_5m: 1.20, price_change_1h: 3.00 },
-  { symbol: "ORCA", name: "Orca", price_usd: 2.88, dex: "orca", volume_24h: 22500000, liquidity_usd: 9200000, volatility_score: 81.0, price_change_5m: 0.70, price_change_1h: 2.90 },
-  { symbol: "BOME", name: "BOOK OF MEME", price_usd: 0.0068, dex: "raydium", volume_24h: 62000000, liquidity_usd: 19000000, volatility_score: 89.2, price_change_5m: 1.90, price_change_1h: 5.80 },
-  { symbol: "GOAT", name: "Goatseus Maximus", price_usd: 0.452, dex: "pump.fun", volume_24h: 78000000, liquidity_usd: 21000000, volatility_score: 97.4, price_change_5m: 4.10, price_change_1h: 14.50 },
-  { symbol: "ACT", name: "Act I : The AI Prophecy", price_usd: 0.285, dex: "pump.fun", volume_24h: 88000000, liquidity_usd: 24000000, volatility_score: 96.8, price_change_5m: 3.90, price_change_1h: 11.80 },
-  { symbol: "PNUT", name: "Peanut the Squirrel", price_usd: 0.512, dex: "pump.fun", volume_24h: 94000000, liquidity_usd: 26000000, volatility_score: 98.6, price_change_5m: 4.80, price_change_1h: 16.20 },
-  { symbol: "MOODENG", name: "Moo Deng", price_usd: 0.215, dex: "pump.fun", volume_24h: 36000000, liquidity_usd: 7800000, volatility_score: 93.1, price_change_5m: 2.70, price_change_1h: 8.40 },
-  { symbol: "CHILLGUY", name: "Just a chill guy", price_usd: 0.184, dex: "pump.fun", volume_24h: 31000000, liquidity_usd: 6900000, volatility_score: 94.5, price_change_5m: 3.10, price_change_1h: 9.70 },
-  { symbol: "GIGA", name: "GigaChad", price_usd: 0.042, dex: "raydium", volume_24h: 28000000, liquidity_usd: 8100000, volatility_score: 90.0, price_change_5m: 1.80, price_change_1h: 6.20 },
-  { symbol: "W", name: "Wormhole", price_usd: 0.224, dex: "orca", volume_24h: 18000000, liquidity_usd: 6200000, volatility_score: 82.0, price_change_5m: 0.80, price_change_1h: 2.50 },
-  { symbol: "HNT", name: "Helium", price_usd: 4.65, dex: "raydium", volume_24h: 26000000, liquidity_usd: 9400000, volatility_score: 83.5, price_change_5m: 1.10, price_change_1h: 3.20 },
-  { symbol: "MOBILE", name: "Helium Mobile", price_usd: 0.00078, dex: "raydium", volume_24h: 8500000, liquidity_usd: 3200000, volatility_score: 88.0, price_change_5m: 2.20, price_change_1h: 5.40 },
-  { symbol: "IO", name: "io.net", price_usd: 1.82, dex: "raydium", volume_24h: 24000000, liquidity_usd: 7600000, volatility_score: 86.0, price_change_5m: 1.40, price_change_1h: 4.10 },
-  { symbol: "MSOL", name: "Marinade Staked SOL", price_usd: 168.20, dex: "raydium", volume_24h: 42000000, liquidity_usd: 35000000, volatility_score: 74.0, price_change_5m: 0.90, price_change_1h: 2.80 },
-  { symbol: "JITOSOL", name: "Jito Staked SOL", price_usd: 172.40, dex: "orca", volume_24h: 56000000, liquidity_usd: 48000000, volatility_score: 75.0, price_change_5m: 0.95, price_change_1h: 2.90 },
-  { symbol: "ZEUS", name: "Zeus Network", price_usd: 0.38, dex: "raydium", volume_24h: 14000000, liquidity_usd: 4800000, volatility_score: 87.2, price_change_5m: 1.70, price_change_1h: 4.50 },
-  { symbol: "WEN", name: "Wen", price_usd: 0.000085, dex: "raydium", volume_24h: 12000000, liquidity_usd: 4200000, volatility_score: 86.5, price_change_5m: 1.50, price_change_1h: 4.20 },
-  { symbol: "MYRO", name: "Myro", price_usd: 0.072, dex: "raydium", volume_24h: 15000000, liquidity_usd: 5100000, volatility_score: 89.0, price_change_5m: 2.10, price_change_1h: 5.90 },
-  { symbol: "SAMO", name: "Samoyedcoin", price_usd: 0.0092, dex: "orca", volume_24h: 8400000, liquidity_usd: 3100000, volatility_score: 85.5, price_change_5m: 1.40, price_change_1h: 3.80 },
-  { symbol: "SLERF", name: "Slerf", price_usd: 0.165, dex: "raydium", volume_24h: 22000000, liquidity_usd: 7200000, volatility_score: 92.0, price_change_5m: 2.50, price_change_1h: 7.20 },
-  { symbol: "FWOG", name: "Fwog", price_usd: 0.245, dex: "pump.fun", volume_24h: 29000000, liquidity_usd: 7900000, volatility_score: 93.8, price_change_5m: 3.20, price_change_1h: 9.10 },
-  { symbol: "LUCE", name: "Official Luce", price_usd: 0.082, dex: "pump.fun", volume_24h: 18000000, liquidity_usd: 4600000, volatility_score: 95.2, price_change_5m: 3.60, price_change_1h: 10.40 },
-  { symbol: "AI16Z", name: "ai16z", price_usd: 0.385, dex: "pump.fun", volume_24h: 65000000, liquidity_usd: 18000000, volatility_score: 97.0, price_change_5m: 4.20, price_change_1h: 13.80 },
-  { symbol: "ZEREBRO", name: "Zerebro", price_usd: 0.295, dex: "pump.fun", volume_24h: 44000000, liquidity_usd: 12000000, volatility_score: 96.2, price_change_5m: 3.80, price_change_1h: 11.20 },
+  { address: "So11111111111111111111111111111111111111112", symbol: "SOL", name: "Solana", price_usd: 142.50, dex: "raydium", volume_24h: 3820000000, liquidity_usd: 180000000, volatility_score: 82.4, price_change_5m: 1.25, price_change_1h: 3.80 },
+  { address: "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN", symbol: "JUP", name: "Jupiter", price_usd: 0.885, dex: "orca", volume_24h: 128000000, liquidity_usd: 45000000, volatility_score: 84.1, price_change_5m: 2.10, price_change_1h: 6.40 },
+  { address: "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R", symbol: "RAY", name: "Raydium", price_usd: 2.14, dex: "raydium", volume_24h: 84000000, liquidity_usd: 22000000, volatility_score: 88.5, price_change_5m: -1.80, price_change_1h: 7.20 },
+  { address: "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263", symbol: "BONK", name: "Bonk", price_usd: 0.0000214, dex: "raydium", volume_24h: 96000000, liquidity_usd: 18000000, volatility_score: 91.2, price_change_5m: 3.40, price_change_1h: -4.10 },
+  { address: "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm", symbol: "WIF", name: "dogwifhat", price_usd: 1.62, dex: "raydium", volume_24h: 210000000, liquidity_usd: 35000000, volatility_score: 95.0, price_change_5m: -2.40, price_change_1h: 8.90 },
+  { address: "7GCihgDB8fe6KNjn2MYtkzZcRjQy3t9GHdC8uHYmW2hr", symbol: "POPCAT", name: "Popcat", price_usd: 0.485, dex: "raydium", volume_24h: 68000000, liquidity_usd: 14000000, volatility_score: 89.4, price_change_5m: 2.10, price_change_1h: 5.60 },
+  { address: "9BB6NFEcjBCtnNLFko2FqVQBq8HHM13kCyYcdQbgpump", symbol: "FARTCOIN", name: "Fartcoin", dex: "pump.fun", price_usd: 0.324, volume_24h: 42000000, liquidity_usd: 8500000, volatility_score: 98.2, price_change_5m: 5.20, price_change_1h: 18.90 },
+  { address: "pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn", symbol: "PUMP", name: "Pump.fun", dex: "pump.fun", price_usd: 0.00384, volume_24h: 5120000, liquidity_usd: 924000, volatility_score: 96.5, price_change_5m: 3.85, price_change_1h: 12.40 },
+  { address: "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3", symbol: "PYTH", name: "Pyth Network", price_usd: 0.342, dex: "orca", volume_24h: 45000000, liquidity_usd: 16000000, volatility_score: 81.5, price_change_5m: 0.90, price_change_1h: 2.60 },
+  { address: "jtojtomepa8beP8AuQc6eXt5FriJwfFMwQx2v2f9mCL", symbol: "JTO", name: "Jito", price_usd: 2.48, dex: "orca", volume_24h: 38000000, liquidity_usd: 12500000, volatility_score: 85.0, price_change_5m: 1.60, price_change_1h: 4.80 },
+  { address: "rndrizKT3MK1iimdxRdWabcF7Zg7AR5T4nud4EkHBof", symbol: "RENDER", name: "Render", price_usd: 5.82, dex: "raydium", volume_24h: 115000000, liquidity_usd: 29000000, volatility_score: 83.2, price_change_5m: 1.10, price_change_1h: 3.70 },
+  { address: "DriFtupJYLTosbwoN8koMbEYSx54aFAVLddWsbksjwg7", symbol: "DRIFT", name: "Drift", price_usd: 0.74, dex: "orca", volume_24h: 24000000, liquidity_usd: 8200000, volatility_score: 86.8, price_change_5m: 1.50, price_change_1h: 5.10 },
+  { address: "KMNo3nJsBXfcpJTVhZcXLW7RmTwTt4GVFE7suUBo9sS", symbol: "KMNO", name: "Kamino", price_usd: 0.118, dex: "raydium", volume_24h: 19500000, liquidity_usd: 6800000, volatility_score: 84.6, price_change_5m: 1.30, price_change_1h: 3.40 },
+  { address: "MEW1gQWJ3nEXg2qgERiKu7FAFj79PHvQVREQUzScPP5", symbol: "MEW", name: "cat in a dogs world", price_usd: 0.0054, dex: "raydium", volume_24h: 55000000, liquidity_usd: 16500000, volatility_score: 91.5, price_change_5m: 2.40, price_change_1h: 7.10 },
+  { address: "TNSRxcUxoT9xBG3de7PiJyTDYu7kskLqcpddxnEJAS6", symbol: "TNSR", name: "Tensor", price_usd: 0.43, dex: "orca", volume_24h: 16200000, liquidity_usd: 5400000, volatility_score: 85.2, price_change_5m: 1.20, price_change_1h: 3.00 },
+  { address: "orcaEKTdK7LKz57vaAYr9QeNsVEPfiu6QeMU1kektZE", symbol: "ORCA", name: "Orca", price_usd: 2.88, dex: "orca", volume_24h: 22500000, liquidity_usd: 9200000, volatility_score: 81.0, price_change_5m: 0.70, price_change_1h: 2.90 },
+  { address: "ukHH6c7mMyiWCf1b9pnWe25TSpkDDt3H5pQZgZ74J82", symbol: "BOME", name: "BOOK OF MEME", price_usd: 0.0068, dex: "raydium", volume_24h: 62000000, liquidity_usd: 19000000, volatility_score: 89.2, price_change_5m: 1.90, price_change_1h: 5.80 },
+  { address: "CzLSujWBLFsSjncfkh59rUFqvafWcY5tzedWJSuypump", symbol: "GOAT", name: "Goatseus Maximus", price_usd: 0.452, dex: "pump.fun", volume_24h: 78000000, liquidity_usd: 21000000, volatility_score: 97.4, price_change_5m: 4.10, price_change_1h: 14.50 },
+  { address: "GJAFwWjJ3vnTsrQVabjBVK2TYB1YtRCQXRDfDgUnpump", symbol: "ACT", name: "Act I : The AI Prophecy", price_usd: 0.285, dex: "pump.fun", volume_24h: 88000000, liquidity_usd: 24000000, volatility_score: 96.8, price_change_5m: 3.90, price_change_1h: 11.80 },
+  { address: "2qEHjNxgoFaSdZXTAav3H2Wbe3mtB64z3P2A2Cgipump", symbol: "PNUT", name: "Peanut the Squirrel", price_usd: 0.512, dex: "pump.fun", volume_24h: 94000000, liquidity_usd: 26000000, volatility_score: 98.6, price_change_5m: 4.80, price_change_1h: 16.20 },
+  { address: "ED5nyyWEzpPPiWimP8vYm7sD7TD3LAt3Q3gRT5mpump", symbol: "MOODENG", name: "Moo Deng", price_usd: 0.215, dex: "pump.fun", volume_24h: 36000000, liquidity_usd: 7800000, volatility_score: 93.1, price_change_5m: 2.70, price_change_1h: 8.40 },
+  { address: "Df6yfrKC8kZE3KNkrHERKzAetSxbrWeniQfyJY4Jpump", symbol: "CHILLGUY", name: "Just a chill guy", price_usd: 0.184, dex: "pump.fun", volume_24h: 31000000, liquidity_usd: 6900000, volatility_score: 94.5, price_change_5m: 3.10, price_change_1h: 9.70 },
+  { address: "63LfDmNb3MQ8mw9MtZ2To9bEA2M71kZUUGq5tiJxc6kq", symbol: "GIGA", name: "GigaChad", price_usd: 0.042, dex: "raydium", volume_24h: 28000000, liquidity_usd: 8100000, volatility_score: 90.0, price_change_5m: 1.80, price_change_1h: 6.20 },
+  { address: "85VBFQZC9TZkfaptBWjvUw7YbZjy52A6mjtPGjstQAmQ", symbol: "W", name: "Wormhole", price_usd: 0.224, dex: "orca", volume_24h: 18000000, liquidity_usd: 6200000, volatility_score: 82.0, price_change_5m: 0.80, price_change_1h: 2.50 },
+  { address: "hntyVP6YFm1Hg25TN9WGLqM12b8TQmcknKrdu1oxWux", symbol: "HNT", name: "Helium", price_usd: 4.65, dex: "raydium", volume_24h: 26000000, liquidity_usd: 9400000, volatility_score: 83.5, price_change_5m: 1.10, price_change_1h: 3.20 },
+  { address: "mb1eu7TzEc71KxDpsmsKoucSSuuoGLv1drys1oP2jh6", symbol: "MOBILE", name: "Helium Mobile", price_usd: 0.00078, dex: "raydium", volume_24h: 8500000, liquidity_usd: 3200000, volatility_score: 88.0, price_change_5m: 2.20, price_change_1h: 5.40 },
+  { address: "BZLbGTNCSFfoth2GYDtWr7e4imWzpR5jqcUuGEwr646K", symbol: "IO", name: "io.net", price_usd: 1.82, dex: "raydium", volume_24h: 24000000, liquidity_usd: 7600000, volatility_score: 86.0, price_change_5m: 1.40, price_change_1h: 4.10 },
+  { address: "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So", symbol: "MSOL", name: "Marinade Staked SOL", price_usd: 168.20, dex: "raydium", volume_24h: 42000000, liquidity_usd: 35000000, volatility_score: 74.0, price_change_5m: 0.90, price_change_1h: 2.80 },
+  { address: "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn", symbol: "JITOSOL", name: "Jito Staked SOL", price_usd: 172.40, dex: "orca", volume_24h: 56000000, liquidity_usd: 48000000, volatility_score: 75.0, price_change_5m: 0.95, price_change_1h: 2.90 },
+  { address: "ZEUS1aR7aX8D5V2a8L2qP2C5qL9qT2V5xP5mK8r9pump", symbol: "ZEUS", name: "Zeus Network", price_usd: 0.38, dex: "raydium", volume_24h: 14000000, liquidity_usd: 4800000, volatility_score: 87.2, price_change_5m: 1.70, price_change_1h: 4.50 },
+  { address: "WENWENvqqNya429ubCdXr81ZmD69brwQaaBYY6p3LCU", symbol: "WEN", name: "Wen", price_usd: 0.000085, dex: "raydium", volume_24h: 12000000, liquidity_usd: 4200000, volatility_score: 86.5, price_change_5m: 1.50, price_change_1h: 4.20 },
+  { address: "H3pt7A8yB4kK5xL6mV2qN3sR8tP9wX4yZ2bA1cDeFgHi", symbol: "MYRO", name: "Myro", price_usd: 0.072, dex: "raydium", volume_24h: 15000000, liquidity_usd: 5100000, volatility_score: 89.0, price_change_5m: 2.10, price_change_1h: 5.90 },
+  { address: "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU", symbol: "SAMO", name: "Samoyedcoin", price_usd: 0.0092, dex: "orca", volume_24h: 8400000, liquidity_usd: 3100000, volatility_score: 85.5, price_change_5m: 1.40, price_change_1h: 3.80 },
+  { address: "7BgBvyjrZX1YKz4oh9mjb8ZScatkkwb8DzFx7LoiVkM3", symbol: "SLERF", name: "Slerf", price_usd: 0.165, dex: "raydium", volume_24h: 22000000, liquidity_usd: 7200000, volatility_score: 92.0, price_change_5m: 2.50, price_change_1h: 7.20 },
+  { address: "A8C3xuqscfmyLrte3VmTqrAq8kgMASius9AFNANwpump", symbol: "FWOG", name: "Fwog", price_usd: 0.245, dex: "pump.fun", volume_24h: 29000000, liquidity_usd: 7900000, volatility_score: 93.8, price_change_5m: 3.20, price_change_1h: 9.10 },
+  { address: "CBdCxKo9QavR9hfShgpEBG3zekorAeD7W1jfq2o3pump", symbol: "LUCE", name: "Official Luce", price_usd: 0.082, dex: "pump.fun", volume_24h: 18000000, liquidity_usd: 4600000, volatility_score: 95.2, price_change_5m: 3.60, price_change_1h: 10.40 },
+  { address: "HeLp6NuQkmYB4pYWo2zYs22mESHXPQYzXbB8n4V98jwC", symbol: "AI16Z", name: "ai16z", price_usd: 0.385, dex: "pump.fun", volume_24h: 65000000, liquidity_usd: 18000000, volatility_score: 97.0, price_change_5m: 4.20, price_change_1h: 13.80 },
+  { address: "8x5VqbHA8D7NkD52uNuS5nnt3PwA8pLD34ymskeSo2Wn", symbol: "ZEREBRO", name: "Zerebro", price_usd: 0.295, dex: "pump.fun", volume_24h: 44000000, liquidity_usd: 12000000, volatility_score: 96.2, price_change_5m: 3.80, price_change_1h: 11.20 },
 ];
 
 const elements = {
@@ -1556,12 +1556,26 @@ async function runSolanaAutonomousTick() {
     // Candidate Coins Pool (Using full scanned universe of 40+ tokens)
     const candidatePool = solanaBotState.scannedTokens.length > 0 ? solanaBotState.scannedTokens : SOLANA_EXPANDED_CATALOG;
 
-    // Quantitative Multi-Position Risk Sizing: Full Balance Divided by 15
-    const MAX_CONCURRENT_POSITIONS = 15;
+    // Quantitative Multi-Position Risk Sizing: Dynamic Slot Allocation
+    let maxSlots = 15;
+    if (solanaBotState.isLiveMode && solanaBotState.liveWallet.available) {
+      const spendableSol = Math.max(0, solanaBotState.liveWallet.spendableSol || 0);
+      // Micro-capital optimization: Prevent Solana ATA account rent (0.00204 SOL) from eroding capital
+      if (spendableSol < 0.06) {
+        maxSlots = 1; // Single high-conviction sniper trade (~0.045 SOL)
+      } else if (spendableSol < 0.15) {
+        maxSlots = 2; // Two high-conviction trades (~0.035 - 0.050 SOL each)
+      } else if (spendableSol < 0.35) {
+        maxSlots = 4;
+      } else if (spendableSol < 1.0) {
+        maxSlots = 8;
+      }
+    }
+    const MAX_CONCURRENT_POSITIONS = maxSlots;
     solanaBotState.maxConcurrentPositions = MAX_CONCURRENT_POSITIONS;
     const singleFeeRate = 0.0015; // 15 bps taker fee
 
-    // Base slot size = Total current equity divided by 15 slots
+    // Base slot size = Total current equity divided by maxSlots
     const baseSlotEquityUsd = (solanaBotState.wallet.currentEquity / MAX_CONCURRENT_POSITIONS);
 
     // CONFLUENCE METRIC 1: Benchmark Macro Regime Filter
@@ -1602,6 +1616,18 @@ async function runSolanaAutonomousTick() {
       // Filter tokens marked as unroutable on Jupiter (e.g. unbonded pump.fun bonding curves)
       if (candidate._unroutable) {
         continue;
+      }
+
+      // In Live Mode: Require verified DEX liquidity (Raydium, Orca, Meteora)
+      // Jupiter routes through DEX AMMs; unbonded pump.fun bonding curves cannot be routed on-chain
+      if (solanaBotState.isLiveMode) {
+        const dexStr = (candidate.dex || candidate.dexId || "").toLowerCase();
+        if (dexStr === "pump.fun" || dexStr.includes("pump")) {
+          // Only allow pump.fun graduated tokens that have migrated to Raydium (liquidity >= $5M)
+          if ((candidate.liquidity_usd || 0) < 5_000_000) {
+            continue;
+          }
+        }
       }
 
       // CONFLUENCE METRIC 2: Relative Volume (RVOL) Surge Guard (Rejects dead volume)
@@ -1742,6 +1768,24 @@ async function runSolanaAutonomousTick() {
   }
 }
 
+/**
+ * Computes adaptive slippage in basis points based on token category and volatility.
+ * High-liquidity staples: 50 bps (0.50%)
+ * Mid-cap and DEX tokens: 100 bps (1.00%)
+ * High-volatility meme coins: 150 bps (1.50%) to prevent simulation failures
+ */
+function computeAdaptiveSlippageBps(token) {
+  if (!token) return 75;
+  const sym = (token.symbol || "").toUpperCase();
+  if (["SOL", "JUP", "RAY", "PYTH", "JTO", "RENDER", "MSOL", "JITOSOL", "ORCA", "HNT"].includes(sym)) {
+    return 50;
+  }
+  const vol = token.volatility_score || 85;
+  if (vol >= 95) return 150;
+  if (vol >= 88) return 100;
+  return 75;
+}
+
 function executePartialTakeProfit(pos, exitPrice) {
   if (pos.tp1Triggered) return;
 
@@ -1785,14 +1829,19 @@ function executePartialTakeProfit(pos, exitPrice) {
     const trancheTokens = Math.floor(pos.tokenAmountRaw * sellRatio);
     if (trancheTokens > 0) {
       pos.tokenAmountRaw -= trancheTokens;
-      const tokenMint = pos.token.mint || pos.token.address || "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN";
+      const tokenMint = pos.token.mint || pos.token.address;
+      if (!tokenMint) {
+        console.warn(`[Live Mode] Cannot execute TP1 sell for ${pos.token.symbol}: missing mint address`);
+        return;
+      }
+      const slippageBps = computeAdaptiveSlippageBps(pos.token);
       api("/api/market/solana/live/swap", {
         method: "POST",
         body: JSON.stringify({
           input_mint: tokenMint,
           output_mint: "So11111111111111111111111111111111111111112",
           amount_lamports: trancheTokens,
-          slippage_bps: 50,
+          slippage_bps: slippageBps,
           token_symbol: pos.token.symbol,
           token_name: pos.token.name || pos.token.symbol,
           margin_usd: marginToClose,
@@ -1916,11 +1965,28 @@ function openPosition(token, marginUsd, fvgType = "BULLISH_FVG", route = null, m
   if (solanaBotState.isLiveMode && solanaBotState.liveWallet.available) {
     const solPrice = solanaBotState.liveWallet.solPriceUsd || 142.5;
     const spendableSol = Math.max(0, solanaBotState.liveWallet.spendableSol || 0);
+    const maxSlots = solanaBotState.maxConcurrentPositions || 1;
+    const remainingSlots = Math.max(1, maxSlots - solanaBotState.activePositions.length + 1);
+    const slotSol = spendableSol / remainingSlots;
+    const targetLamports = Math.floor(slotSol * 1_000_000_000);
     const spendableLamports = Math.floor(spendableSol * 1_000_000_000);
-    const targetLamports = Math.floor((marginUsd / solPrice) * 1_000_000_000);
-    // Allocate either target or remaining spendable SOL
+    // Allocate either target slot or remaining spendable SOL
     const lamports = Math.min(targetLamports, spendableLamports);
-    const tokenMint = token.mint || token.address || "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN";
+    const tokenMint = token.mint || token.address;
+
+    if (!tokenMint) {
+      console.warn(`[Live Mode] Skipped ${token.symbol}: missing on-chain mint address`);
+      const ghostIdx = solanaBotState.activePositions.indexOf(pos);
+      if (ghostIdx !== -1) {
+        solanaBotState.activePositions.splice(ghostIdx, 1);
+        solanaBotState.wallet.cash += marginUsd;
+        updateSolanaWalletHUD();
+        renderMultiPositionsTable();
+      }
+      return;
+    }
+
+    const slippageBps = computeAdaptiveSlippageBps(token);
 
     if (lamports >= 50_000 && !token._unroutable) {
       api("/api/market/solana/live/swap", {
@@ -1929,7 +1995,7 @@ function openPosition(token, marginUsd, fvgType = "BULLISH_FVG", route = null, m
           input_mint: "So11111111111111111111111111111111111111112",
           output_mint: tokenMint,
           amount_lamports: lamports,
-          slippage_bps: 50,
+          slippage_bps: slippageBps,
           token_symbol: token.symbol,
           token_name: token.name || token.symbol,
           margin_usd: marginUsd,
@@ -2010,16 +2076,21 @@ function closePosition(pos, exitReason, isEmergencyHalt = false) {
   // LIVE ON-CHAIN SELL: Swap token back to native SOL via Jupiter
   // ONLY execute live sell if this position was ACTUALLY bought and confirmed on-chain
   if (pos.isLive && pos.txSignature) {
-    const tokenMint = pos.token.mint || pos.token.address || "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN";
+    const tokenMint = pos.token.mint || pos.token.address;
+    if (!tokenMint) {
+      console.warn(`[Live Mode] Cannot sell ${pos.token.symbol}: missing mint address`);
+      return;
+    }
     const rawTokensToSell = pos.tokenAmountRaw ? Math.floor(pos.tokenAmountRaw) : 0;
     if (rawTokensToSell > 0) {
+      const slippageBps = computeAdaptiveSlippageBps(pos.token);
       api("/api/market/solana/live/swap", {
         method: "POST",
         body: JSON.stringify({
           input_mint: tokenMint,
           output_mint: "So11111111111111111111111111111111111111112",
           amount_lamports: rawTokensToSell,
-          slippage_bps: 50,
+          slippage_bps: slippageBps,
           token_symbol: pos.token.symbol,
           token_name: pos.token.name || pos.token.symbol,
           margin_usd: pos.marginUsd,
