@@ -3299,7 +3299,58 @@ fn handle_post_solana_wallet(request: &Request, state: &AppState) -> Response {
 // REAL ON-CHAIN SOLANA & JUPITER HANDLERS
 // ==========================================
 
+static SOL_PRICE_CACHE: Mutex<Option<(std::time::Instant, f64)>> = Mutex::new(None);
+
+fn get_current_sol_price_usd() -> f64 {
+    if let Ok(guard) = SOL_PRICE_CACHE.lock() {
+        if let Some((cached_at, price)) = *guard {
+            if cached_at.elapsed() < Duration::from_secs(30) && price > 10.0 {
+                return price;
+            }
+        }
+    }
+
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_millis(1500))
+        .user_agent("RustBot/1.0")
+        .build();
+
+    if let Ok(client) = client {
+        if let Ok(res) = client
+            .get("https://api.dexscreener.com/latest/dex/tokens/So11111111111111111111111111111111111111112")
+            .send()
+        {
+            if let Ok(value) = res.json::<serde_json::Value>() {
+                if let Some(pairs) = value.get("pairs").and_then(|p| p.as_array()) {
+                    for pair in pairs {
+                        if let Some(price_str) = pair.get("priceUsd").and_then(|p| p.as_str()) {
+                            if let Ok(price) = price_str.parse::<f64>() {
+                                if price > 10.0 {
+                                    if let Ok(mut guard) = SOL_PRICE_CACHE.lock() {
+                                        *guard = Some((std::time::Instant::now(), price));
+                                    }
+                                    return price;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if let Ok(guard) = SOL_PRICE_CACHE.lock() {
+        if let Some((_, price)) = *guard {
+            if price > 10.0 {
+                return price;
+            }
+        }
+    }
+    102.75
+}
+
 fn handle_get_solana_live_status(_request: &Request, state: &AppState) -> Response {
+    let sol_price = get_current_sol_price_usd();
     if let Some(ref client) = state.solana_live {
         let sol_balance = client.get_sol_balance().unwrap_or(0.0);
         let min_gas = state.config.solana_min_gas_reserve_sol;
@@ -3313,6 +3364,7 @@ fn handle_get_solana_live_status(_request: &Request, state: &AppState) -> Respon
             "sol_balance": sol_balance,
             "min_gas_reserve_sol": min_gas,
             "spendable_sol": spendable,
+            "sol_price_usd": sol_price,
         }))
     } else {
         Response::json(200, "OK", json!({
@@ -3323,6 +3375,7 @@ fn handle_get_solana_live_status(_request: &Request, state: &AppState) -> Respon
             "sol_balance": 0.0,
             "min_gas_reserve_sol": state.config.solana_min_gas_reserve_sol,
             "spendable_sol": 0.0,
+            "sol_price_usd": sol_price,
             "message": "SOLANA_PRIVATE_KEY is not configured in server .env",
         }))
     }
@@ -3343,6 +3396,7 @@ fn handle_get_solana_live_balance(_request: &Request, state: &AppState) -> Respo
     let sol_balance = client.get_sol_balance().unwrap_or(0.0);
     let token_accounts = client.get_token_accounts().unwrap_or_default();
     let min_gas = state.config.solana_min_gas_reserve_sol;
+    let sol_price = get_current_sol_price_usd();
 
     Response::json(200, "OK", json!({
         "success": true,
@@ -3350,6 +3404,7 @@ fn handle_get_solana_live_balance(_request: &Request, state: &AppState) -> Respo
         "sol_balance": sol_balance,
         "min_gas_reserve_sol": min_gas,
         "spendable_sol": (sol_balance - min_gas).max(0.0),
+        "sol_price_usd": sol_price,
         "tokens": token_accounts,
     }))
 }
