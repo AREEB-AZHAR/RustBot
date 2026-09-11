@@ -192,78 +192,84 @@ impl SolanaLiveClient {
         Ok(lamports as f64 / 1_000_000_000.0)
     }
 
-    /// Queries all SPL token holdings owned by this wallet.
+    /// Queries all SPL token holdings owned by this wallet across both standard SPL Token and Token-2022 programs.
     pub fn get_token_accounts(&self) -> Result<Vec<LiveTokenAccount>, String> {
-        let payload = json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "getTokenAccountsByOwner",
-            "params": [
-                self.public_key_base58,
-                { "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" },
-                {
-                    "encoding": "jsonParsed",
-                    "commitment": "confirmed"
-                }
-            ]
-        });
-
-        let resp: serde_json::Value = self
-            .http_client
-            .post(&self.rpc_url)
-            .json(&payload)
-            .send()
-            .map_err(|e| format!("RPC getTokenAccountsByOwner failed: {e}"))?
-            .json()
-            .map_err(|e| format!("RPC getTokenAccountsByOwner invalid JSON: {e}"))?;
+        let program_ids = [
+            "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", // Standard SPL Token
+            "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb", // Token-2022 (Token Extensions, e.g. JUPCAT)
+        ];
 
         let mut accounts = Vec::new();
 
-        if let Some(items) = resp
-            .get("result")
-            .and_then(|r| r.get("value"))
-            .and_then(|v| v.as_array())
-        {
-            for item in items {
-                if let Some(info) = item
-                    .get("account")
-                    .and_then(|a| a.get("data"))
-                    .and_then(|d| d.get("parsed"))
-                    .and_then(|p| p.get("info"))
-                {
-                    let mint = info
-                        .get("mint")
-                        .and_then(|m| m.as_str())
-                        .unwrap_or_default()
-                        .to_string();
-                    let token_account = item
-                        .get("pubkey")
-                        .and_then(|p| p.as_str())
-                        .unwrap_or_default()
-                        .to_string();
-                    let token_amount = info.get("tokenAmount");
-                    let balance_ui = token_amount
-                        .and_then(|t| t.get("uiAmount"))
-                        .and_then(|u| u.as_f64())
-                        .unwrap_or(0.0);
-                    let decimals = token_amount
-                        .and_then(|t| t.get("decimals"))
-                        .and_then(|d| d.as_u64())
-                        .unwrap_or(0) as u8;
-                    let amount_raw = token_amount
-                        .and_then(|t| t.get("amount"))
-                        .and_then(|a| a.as_str())
-                        .unwrap_or("0")
-                        .to_string();
+        for prog_id in program_ids {
+            let payload = json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "getTokenAccountsByOwner",
+                "params": [
+                    self.public_key_base58,
+                    { "programId": prog_id },
+                    {
+                        "encoding": "jsonParsed",
+                        "commitment": "confirmed"
+                    }
+                ]
+            });
 
-                    if balance_ui > 0.000001 {
-                        accounts.push(LiveTokenAccount {
-                            mint,
-                            token_account,
-                            balance_ui,
-                            decimals,
-                            amount_raw,
-                        });
+            if let Ok(resp) = self
+                .http_client
+                .post(&self.rpc_url)
+                .json(&payload)
+                .send()
+                .and_then(|r| r.json::<serde_json::Value>())
+            {
+                if let Some(items) = resp
+                    .get("result")
+                    .and_then(|r| r.get("value"))
+                    .and_then(|v| v.as_array())
+                {
+                    for item in items {
+                        if let Some(info) = item
+                            .get("account")
+                            .and_then(|a| a.get("data"))
+                            .and_then(|d| d.get("parsed"))
+                            .and_then(|p| p.get("info"))
+                        {
+                            let mint = info
+                                .get("mint")
+                                .and_then(|m| m.as_str())
+                                .unwrap_or_default()
+                                .to_string();
+                            let token_account = item
+                                .get("pubkey")
+                                .and_then(|p| p.as_str())
+                                .unwrap_or_default()
+                                .to_string();
+                            let token_amount = info.get("tokenAmount");
+                            let balance_ui = token_amount
+                                .and_then(|t| t.get("uiAmount"))
+                                .and_then(|u| u.as_f64())
+                                .unwrap_or(0.0);
+                            let decimals = token_amount
+                                .and_then(|t| t.get("decimals"))
+                                .and_then(|d| d.as_u64())
+                                .unwrap_or(0) as u8;
+                            let amount_raw = token_amount
+                                .and_then(|t| t.get("amount"))
+                                .and_then(|a| a.as_str())
+                                .unwrap_or("0")
+                                .to_string();
+
+                            if balance_ui > 0.000001 {
+                                accounts.push(LiveTokenAccount {
+                                    mint,
+                                    token_account,
+                                    balance_ui,
+                                    decimals,
+                                    amount_raw,
+                                });
+                            }
+                        }
                     }
                 }
             }
