@@ -13,7 +13,7 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap"
     rel="stylesheet" />
-  <link rel="stylesheet" href="/solana.css?v=18" />
+  <link rel="stylesheet" href="/solana.css?v=19" />
 </head>
 
 <body>
@@ -315,14 +315,54 @@
                 <table class="multi-positions-table">
                   <thead>
                     <tr>
-                      <th>Token / Router</th>
-                      <th>MTF Trend (1m·5m·15m)</th>
-                      <th>Margin (1/15th)</th>
-                      <th>Entry Price</th>
-                      <th>Current Price</th>
-                      <th>Unrealized PnL</th>
-                      <th>Take Profit (50% TP1 / Runner)</th>
-                      <th>Stop Loss (-2.0% / BE)</th>
+                      <th class="sortable-th" data-table="positions" data-sort="token" title="Sort by Token Symbol (A-Z / Z-A)">
+                        <div class="th-sort-wrapper">
+                          <span>Token / Router</span>
+                          <span class="sort-indicator" aria-hidden="true">⇅</span>
+                        </div>
+                      </th>
+                      <th class="sortable-th" data-table="positions" data-sort="mtf" title="Sort by Multi-Timeframe Alignment (Highest / Lowest)">
+                        <div class="th-sort-wrapper">
+                          <span>MTF Trend (1m·5m·15m)</span>
+                          <span class="sort-indicator" aria-hidden="true">⇅</span>
+                        </div>
+                      </th>
+                      <th class="sortable-th" data-table="positions" data-sort="margin" title="Sort by Margin (Highest / Lowest)">
+                        <div class="th-sort-wrapper">
+                          <span>Margin (1/15th)</span>
+                          <span class="sort-indicator" aria-hidden="true">⇅</span>
+                        </div>
+                      </th>
+                      <th class="sortable-th" data-table="positions" data-sort="entry" title="Sort by Entry Price (Highest / Lowest)">
+                        <div class="th-sort-wrapper">
+                          <span>Entry Price</span>
+                          <span class="sort-indicator" aria-hidden="true">⇅</span>
+                        </div>
+                      </th>
+                      <th class="sortable-th" data-table="positions" data-sort="current" title="Sort by Current Price (Highest / Lowest)">
+                        <div class="th-sort-wrapper">
+                          <span>Current Price</span>
+                          <span class="sort-indicator" aria-hidden="true">⇅</span>
+                        </div>
+                      </th>
+                      <th class="sortable-th" data-table="positions" data-sort="pnl" title="Sort by Unrealized PnL (Highest Profit / Lowest Loss)">
+                        <div class="th-sort-wrapper">
+                          <span>Unrealized PnL</span>
+                          <span class="sort-indicator" aria-hidden="true">⇅</span>
+                        </div>
+                      </th>
+                      <th class="sortable-th" data-table="positions" data-sort="tp" title="Sort by Take Profit Target">
+                        <div class="th-sort-wrapper">
+                          <span>Take Profit (50% TP1 / Runner)</span>
+                          <span class="sort-indicator" aria-hidden="true">⇅</span>
+                        </div>
+                      </th>
+                      <th class="sortable-th" data-table="positions" data-sort="sl" title="Sort by Stop Loss / Breakeven Status">
+                        <div class="th-sort-wrapper">
+                          <span>Stop Loss (-2.0% / BE)</span>
+                          <span class="sort-indicator" aria-hidden="true">⇅</span>
+                        </div>
+                      </th>
                       <th>Action</th>
                     </tr>
                   </thead>
@@ -496,16 +536,61 @@
                 <table class="trades-table">
                   <thead>
                     <tr>
-                      <th>#</th>
-                      <th>Time</th>
-                      <th>Token</th>
-                      <th>DEX</th>
-                      <th>Entry</th>
-                      <th>Exit</th>
-                      <th>PnL ($ / %)</th>
-                      <th>Exit Reason</th>
+                      <th class="sortable-th" data-table="journal" data-sort="index" title="Sort by Trade Sequence (Highest / Lowest #)">
+                        <div class="th-sort-wrapper">
+                          <span>#</span>
+                          <span class="sort-indicator" aria-hidden="true">⇅</span>
+                        </div>
+                      </th>
+                      <th class="sortable-th" data-table="journal" data-sort="time" title="Sort by Execution Time">
+                        <div class="th-sort-wrapper">
+                          <span>Time</span>
+                          <span class="sort-indicator" aria-hidden="true">⇅</span>
+                        </div>
+                      </th>
+                      <th class="sortable-th" data-table="journal" data-sort="token" title="Sort by Token Symbol (A-Z / Z-A)">
+                        <div class="th-sort-wrapper">
+                          <span>Token</span>
+                          <span class="sort-indicator" aria-hidden="true">⇅</span>
+                        </div>
+                      </th>
+                      <th class="sortable-th" data-table="journal" data-sort="dex" title="Sort by DEX Venue">
+                        <div class="th-sort-wrapper">
+                          <span>DEX</span>
+                          <span class="sort-indicator" aria-hidden="true">⇅</span>
+                        </div>
+                      </th>
+                      <th class="sortable-th" data-table="journal" data-sort="entry" title="Sort by Entry Price (Highest / Lowest)">
+                        <div class="th-sort-wrapper">
+                          <span>Entry</span>
+                          <span class="sort-indicator" aria-hidden="true">⇅</span>
+                        </div>
+                      </th>
+                      <th class="sortable-th" data-table="journal" data-sort="exit" title="Sort by Exit Price (Highest / Lowest)">
+                        <div class="th-sort-wrapper">
+                          <span>Exit</span>
+                          <span class="sort-indicator" aria-hidden="true">⇅</span>
+                        </div>
+                      </th>
+                      <th class="sortable-th" data-table="journal" data-sort="pnl" title="Sort by Realized PnL (Highest Profit / Biggest Loss)">
+                        <div class="th-sort-wrapper">
+                          <span>PnL ($ / %)</span>
+                          <span class="sort-indicator" aria-hidden="true">⇅</span>
+                        </div>
+                      </th>
+                      <th class="sortable-th" data-table="journal" data-sort="reason" title="Sort by Exit Reason">
+                        <div class="th-sort-wrapper">
+                          <span>Exit Reason</span>
+                          <span class="sort-indicator" aria-hidden="true">⇅</span>
+                        </div>
+                      </th>
                       <th>Tx / Explorer</th>
-                      <th>3-Stage Learning Result</th>
+                      <th class="sortable-th" data-table="journal" data-sort="result" title="Sort by Win / Loss Learning Result">
+                        <div class="th-sort-wrapper">
+                          <span>3-Stage Learning Result</span>
+                          <span class="sort-indicator" aria-hidden="true">⇅</span>
+                        </div>
+                      </th>
                     </tr>
                   </thead>
                   <tbody id="solana-journal-tbody">

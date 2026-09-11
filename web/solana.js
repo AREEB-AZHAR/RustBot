@@ -54,6 +54,14 @@ const solanaBotState = {
     lastVetoToastTimes: {},
   },
   executedTrades: [],
+  positionsSort: {
+    column: null,
+    direction: "desc",
+  },
+  journalSort: {
+    column: null,
+    direction: "desc",
+  },
   databaseInfo: {
     connected: false,
     path: "solana_trades.db",
@@ -372,6 +380,7 @@ function bindEvents() {
       drawTimesfmCanvas(solanaBotState.currentCandles, solanaBotState.latestTimesfmResult);
     }
   });
+  initTableSortHandlers();
 }
 
 function initAutoPilotState() {
@@ -2427,15 +2436,15 @@ function updateSolanaWalletHUD() {
 }
 
 function renderMultiPositionsTable() {
-  const positions = solanaBotState.activePositions;
-  const activeCount = positions.length;
+  const rawPositions = solanaBotState.activePositions || [];
+  const activeCount = rawPositions.length;
 
   if (elements.activePositionsCount) {
     elements.activePositionsCount.textContent = `${activeCount} / 15 Active`;
   }
 
-  const totalMargin = positions.reduce((sum, p) => sum + p.marginUsd, 0);
-  const totalUnrealized = positions.reduce((sum, p) => sum + (p.unrealizedPnlUsd || 0), 0);
+  const totalMargin = rawPositions.reduce((sum, p) => sum + p.marginUsd, 0);
+  const totalUnrealized = rawPositions.reduce((sum, p) => sum + (p.unrealizedPnlUsd || 0), 0);
   const totalEquity = Math.max(1, solanaBotState.wallet.currentEquity);
   const totalMarginPct = ((totalMargin / totalEquity) * 100).toFixed(1);
 
@@ -2463,6 +2472,60 @@ function renderMultiPositionsTable() {
         </td>
       </tr>`;
     return;
+  }
+
+  // Clone array for sorting
+  let positions = [...rawPositions];
+  if (solanaBotState.positionsSort && solanaBotState.positionsSort.column) {
+    const { column, direction } = solanaBotState.positionsSort;
+    const factor = direction === "asc" ? 1 : -1;
+
+    positions.sort((a, b) => {
+      switch (column) {
+        case "token": {
+          const sA = (a.token && a.token.symbol) || "";
+          const sB = (b.token && b.token.symbol) || "";
+          return factor * sA.localeCompare(sB);
+        }
+        case "mtf": {
+          const mA = (a.mtf && a.mtf.alignedCount) || 0;
+          const mB = (b.mtf && b.mtf.alignedCount) || 0;
+          return factor * (mA - mB);
+        }
+        case "margin": {
+          const mA = a.marginUsd || 0;
+          const mB = b.marginUsd || 0;
+          return factor * (mA - mB);
+        }
+        case "entry": {
+          const eA = a.entryPrice || 0;
+          const eB = b.entryPrice || 0;
+          return factor * (eA - eB);
+        }
+        case "current": {
+          const cA = a.currentPrice || 0;
+          const cB = b.currentPrice || 0;
+          return factor * (cA - cB);
+        }
+        case "pnl": {
+          const pA = a.unrealizedPnlUsd || 0;
+          const pB = b.unrealizedPnlUsd || 0;
+          return factor * (pA - pB);
+        }
+        case "tp": {
+          const tA = a.tp1Triggered ? 1 : 0;
+          const tB = b.tp1Triggered ? 1 : 0;
+          return factor * (tA - tB);
+        }
+        case "sl": {
+          const sA = a.tp1Triggered ? 1 : 0;
+          const sB = b.tp1Triggered ? 1 : 0;
+          return factor * (sA - sB);
+        }
+        default:
+          return 0;
+      }
+    });
   }
 
   elements.multiPositionsTbody.innerHTML = positions.map((pos) => {
@@ -2513,13 +2576,13 @@ function renderMultiPositionsTable() {
 
 function renderSolanaJournal() {
   if (!elements.solanaJournalTbody) return;
-  const trades = solanaBotState.executedTrades || [];
+  const rawTrades = solanaBotState.executedTrades || [];
 
   if (elements.solanaTradeJournalCount) {
-    elements.solanaTradeJournalCount.textContent = `${trades.length} Trade${trades.length === 1 ? '' : 's'}`;
+    elements.solanaTradeJournalCount.textContent = `${rawTrades.length} Trade${rawTrades.length === 1 ? '' : 's'}`;
   }
 
-  if (trades.length === 0) {
+  if (rawTrades.length === 0) {
     elements.solanaJournalTbody.innerHTML = `
       <tr>
         <td colspan="10" style="text-align: center; color: var(--muted); padding: 14px;">
@@ -2529,9 +2592,70 @@ function renderSolanaJournal() {
     return;
   }
 
+  // Preserve stable trade sequence number based on chronological index
+  let trades = rawTrades.map((t, idx) => ({
+    ...t,
+    _sequenceNumber: t.id || (rawTrades.length - idx),
+  }));
+
+  if (solanaBotState.journalSort && solanaBotState.journalSort.column) {
+    const { column, direction } = solanaBotState.journalSort;
+    const factor = direction === "asc" ? 1 : -1;
+
+    trades.sort((a, b) => {
+      switch (column) {
+        case "index": {
+          return factor * (a._sequenceNumber - b._sequenceNumber);
+        }
+        case "time": {
+          const tA = a.time || "";
+          const tB = b.time || "";
+          return factor * tA.localeCompare(tB);
+        }
+        case "token": {
+          const sA = a.token || "";
+          const sB = b.token || "";
+          return factor * sA.localeCompare(sB);
+        }
+        case "dex": {
+          const dA = a.dex || "";
+          const dB = b.dex || "";
+          return factor * dA.localeCompare(dB);
+        }
+        case "entry": {
+          const eA = a.entryPrice || 0;
+          const eB = b.entryPrice || 0;
+          return factor * (eA - eB);
+        }
+        case "exit": {
+          const xA = a.exitPrice || 0;
+          const xB = b.exitPrice || 0;
+          return factor * (xA - xB);
+        }
+        case "pnl": {
+          const pA = a.pnlUsd || 0;
+          const pB = b.pnlUsd || 0;
+          return factor * (pA - pB);
+        }
+        case "reason": {
+          const rA = a.exitReason || "";
+          const rB = b.exitReason || "";
+          return factor * rA.localeCompare(rB);
+        }
+        case "result": {
+          const wA = a.isWin ? 1 : 0;
+          const wB = b.isWin ? 1 : 0;
+          return factor * (wA - wB);
+        }
+        default:
+          return 0;
+      }
+    });
+  }
+
   elements.solanaJournalTbody.innerHTML = trades
     .slice(0, 50)
-    .map((t, idx) => {
+    .map((t) => {
       const isPositive = (t.pnlUsd || 0) >= 0;
       const pnlClass = isPositive ? "positive" : "negative";
       const pnlSign = isPositive ? "+" : "";
@@ -2559,7 +2683,7 @@ function renderSolanaJournal() {
 
       return `
         <tr>
-          <td>#${trades.length - idx}</td>
+          <td>#${t._sequenceNumber}</td>
           <td>${t.time || "--:--:--"}</td>
           <td><strong>${t.token || "SOL"}</strong>${liveBadge}</td>
           <td>${dexBadge}</td>
@@ -2572,6 +2696,89 @@ function renderSolanaJournal() {
         </tr>`;
     })
     .join("");
+}
+
+/* ==========================================================================
+   Table Sorting & Filter Arrows Controller
+   ========================================================================== */
+
+function initTableSortHandlers() {
+  const sortableHeaders = document.querySelectorAll("th.sortable-th");
+  sortableHeaders.forEach((th) => {
+    th.addEventListener("click", () => {
+      const tableType = th.getAttribute("data-table");
+      const sortKey = th.getAttribute("data-sort");
+      if (!tableType || !sortKey) return;
+      handleTableSortClick(tableType, sortKey);
+    });
+  });
+}
+
+function handleTableSortClick(tableType, sortKey) {
+  if (tableType === "positions") {
+    const current = solanaBotState.positionsSort;
+    if (current.column === sortKey) {
+      if (current.direction === "desc") {
+        current.direction = "asc";
+      } else {
+        current.column = null;
+        current.direction = "desc";
+      }
+    } else {
+      current.column = sortKey;
+      current.direction = "desc"; // Default highest first
+    }
+    updateTableSortUI("positions", current.column, current.direction);
+    renderMultiPositionsTable();
+    showSortFeedback("Simultaneous Positions", current.column, current.direction);
+  } else if (tableType === "journal") {
+    const current = solanaBotState.journalSort;
+    if (current.column === sortKey) {
+      if (current.direction === "desc") {
+        current.direction = "asc";
+      } else {
+        current.column = null;
+        current.direction = "desc";
+      }
+    } else {
+      current.column = sortKey;
+      current.direction = "desc"; // Default highest first
+    }
+    updateTableSortUI("journal", current.column, current.direction);
+    renderSolanaJournal();
+    showSortFeedback("Trade Records", current.column, current.direction);
+  }
+}
+
+function updateTableSortUI(tableType, activeColumn, direction) {
+  const selector = `th.sortable-th[data-table="${tableType}"]`;
+  const headers = document.querySelectorAll(selector);
+  headers.forEach((th) => {
+    const col = th.getAttribute("data-sort");
+    const indicator = th.querySelector(".sort-indicator");
+    th.classList.remove("sorted-asc", "sorted-desc");
+
+    if (col === activeColumn) {
+      if (direction === "asc") {
+        th.classList.add("sorted-asc");
+        if (indicator) indicator.textContent = "▲";
+      } else {
+        th.classList.add("sorted-desc");
+        if (indicator) indicator.textContent = "▼";
+      }
+    } else {
+      if (indicator) indicator.textContent = "⇅";
+    }
+  });
+}
+
+function showSortFeedback(tableName, column, direction) {
+  if (!column) {
+    showToast(`🔄 ${tableName}: Default chronological sort restored.`);
+    return;
+  }
+  const dirLabel = direction === "desc" ? "Highest → Lowest (▼)" : "Lowest → Highest (▲)";
+  showToast(`📊 ${tableName}: Sorted by ${column.toUpperCase()} (${dirLabel})`);
 }
 
 function renderLearningLedger() {

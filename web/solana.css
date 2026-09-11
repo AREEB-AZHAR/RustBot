@@ -1316,6 +1316,83 @@ body {
   background: var(--surface-elevated);
 }
 
+/* ==========================================================================
+   Sortable Table Headers & Filter Arrows
+   ========================================================================== */
+.multi-positions-table th.sortable-th,
+.trades-table th.sortable-th {
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.18s ease, color 0.18s ease, border-color 0.18s ease;
+  white-space: nowrap;
+}
+
+.multi-positions-table th.sortable-th:hover,
+.trades-table th.sortable-th:hover {
+  background: var(--surface-warm);
+  color: var(--text);
+}
+
+.th-sort-wrapper {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+}
+
+.sort-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.70rem;
+  font-weight: 700;
+  line-height: 1;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  color: var(--muted-light);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: all 0.18s ease;
+  flex-shrink: 0;
+}
+
+.sortable-th:hover .sort-indicator {
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.10);
+  transform: scale(1.08);
+}
+
+/* Sorted Descending (Highest to Lowest) - Ember Accent */
+.sortable-th.sorted-desc {
+  color: var(--ember) !important;
+  background: rgba(240, 112, 68, 0.09) !important;
+  border-bottom: 2px solid var(--ember) !important;
+}
+
+.sortable-th.sorted-desc .sort-indicator {
+  color: #ffffff;
+  background: var(--ember);
+  border-color: var(--ember);
+  box-shadow: 0 0 8px rgba(240, 112, 68, 0.4);
+}
+
+/* Sorted Ascending (Lowest to Highest) - Cyan Accent */
+.sortable-th.sorted-asc {
+  color: var(--cyan) !important;
+  background: rgba(56, 189, 248, 0.09) !important;
+  border-bottom: 2px solid var(--cyan) !important;
+}
+
+.sortable-th.sorted-asc .sort-indicator {
+  color: #ffffff;
+  background: var(--cyan);
+  border-color: var(--cyan);
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.4);
+}
+
 .market-toast {
   position: fixed;
   bottom: 24px;
