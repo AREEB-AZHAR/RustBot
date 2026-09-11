@@ -587,4 +587,32 @@ mod tests {
         // Verify base58 signature matches
         assert_eq!(sig_b58, bs58::encode(&sig_bytes).into_string());
     }
+
+    #[test]
+    fn test_live_jupiter_quote_and_swap_build() {
+        let seed = [77u8; 32];
+        let seed_b58 = bs58::encode(&seed).into_string();
+        let client = SolanaLiveClient::from_base58_key(&seed_b58, "https://api.mainnet-beta.solana.com").unwrap();
+
+        // Query real quote from SOL to USDC via active api.jup.ag endpoint
+        let sol_mint = "So11111111111111111111111111111111111111112";
+        let usdc_mint = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+        let quote = client.get_jupiter_quote(sol_mint, usdc_mint, 10_000_000, 50);
+        assert!(quote.is_ok(), "Jupiter quote should succeed: {:?}", quote.err());
+
+        let quote_val = quote.unwrap();
+        assert!(quote_val.get("outAmount").is_some());
+
+        // Build swap transaction
+        let swap_tx = client.build_jupiter_swap(&quote_val);
+        assert!(swap_tx.is_ok(), "Jupiter swap build should succeed: {:?}", swap_tx.err());
+        let swap_base64 = swap_tx.unwrap();
+        assert!(!swap_base64.is_empty());
+
+        // Test signing the wire transaction
+        let tx_bytes = BASE64_STANDARD.decode(&swap_base64).unwrap();
+        let (signed_wire, sig) = client.sign_transaction_bytes(tx_bytes).unwrap();
+        assert!(!sig.is_empty());
+        assert!(!signed_wire.is_empty());
+    }
 }
