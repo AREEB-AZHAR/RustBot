@@ -422,7 +422,7 @@ impl SolanaLiveClient {
         });
 
         while start.elapsed() < Duration::from_secs(timeout_secs) {
-            std::thread::sleep(Duration::from_millis(1500));
+            std::thread::sleep(Duration::from_millis(400));
 
             if let Ok(resp) = self
                 .http_client
@@ -496,6 +496,9 @@ impl SolanaLiveClient {
         } else {
             broadcast_sig
         };
+
+        // Step 5: Verify transaction did not fail on-chain during block inclusion
+        let _ = self.poll_transaction_confirmation(&final_sig, 5)?;
 
         let solscan_url = format!("https://solscan.io/tx/{final_sig}");
 

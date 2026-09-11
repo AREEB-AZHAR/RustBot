@@ -1555,6 +1555,7 @@ async function runSolanaAutonomousTick() {
     // Step 2: Manage All Active Positions Simultaneously (Dynamic Risk R:R + Trailing Runner)
     const activePositionsCopy = [...solanaBotState.activePositions];
     for (const pos of activePositionsCopy) {
+      if (pos._inFlight) continue; // Skip positions whose live buy is still in flight on-chain
       pos.barsHeld++;
 
       // Realistic volatility micro-jump based on coin's DEX volatility score
@@ -1947,6 +1948,12 @@ function executePartialTakeProfit(pos, exitPrice) {
         }
       }).catch((sellErr) => {
         console.error("Live TP1 sell error:", sellErr);
+        const errStr = String(sellErr.message || sellErr);
+        if (errStr.includes("balance is 0") || errStr.includes("not found in wallet") || errStr.includes("0 balance")) {
+          console.warn(`[Live Mode] Purging phantom position ${pos.token.symbol}: wallet holds 0 balance on-chain.`);
+          showToast(`⚠️ [PURGED PHANTOM] Removed ${pos.token.symbol} (0 on-chain balance).`);
+          finalizeClosedPosition(pos, exitPrice, "Purged Ghost Position (0 Balance)", false, "");
+        }
       });
     }
   }
@@ -2055,6 +2062,7 @@ function openPosition(token, marginUsd, fvgType = "BULLISH_FVG", route = null, m
 
   // LIVE ON-CHAIN EXECUTION via Jupiter Aggregator API
   if (solanaBotState.isLiveMode && solanaBotState.liveWallet.available) {
+    pos._inFlight = true;
     const solPrice = solanaBotState.liveWallet.solPriceUsd || 142.5;
     const spendableSol = Math.max(0, solanaBotState.liveWallet.spendableSol || 0);
     const maxSlots = solanaBotState.maxConcurrentPositions || 1;
@@ -2067,6 +2075,7 @@ function openPosition(token, marginUsd, fvgType = "BULLISH_FVG", route = null, m
     const tokenMint = token.mint || token.address;
 
     if (!tokenMint) {
+      pos._inFlight = false;
       console.warn(`[Live Mode] Skipped ${token.symbol}: missing on-chain mint address`);
       const ghostIdx = solanaBotState.activePositions.indexOf(pos);
       if (ghostIdx !== -1) {
@@ -2095,6 +2104,7 @@ function openPosition(token, marginUsd, fvgType = "BULLISH_FVG", route = null, m
           exit_reason: safeFvg,
         }),
       }).then((swapRes) => {
+        pos._inFlight = false;
         if (swapRes && swapRes.tx_signature) {
           pos.txSignature = swapRes.tx_signature;
           pos.solscanUrl = swapRes.solscan_url;
@@ -2102,8 +2112,17 @@ function openPosition(token, marginUsd, fvgType = "BULLISH_FVG", route = null, m
           pos.tokenAmountRaw = swapRes.out_amount_estimated || 0;
           showToast(`🚀 [LIVE JUPITER BUY] ${token.symbol} swapped for ${(lamports / 1e9).toFixed(3)} SOL! Tx: ${swapRes.tx_signature.slice(0, 8)}...`);
           syncSolanaLiveStatus();
+        } else {
+          const ghostIdx = solanaBotState.activePositions.indexOf(pos);
+          if (ghostIdx !== -1) {
+            solanaBotState.activePositions.splice(ghostIdx, 1);
+            solanaBotState.wallet.cash += marginUsd;
+            updateSolanaWalletHUD();
+            renderMultiPositionsTable();
+          }
         }
       }).catch((swapErr) => {
+        pos._inFlight = false;
         console.error("Live swap error:", swapErr);
         const errStr = String(swapErr.message || swapErr);
         if (errStr.includes("no outAmount route") || errStr.includes("No Jupiter route") || errStr.includes("Could not find any route")) {
@@ -2121,6 +2140,7 @@ function openPosition(token, marginUsd, fvgType = "BULLISH_FVG", route = null, m
         }
       });
     } else {
+      pos._inFlight = false;
       if (token._unroutable) {
         console.warn(`[Live Mode] Skipped unroutable token ${token.symbol}`);
       } else if (spendableLamports < 50_000) {
@@ -2289,7 +2309,20 @@ function closePosition(pos, exitReason, isEmergencyHalt = false) {
         }
       }).catch((sellErr) => {
         pos._isSelling = false;
+        const errStr = String(sellErr.message || sellErr);
+        if (errStr.includes("balance is 0") || errStr.includes("not found in wallet") || errStr.includes("0 balance")) {
+          console.warn(`[Live Mode] Purging phantom position ${pos.token.symbol}: wallet holds 0 balance on-chain.`);
+          showToast(`⚠️ [PURGED PHANTOM] Removed ${pos.token.symbol} (0 on-chain balance).`);
+          finalizeClosedPosition(pos, exitPrice, "Purged Ghost Position (0 Balance)", false, "");
+          return;
+        }
         pos._sellRetries = (pos._sellRetries || 0) + 1;
+        if (pos._sellRetries >= 5) {
+          console.warn(`[Live Mode] Abandoning failed sell on ${pos.token.symbol} after 5 retries.`);
+          showToast(`⚠️ [ABANDONED RETRIES] Closed ${pos.token.symbol} after 5 failed exit attempts.`);
+          finalizeClosedPosition(pos, exitPrice, "Exit Failed (Max Retries)", false, "");
+          return;
+        }
         pos._sellPending = true;
         pos.lastSellError = sellErr.message || String(sellErr);
         console.error("Live sell error (retaining position for auto-retry):", sellErr);
@@ -2298,6 +2331,10 @@ function closePosition(pos, exitReason, isEmergencyHalt = false) {
         renderMultiPositionsTable();
       });
       return; // Do NOT finalize/splice until the on-chain sell confirms!
+    } else {
+      // 0 tokens to sell on-chain: finalize virtual position immediately
+      finalizeClosedPosition(pos, exitPrice, exitReason, false, "");
+      return;
     }
   }
 
