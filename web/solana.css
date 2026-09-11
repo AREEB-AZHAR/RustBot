@@ -730,6 +730,28 @@ body {
   cursor: pointer;
 }
 
+.btn-solana-sweep {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: linear-gradient(135deg, rgba(20, 241, 149, 0.15) 0%, rgba(0, 194, 255, 0.15) 100%);
+  color: var(--solana-green);
+  border: 1px solid rgba(20, 241, 149, 0.4);
+  border-radius: var(--radius-md);
+  font-family: var(--font-sans);
+  font-size: 0.84rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-solana-sweep:hover {
+  background: linear-gradient(135deg, rgba(20, 241, 149, 0.25) 0%, rgba(0, 194, 255, 0.25) 100%);
+  border-color: var(--solana-green);
+  transform: translateY(-1px);
+}
+
 .btn-reset-solana {
   padding: 8px 14px;
   background: var(--surface-elevated);

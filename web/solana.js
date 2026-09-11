@@ -157,6 +157,7 @@ const elements = {
   liveWalletSol: document.querySelector("#live-wallet-sol"),
   btnStartSolanaBot: document.querySelector("#btn-start-solana-bot"),
   btnStopSolanaBot: document.querySelector("#btn-stop-solana-bot"),
+  btnSweepSolanaTokens: document.querySelector("#btn-sweep-solana-tokens"),
   btnResetSolanaWallet: document.querySelector("#btn-reset-solana-wallet"),
   btnOpenSetBalance: document.querySelector("#btn-open-set-balance"),
   walletBalanceModal: document.querySelector("#wallet-balance-modal"),
@@ -310,6 +311,9 @@ function bindEvents() {
   }
   if (elements.btnStopSolanaBot) {
     elements.btnStopSolanaBot.addEventListener("click", () => stopSolanaAutonomousBot("OPERATOR_STOP"));
+  }
+  if (elements.btnSweepSolanaTokens) {
+    elements.btnSweepSolanaTokens.addEventListener("click", sweepAllTokensToSol);
   }
   if (elements.btnResetSolanaWallet) {
     elements.btnResetSolanaWallet.addEventListener("click", resetSolanaWallet);
@@ -1075,6 +1079,7 @@ async function switchToLiveMode() {
 
   if (elements.btnModeLive) elements.btnModeLive.classList.add("active", "live");
   if (elements.btnModePaper) elements.btnModePaper.classList.remove("active");
+  if (elements.btnSweepSolanaTokens) elements.btnSweepSolanaTokens.style.display = "inline-flex";
 
   const liveCashUsd = solanaBotState.liveWallet.spendableSol * (solanaBotState.liveWallet.solPriceUsd || 142.5);
   solanaBotState.wallet.cash = liveCashUsd;
@@ -1097,10 +1102,81 @@ function switchToPaperMode() {
 
   if (elements.btnModePaper) elements.btnModePaper.classList.add("active");
   if (elements.btnModeLive) elements.btnModeLive.classList.remove("active", "live");
+  if (elements.btnSweepSolanaTokens) elements.btnSweepSolanaTokens.style.display = "none";
 
   syncWithDedicatedDb();
   updateSolanaWalletHUD();
   showToast("🧪 [PAPER MODE] Switched back to simulated virtual balance.");
+}
+
+async function sweepAllTokensToSol() {
+  if (!solanaBotState.liveWallet.available) {
+    showToast("⚠️ Solana Live Trading is not configured or available.");
+    return;
+  }
+  if (elements.btnSweepSolanaTokens) {
+    elements.btnSweepSolanaTokens.disabled = true;
+    elements.btnSweepSolanaTokens.innerHTML = `<span class="btn-icon">⏳</span><span>Sweeping...</span>`;
+  }
+  showToast("🔍 Inspecting Phantom on-chain SPL token accounts via Solana RPC...");
+  try {
+    const balRes = await api("/api/market/solana/live/balance");
+    const tokenList = (balRes && (balRes.tokens || balRes.token_accounts)) || [];
+    const nonZeroTokens = tokenList.filter((t) => {
+      const raw = parseInt(t.amount_raw, 10);
+      return !isNaN(raw) && raw > 0 && (t.balance_ui || 0) > 0.000001;
+    });
+
+    if (nonZeroTokens.length === 0) {
+      showToast("✨ Wallet is 100% clean! No non-SOL SPL token balances found to sweep.");
+      return;
+    }
+
+    showToast(`🧹 Found ${nonZeroTokens.length} SPL token(s). Sweeping all balances back into SOL...`);
+
+    let sweepCount = 0;
+    for (const tok of nonZeroTokens) {
+      try {
+        const rawAmt = parseInt(tok.amount_raw, 10);
+        // Look up token name/symbol if known
+        const matchToken = (solanaBotState.scannedTokens || []).find((c) => (c.mint || c.address) === tok.mint)
+          || SOLANA_EXPANDED_CATALOG.find((c) => (c.mint || c.address) === tok.mint);
+        const sym = matchToken ? matchToken.symbol : tok.mint.slice(0, 6);
+
+        showToast(`🔄 Selling ${tok.balance_ui || rawAmt} ${sym} for native SOL via Jupiter...`);
+        const res = await api("/api/market/solana/live/swap", {
+          method: "POST",
+          body: JSON.stringify({
+            input_mint: tok.mint,
+            output_mint: "So11111111111111111111111111111111111111112",
+            amount_lamports: rawAmt,
+            slippage_bps: 250, // 2.5% max slippage for guaranteed execution
+            token_symbol: sym,
+            token_name: matchToken ? matchToken.name : sym,
+            margin_usd: 0,
+            exit_price: 0,
+            exit_reason: "MANUAL_EMERGENCY_SWEEP",
+          }),
+        });
+        if (res && res.tx_signature) {
+          sweepCount++;
+          showToast(`✅ [SWEEP SUCCESS] ${sym} converted to SOL! Tx: ${res.tx_signature.slice(0, 8)}...`);
+        }
+      } catch (err) {
+        showToast(`❌ Sweep failed for ${tok.mint.slice(0, 6)}: ${err.message || err}`);
+      }
+    }
+
+    await syncSolanaLiveStatus();
+    showToast(`🎉 Sweep complete! ${sweepCount}/${nonZeroTokens.length} tokens converted back to native SOL.`);
+  } catch (e) {
+    showToast(`❌ Sweep error: ${e.message || e}`);
+  } finally {
+    if (elements.btnSweepSolanaTokens) {
+      elements.btnSweepSolanaTokens.disabled = false;
+      elements.btnSweepSolanaTokens.innerHTML = `<span class="btn-icon">🧹</span><span>Sweep to SOL</span>`;
+    }
+  }
 }
 
 function persistSolanaWallet() {
@@ -1503,6 +1579,12 @@ async function runSolanaAutonomousTick() {
       // QUANTITATIVE ASYMMETRIC SCALE-OUT EXIT SYSTEM:
       const runnerTrigger = solanaBotState.trailingRunnerTriggerPct || 3.5;
       const stopLossPct = solanaBotState.confluenceStopLossPct || -2.0;
+
+      // Pending Live Sell Retry Defense: If a previous live sell encountered network delay, retry automatically
+      if (pos._sellPending) {
+        closePosition(pos, pos.lastExitReason || "Live Sell Retry", false);
+        continue;
+      }
 
       if (!pos.tp1Triggered) {
         // Stage 1: Pre-TP1 Lifecycle
@@ -2046,11 +2128,10 @@ function openPosition(token, marginUsd, fvgType = "BULLISH_FVG", route = null, m
   }
 }
 
-function closePosition(pos, exitReason, isEmergencyHalt = false) {
+function finalizeClosedPosition(pos, exitPrice, exitReason, isLiveTrade, txSig) {
   const index = solanaBotState.activePositions.indexOf(pos);
   if (index === -1) return;
 
-  const exitPrice = pos.currentPrice;
   const feeRate = pos.route ? pos.route.feeRate : 0.0015;
   const exitTakerFee = (pos.shares * exitPrice) * feeRate;
   const grossPnl = (pos.shares * exitPrice) - pos.marginUsd;
@@ -2073,42 +2154,6 @@ function closePosition(pos, exitReason, isEmergencyHalt = false) {
   }
   persistSolanaWallet();
 
-  // LIVE ON-CHAIN SELL: Swap token back to native SOL via Jupiter
-  // ONLY execute live sell if this position was ACTUALLY bought and confirmed on-chain
-  if (pos.isLive && pos.txSignature) {
-    const tokenMint = pos.token.mint || pos.token.address;
-    if (!tokenMint) {
-      console.warn(`[Live Mode] Cannot sell ${pos.token.symbol}: missing mint address`);
-      return;
-    }
-    const rawTokensToSell = pos.tokenAmountRaw ? Math.floor(pos.tokenAmountRaw) : 0;
-    if (rawTokensToSell > 0) {
-      const slippageBps = computeAdaptiveSlippageBps(pos.token);
-      api("/api/market/solana/live/swap", {
-        method: "POST",
-        body: JSON.stringify({
-          input_mint: tokenMint,
-          output_mint: "So11111111111111111111111111111111111111112",
-          amount_lamports: rawTokensToSell,
-          slippage_bps: slippageBps,
-          token_symbol: pos.token.symbol,
-          token_name: pos.token.name || pos.token.symbol,
-          margin_usd: pos.marginUsd,
-          exit_price: exitPrice,
-          exit_reason: exitReason,
-        }),
-      }).then((sellRes) => {
-        if (sellRes && sellRes.tx_signature) {
-          showToast(`💰 [LIVE JUPITER SELL] ${pos.token.symbol} sold for SOL! Tx: ${sellRes.tx_signature.slice(0, 8)}...`);
-          syncSolanaLiveStatus();
-        }
-      }).catch((sellErr) => {
-        console.error("Live sell error:", sellErr);
-        showToast(`❌ [LIVE SELL ERROR] ${sellErr.message || sellErr}`);
-      });
-    }
-  }
-
   const isWin = netPnlUsd > 0 || Boolean(pos.tp1Triggered);
   if (isWin) {
     solanaBotState.wallet.tradesWon++;
@@ -2125,7 +2170,6 @@ function closePosition(pos, exitReason, isEmergencyHalt = false) {
 
   const tradeRef = generateUniqueTradeRef("SOL-HFT");
   const tradeDex = pos.route ? pos.route.venueName : (pos.token.dex || "Raydium");
-  const isLiveTrade = Boolean(pos.isLive || solanaBotState.isLiveMode);
   const tradeEntry = {
     id: solanaBotState.executedTrades.length + 1,
     tradeRef,
@@ -2141,7 +2185,7 @@ function closePosition(pos, exitReason, isEmergencyHalt = false) {
     exitReason,
     isWin,
     isLive: isLiveTrade,
-    txSignature: pos.txSignature || "",
+    txSignature: txSig || pos.txSignature || "",
     learningNote: isWin ? (pos.tp1Triggered ? "🛡️ BE Runner Exit" : "🟢 Captured Edge") : "🔴 Doubted (Stage 1)",
   };
 
@@ -2166,20 +2210,89 @@ function closePosition(pos, exitReason, isEmergencyHalt = false) {
       is_win: isWin,
       features_json: JSON.stringify(pos.entryFeatures),
       is_live: isLiveTrade,
-      tx_signature: pos.txSignature || "",
+      tx_signature: txSig || pos.txSignature || "",
     }),
   }).then(() => {
     solanaBotState.databaseInfo.tradesCount++;
     if (elements.solanaDbText) {
       elements.solanaDbText.textContent = `solana_trades.db (${solanaBotState.databaseInfo.tradesCount} trades, ${solanaBotState.databaseInfo.trapsCount} traps)`;
     }
-  }).catch((e) => console.warn("Failed to persist trade to solana_trades.db:", e));
+  }).catch((err) => {
+    console.warn("Could not persist trade to SQLite DB:", err);
+  });
 
   // Autonomous AI Fact-Check: After every 5 closed trades, run an AI Risk Audit
   solanaBotState.tradesSinceLastAudit++;
   if (solanaBotState.tradesSinceLastAudit >= 5) {
     triggerAiRiskAudit(false);
   }
+
+  updateSolanaWalletHUD();
+  renderMultiPositionsTable();
+  renderSolanaJournal();
+}
+
+function closePosition(pos, exitReason, isEmergencyHalt = false) {
+  const index = solanaBotState.activePositions.indexOf(pos);
+  if (index === -1) return;
+
+  const exitPrice = pos.currentPrice;
+  pos.lastExitReason = exitReason;
+
+  // LIVE ON-CHAIN SELL: Swap token back to native SOL via Jupiter
+  // ONLY execute live sell if this position was ACTUALLY bought and confirmed on-chain
+  if (pos.isLive && pos.txSignature) {
+    if (pos._isSelling) return; // Prevent duplicate concurrent sell calls
+    pos._isSelling = true;
+
+    const tokenMint = pos.token.mint || pos.token.address;
+    if (!tokenMint) {
+      console.warn(`[Live Mode] Cannot sell ${pos.token.symbol}: missing mint address`);
+      pos._isSelling = false;
+      return;
+    }
+    const rawTokensToSell = pos.tokenAmountRaw ? Math.floor(pos.tokenAmountRaw) : 0;
+    if (rawTokensToSell > 0) {
+      const retryBonus = Math.min(100, (pos._sellRetries || 0) * 50);
+      const slippageBps = Math.min(250, computeAdaptiveSlippageBps(pos.token) + retryBonus);
+
+      api("/api/market/solana/live/swap", {
+        method: "POST",
+        body: JSON.stringify({
+          input_mint: tokenMint,
+          output_mint: "So11111111111111111111111111111111111111112",
+          amount_lamports: rawTokensToSell,
+          slippage_bps: slippageBps,
+          token_symbol: pos.token.symbol,
+          token_name: pos.token.name || pos.token.symbol,
+          margin_usd: pos.marginUsd,
+          exit_price: exitPrice,
+          exit_reason: exitReason,
+        }),
+      }).then((sellRes) => {
+        if (sellRes && sellRes.tx_signature) {
+          showToast(`💰 [LIVE JUPITER SELL] ${pos.token.symbol} sold for SOL! Tx: ${sellRes.tx_signature.slice(0, 8)}...`);
+          finalizeClosedPosition(pos, exitPrice, exitReason, true, sellRes.tx_signature);
+          syncSolanaLiveStatus();
+        } else {
+          pos._isSelling = false;
+        }
+      }).catch((sellErr) => {
+        pos._isSelling = false;
+        pos._sellRetries = (pos._sellRetries || 0) + 1;
+        pos._sellPending = true;
+        pos.lastSellError = sellErr.message || String(sellErr);
+        console.error("Live sell error (retaining position for auto-retry):", sellErr);
+        showToast(`⚠️ [LIVE SELL RETRYING] ${pos.token.symbol} exit delayed: ${pos.lastSellError}`);
+        updateSolanaWalletHUD();
+        renderMultiPositionsTable();
+      });
+      return; // Do NOT finalize/splice until the on-chain sell confirms!
+    }
+  }
+
+  // Finalize virtual paper trade immediately
+  finalizeClosedPosition(pos, exitPrice, exitReason, false, "");
 }
 
 function closeAllPositions(reason) {

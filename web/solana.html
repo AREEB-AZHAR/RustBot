@@ -146,6 +146,11 @@
                   <span class="btn-icon">🛑</span>
                   <span>Stop Bot (Operator Halt)</span>
                 </button>
+                <button type="button" class="btn-solana-sweep" id="btn-sweep-solana-tokens" style="display: none;"
+                  title="Emergency Sweep: Convert all held SPL token balances in Phantom back to pure SOL via Jupiter">
+                  <span class="btn-icon">🧹</span>
+                  <span>Sweep to SOL</span>
+                </button>
                 <button type="button" class="btn-set-balance" id="btn-open-set-balance"
                   title="Set custom virtual wallet balance">
                   <span class="btn-icon">💵</span>
@@ -662,7 +667,7 @@
   </div>
 
   <script src="/market_worker.js"></script>
-  <script src="/solana.js?v=20"></script>
+  <script src="/solana.js?v=21"></script>
 </body>
 
 </html>
