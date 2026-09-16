@@ -2823,6 +2823,11 @@ fn handle_timesfm_predict(request: &Request) -> Result<serde_json::Value, String
     serde_json::to_value(prediction).map_err(|e| format!("Serialization error: {e}"))
 }
 
+const ESTABLISHED_SOLANA_WHITELIST: &[&str] = &[
+    "SOL", "JUP", "RAY", "PYTH", "JTO", "RENDER", "DRIFT", "KMNO",
+    "TNSR", "ORCA", "W", "HNT", "IO", "MSOL", "JITOSOL", "ZEUS",
+];
+
 static SOLANA_TRENDING_CACHE: Mutex<Option<(std::time::Instant, SolanaTrendingResponse)>> = Mutex::new(None);
 
 fn fetch_solana_trending(query: &HashMap<String, String>) -> Result<SolanaTrendingResponse, String> {
@@ -2844,17 +2849,17 @@ fn fetch_solana_trending(query: &HashMap<String, String>) -> Result<SolanaTrendi
     let min_liquidity = query
         .get("min_liquidity")
         .and_then(|v| v.parse::<f64>().ok())
-        .unwrap_or(1_000.0);
+        .unwrap_or(1_000_000.0);
 
     let mut tokens: Vec<SolanaTrendingToken> = Vec::new();
     let mut seen_addresses: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     let search_endpoints = [
         "https://api.dexscreener.com/latest/dex/search?q=solana",
-        "https://api.dexscreener.com/latest/dex/search?q=pump.fun",
         "https://api.dexscreener.com/latest/dex/search?q=raydium",
         "https://api.dexscreener.com/latest/dex/search?q=orca",
         "https://api.dexscreener.com/latest/dex/search?q=jupiter",
+        "https://api.dexscreener.com/latest/dex/search?q=whirlpool",
     ];
 
     for endpoint in &search_endpoints {
@@ -2883,6 +2888,13 @@ fn fetch_solana_trending(query: &HashMap<String, String>) -> Result<SolanaTrendi
                         .and_then(|s| s.as_str())
                         .unwrap_or("UNKNOWN")
                         .to_string();
+                    let upper_symbol = symbol.to_uppercase();
+
+                    // Whitelist check: strictly only allow established DeFi / infrastructure tokens
+                    if !ESTABLISHED_SOLANA_WHITELIST.contains(&upper_symbol.as_str()) {
+                        continue;
+                    }
+
                     let name = base
                         .and_then(|b| b.get("name"))
                         .and_then(|n| n.as_str())
@@ -2894,15 +2906,10 @@ fn fetch_solana_trending(query: &HashMap<String, String>) -> Result<SolanaTrendi
                         .and_then(|d| d.as_str())
                         .unwrap_or("raydium");
 
-                    let dex = if raw_dex == "pumpswap"
-                        || address.ends_with("pump")
-                        || name.to_lowercase().contains("pump")
-                        || symbol.to_uppercase() == "PUMP"
-                    {
-                        "pump.fun".to_string()
-                    } else {
-                        raw_dex.to_string()
-                    };
+                    if raw_dex.contains("pump") {
+                        continue;
+                    }
+                    let dex = raw_dex.to_string();
 
                     let price_usd = json_number(pair.get("priceUsd").unwrap_or(&serde_json::Value::Null)).unwrap_or(0.0);
                     let volume_24h = pair
@@ -2930,11 +2937,11 @@ fn fetch_solana_trending(query: &HashMap<String, String>) -> Result<SolanaTrendi
                     let vol_score = if base_vol > 5.0 { base_vol } else { 82.0 };
                     let verified_safety = liquidity_usd >= min_liquidity;
 
-                    if price_usd > 0.0 && liquidity_usd >= 10_000.0 && volume_24h >= 10_000.0 {
+                    if price_usd > 0.0 && liquidity_usd >= 1_000_000.0 && volume_24h >= 5_000_000.0 {
                         seen_addresses.insert(address.clone());
                         tokens.push(SolanaTrendingToken {
                             address,
-                            symbol,
+                            symbol: upper_symbol,
                             name,
                             dex,
                             price_usd,
@@ -2959,35 +2966,19 @@ fn fetch_solana_trending(query: &HashMap<String, String>) -> Result<SolanaTrendi
             SolanaTrendingToken { address: "So11111111111111111111111111111111111111112".to_string(), symbol: "SOL".to_string(), name: "Solana".to_string(), dex: "raydium".to_string(), price_usd: 142.50, volume_24h: 3_820_000_000.0, liquidity_usd: 180_000_000.0, price_change_5m: 1.25, price_change_1h: 3.80, volatility_score: 82.4, verified_safety: true },
             SolanaTrendingToken { address: "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN".to_string(), symbol: "JUP".to_string(), name: "Jupiter".to_string(), dex: "orca".to_string(), price_usd: 0.885, volume_24h: 128_000_000.0, liquidity_usd: 45_000_000.0, price_change_5m: 2.10, price_change_1h: 6.40, volatility_score: 84.1, verified_safety: true },
             SolanaTrendingToken { address: "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R".to_string(), symbol: "RAY".to_string(), name: "Raydium".to_string(), dex: "raydium".to_string(), price_usd: 2.14, volume_24h: 84_000_000.0, liquidity_usd: 22_000_000.0, price_change_5m: -1.80, price_change_1h: 7.20, volatility_score: 88.5, verified_safety: true },
-            SolanaTrendingToken { address: "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263".to_string(), symbol: "BONK".to_string(), name: "Bonk".to_string(), dex: "raydium".to_string(), price_usd: 0.0000214, volume_24h: 96_000_000.0, liquidity_usd: 18_000_000.0, price_change_5m: 3.40, price_change_1h: -4.10, volatility_score: 91.2, verified_safety: true },
-            SolanaTrendingToken { address: "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm".to_string(), symbol: "WIF".to_string(), name: "dogwifhat".to_string(), dex: "raydium".to_string(), price_usd: 1.62, volume_24h: 210_000_000.0, liquidity_usd: 35_000_000.0, price_change_5m: -2.40, price_change_1h: 8.90, volatility_score: 95.0, verified_safety: true },
-            SolanaTrendingToken { address: "7GCihgDB8fe6KNjn2MYtkzZcRjQy3t9GHdC8uHYmW2hr".to_string(), symbol: "POPCAT".to_string(), name: "Popcat".to_string(), dex: "raydium".to_string(), price_usd: 0.485, volume_24h: 68_000_000.0, liquidity_usd: 14_000_000.0, price_change_5m: 2.10, price_change_1h: 5.60, volatility_score: 89.4, verified_safety: true },
-            SolanaTrendingToken { address: "9BB6NFEcjBCtnNLFko2FqVQBq8HHM13kCyYcdQbgpump".to_string(), symbol: "FARTCOIN".to_string(), name: "Fartcoin".to_string(), dex: "pump.fun".to_string(), price_usd: 0.324, volume_24h: 42_000_000.0, liquidity_usd: 8_500_000.0, price_change_5m: 5.20, price_change_1h: 18.90, volatility_score: 98.2, verified_safety: true },
-            SolanaTrendingToken { address: "pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn".to_string(), symbol: "PUMP".to_string(), name: "Pump.fun".to_string(), dex: "pump.fun".to_string(), price_usd: 0.00384, volume_24h: 5_120_000.0, liquidity_usd: 924_000.0, price_change_5m: 3.85, price_change_1h: 12.40, volatility_score: 96.5, verified_safety: true },
             SolanaTrendingToken { address: "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3".to_string(), symbol: "PYTH".to_string(), name: "Pyth Network".to_string(), dex: "orca".to_string(), price_usd: 0.342, volume_24h: 45_000_000.0, liquidity_usd: 16_000_000.0, price_change_5m: 0.90, price_change_1h: 2.60, volatility_score: 81.5, verified_safety: true },
             SolanaTrendingToken { address: "jtojtomepa8beP8AuQc6eXt5FriJwfFMwQx2v2f9mCL".to_string(), symbol: "JTO".to_string(), name: "Jito".to_string(), dex: "orca".to_string(), price_usd: 2.48, volume_24h: 38_000_000.0, liquidity_usd: 12_500_000.0, price_change_5m: 1.60, price_change_1h: 4.80, volatility_score: 85.0, verified_safety: true },
             SolanaTrendingToken { address: "rndrizKT3MK1iimdxRdWabcF7Zg7AR5T4nud4EkHBof".to_string(), symbol: "RENDER".to_string(), name: "Render".to_string(), dex: "raydium".to_string(), price_usd: 5.82, volume_24h: 115_000_000.0, liquidity_usd: 29_000_000.0, price_change_5m: 1.10, price_change_1h: 3.70, volatility_score: 83.2, verified_safety: true },
             SolanaTrendingToken { address: "DriFtupJYLTosbwoN8koMbEYSx54aFAVLddWsbksjwg7".to_string(), symbol: "DRIFT".to_string(), name: "Drift".to_string(), dex: "orca".to_string(), price_usd: 0.74, volume_24h: 24_000_000.0, liquidity_usd: 8_200_000.0, price_change_5m: 1.50, price_change_1h: 5.10, volatility_score: 86.8, verified_safety: true },
             SolanaTrendingToken { address: "KMNo3nJsBXfcpJTVhZcXLW7RmTwTt4GVFE7suUBo9sS".to_string(), symbol: "KMNO".to_string(), name: "Kamino".to_string(), dex: "raydium".to_string(), price_usd: 0.118, volume_24h: 19_500_000.0, liquidity_usd: 6_800_000.0, price_change_5m: 1.30, price_change_1h: 3.40, volatility_score: 84.6, verified_safety: true },
-            SolanaTrendingToken { address: "MEW1gQWJ3nEXg2qgERiKu7FAFj79PHvQVREQUzScPP5".to_string(), symbol: "MEW".to_string(), name: "cat in a dogs world".to_string(), dex: "raydium".to_string(), price_usd: 0.0054, volume_24h: 55_000_000.0, liquidity_usd: 16_500_000.0, price_change_5m: 2.40, price_change_1h: 7.10, volatility_score: 91.5, verified_safety: true },
             SolanaTrendingToken { address: "TNSRxcUxoT9xBG3de7PiJyTDYu7kskLqcpddxnEJAS6".to_string(), symbol: "TNSR".to_string(), name: "Tensor".to_string(), dex: "orca".to_string(), price_usd: 0.43, volume_24h: 16_200_000.0, liquidity_usd: 5_400_000.0, price_change_5m: 1.20, price_change_1h: 3.00, volatility_score: 85.2, verified_safety: true },
             SolanaTrendingToken { address: "orcaEKTdK7LKz57vaAYr9QeNsVEPfiu6QeMU1kektZE".to_string(), symbol: "ORCA".to_string(), name: "Orca".to_string(), dex: "orca".to_string(), price_usd: 2.88, volume_24h: 22_500_000.0, liquidity_usd: 9_200_000.0, price_change_5m: 0.70, price_change_1h: 2.90, volatility_score: 81.0, verified_safety: true },
-            SolanaTrendingToken { address: "ukHH6c7mMyiWCf1b9pnWe25TSpkDDt3H5pQZgZ74J82".to_string(), symbol: "BOME".to_string(), name: "BOOK OF MEME".to_string(), dex: "raydium".to_string(), price_usd: 0.0068, volume_24h: 62_000_000.0, liquidity_usd: 19_000_000.0, price_change_5m: 1.90, price_change_1h: 5.80, volatility_score: 89.2, verified_safety: true },
-            SolanaTrendingToken { address: "CzLSujWBLFsSjncfkh59rUFqvafWcY5tzedWJSuypump".to_string(), symbol: "GOAT".to_string(), name: "Goatseus Maximus".to_string(), dex: "pump.fun".to_string(), price_usd: 0.452, volume_24h: 78_000_000.0, liquidity_usd: 21_000_000.0, price_change_5m: 4.10, price_change_1h: 14.50, volatility_score: 97.4, verified_safety: true },
-            SolanaTrendingToken { address: "GJAFwWjJ3vnTsrQVabjBVK2TYB1YtRCQXRDfDgUnpump".to_string(), symbol: "ACT".to_string(), name: "Act I : The AI Prophecy".to_string(), dex: "pump.fun".to_string(), price_usd: 0.285, volume_24h: 88_000_000.0, liquidity_usd: 24_000_000.0, price_change_5m: 3.90, price_change_1h: 11.80, volatility_score: 96.8, verified_safety: true },
-            SolanaTrendingToken { address: "2qEHjNxgoFaSdZXTAav3H2Wbe3mtB64z3P2A2Cgipump".to_string(), symbol: "PNUT".to_string(), name: "Peanut the Squirrel".to_string(), dex: "pump.fun".to_string(), price_usd: 0.512, volume_24h: 94_000_000.0, liquidity_usd: 26_000_000.0, price_change_5m: 4.80, price_change_1h: 16.20, volatility_score: 98.6, verified_safety: true },
-            SolanaTrendingToken { address: "ED5nyyWEzpPPiWimP8vYm7sD7TD3LAt3Q3gRT5mpump".to_string(), symbol: "MOODENG".to_string(), name: "Moo Deng".to_string(), dex: "pump.fun".to_string(), price_usd: 0.215, volume_24h: 36_000_000.0, liquidity_usd: 7_800_000.0, price_change_5m: 2.70, price_change_1h: 8.40, volatility_score: 93.1, verified_safety: true },
-            SolanaTrendingToken { address: "Df6yfrKC8kZE3KNkrHERKzAetSxbrWeniQfyJY4Jpump".to_string(), symbol: "CHILLGUY".to_string(), name: "Just a chill guy".to_string(), dex: "pump.fun".to_string(), price_usd: 0.184, volume_24h: 31_000_000.0, liquidity_usd: 6_900_000.0, price_change_5m: 3.10, price_change_1h: 9.70, volatility_score: 94.5, verified_safety: true },
-            SolanaTrendingToken { address: "63LfDmNb3MQ8mw9MtZ2To9bEA2M71kZUUGq5tiJxc6kq".to_string(), symbol: "GIGA".to_string(), name: "GigaChad".to_string(), dex: "raydium".to_string(), price_usd: 0.042, volume_24h: 28_000_000.0, liquidity_usd: 8_100_000.0, price_change_5m: 1.80, price_change_1h: 6.20, volatility_score: 90.0, verified_safety: true },
             SolanaTrendingToken { address: "85VBFQZC9TZkfaptBWjvUw7YbZjy52A6mjtPGjstQAmQ".to_string(), symbol: "W".to_string(), name: "Wormhole".to_string(), dex: "orca".to_string(), price_usd: 0.224, volume_24h: 18_000_000.0, liquidity_usd: 6_200_000.0, price_change_5m: 0.80, price_change_1h: 2.50, volatility_score: 82.0, verified_safety: true },
             SolanaTrendingToken { address: "hntyVP6YFm1Hg25TN9WGLqM12b8TQmcknKrdu1oxWux".to_string(), symbol: "HNT".to_string(), name: "Helium".to_string(), dex: "raydium".to_string(), price_usd: 4.65, volume_24h: 26_000_000.0, liquidity_usd: 9_400_000.0, price_change_5m: 1.10, price_change_1h: 3.20, volatility_score: 83.5, verified_safety: true },
-            SolanaTrendingToken { address: "mb1eu7TzEc71KxDpsmsKoucSSuuoGLv1drys1oP2jh6".to_string(), symbol: "MOBILE".to_string(), name: "Helium Mobile".to_string(), dex: "raydium".to_string(), price_usd: 0.00078, volume_24h: 8_500_000.0, liquidity_usd: 3_200_000.0, price_change_5m: 2.20, price_change_1h: 5.40, volatility_score: 88.0, verified_safety: true },
             SolanaTrendingToken { address: "BZLbGTNCSFfoth2GYDtWr7e4imWzpR5jqcUuGEwr646K".to_string(), symbol: "IO".to_string(), name: "io.net".to_string(), dex: "raydium".to_string(), price_usd: 1.82, volume_24h: 24_000_000.0, liquidity_usd: 7_600_000.0, price_change_5m: 1.40, price_change_1h: 4.10, volatility_score: 86.0, verified_safety: true },
             SolanaTrendingToken { address: "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So".to_string(), symbol: "MSOL".to_string(), name: "Marinade Staked SOL".to_string(), dex: "raydium".to_string(), price_usd: 168.20, volume_24h: 42_000_000.0, liquidity_usd: 35_000_000.0, price_change_5m: 0.90, price_change_1h: 2.80, volatility_score: 74.0, verified_safety: true },
             SolanaTrendingToken { address: "J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn".to_string(), symbol: "JITOSOL".to_string(), name: "Jito Staked SOL".to_string(), dex: "orca".to_string(), price_usd: 172.40, volume_24h: 56_000_000.0, liquidity_usd: 48_000_000.0, price_change_5m: 0.95, price_change_1h: 2.90, volatility_score: 75.0, verified_safety: true },
             SolanaTrendingToken { address: "ZEUS1aR7aX8D5V2a8L2qP2C5qL9qT2V5xP5mK8r9pump".to_string(), symbol: "ZEUS".to_string(), name: "Zeus Network".to_string(), dex: "raydium".to_string(), price_usd: 0.38, volume_24h: 14_000_000.0, liquidity_usd: 4_800_000.0, price_change_5m: 1.70, price_change_1h: 4.50, volatility_score: 87.2, verified_safety: true },
-            SolanaTrendingToken { address: "WENWENvqqNya429ubCdXr81ZmD69brwQaaBYY6p3LCU".to_string(), symbol: "WEN".to_string(), name: "Wen".to_string(), dex: "raydium".to_string(), price_usd: 0.000085, volume_24h: 12_000_000.0, liquidity_usd: 4_200_000.0, price_change_5m: 1.50, price_change_1h: 4.20, volatility_score: 86.5, verified_safety: true },
-            SolanaTrendingToken { address: "H3pt7A8yB4kK5xL6mV2qN3sR8tP9wX4yZ2bA1cDeFgHi".to_string(), symbol: "MYRO".to_string(), name: "Myro".to_string(), dex: "raydium".to_string(), price_usd: 0.072, volume_24h: 15_000_000.0, liquidity_usd: 5_100_000.0, price_change_5m: 2.10, price_change_1h: 5.90, volatility_score: 89.0, verified_safety: true },
         ];
     }
 
@@ -3022,19 +3013,11 @@ fn fetch_solana_candles(query: &HashMap<String, String>) -> Result<MarketDataRes
         "SOL" | "SOLANA" => Some("SOLUSDT"),
         "JUP" => Some("JUPUSDT"),
         "RAY" => Some("RAYUSDT"),
-        "BONK" => Some("BONKUSDT"),
-        "WIF" => Some("WIFUSDT"),
-        "POPCAT" => Some("POPCATUSDT"),
         "RENDER" => Some("RENDERUSDT"),
         "PYTH" => Some("PYTHUSDT"),
         "JTO" => Some("JTOUSDT"),
         "TNSR" => Some("TNSRUSDT"),
         "W" => Some("WUSDT"),
-        "BOME" => Some("BOMEUSDT"),
-        "MEW" => Some("MEWUSDT"),
-        "PNUT" => Some("PNUTUSDT"),
-        "GOAT" => Some("GOATUSDT"),
-        "ACT" => Some("ACTUSDT"),
         "HNT" => Some("HNTUSDT"),
         "IO" => Some("IOUSDT"),
         "DRIFT" => Some("DRIFTUSDT"),
@@ -3068,19 +3051,19 @@ fn fetch_solana_candles(query: &HashMap<String, String>) -> Result<MarketDataRes
             "SOL" => 142.50,
             "JUP" => 0.885,
             "RAY" => 2.14,
-            "BONK" => 0.0000214,
-            "WIF" => 1.62,
-            "PUMP" => 0.00384,
-            "FARTCOIN" => 0.324,
-            "POPCAT" => 0.485,
-            "GOAT" => 0.452,
-            "ACT" => 0.285,
-            "PNUT" => 0.512,
-            "MOODENG" => 0.215,
-            "CHILLGUY" => 0.184,
-            "GIGA" => 0.042,
-            "AI16Z" => 0.385,
-            "ZEREBRO" => 0.295,
+            "PYTH" => 0.342,
+            "JTO" => 2.48,
+            "RENDER" => 5.82,
+            "DRIFT" => 0.74,
+            "KMNO" => 0.118,
+            "TNSR" => 0.43,
+            "ORCA" => 2.88,
+            "W" => 0.224,
+            "HNT" => 4.65,
+            "IO" => 1.82,
+            "MSOL" => 168.20,
+            "JITOSOL" => 172.40,
+            "ZEUS" => 0.38,
             _ => 1.25,
         });
 
@@ -5007,6 +4990,15 @@ mod tests {
         let trending_data: SolanaTrendingResponse = serde_json::from_slice(&res_trending.body).unwrap();
         assert!(trending_data.count > 0);
         assert_eq!(trending_data.network, "solana");
+        for token in &trending_data.tokens {
+            assert!(
+                ESTABLISHED_SOLANA_WHITELIST.contains(&token.symbol.to_uppercase().as_str()),
+                "Token {} is not in the established whitelist",
+                token.symbol
+            );
+            assert!(!token.dex.contains("pump"), "Token {} has pump dex", token.symbol);
+            assert!(!token.name.to_lowercase().contains("fartcoin"));
+        }
 
         // 2. Solana Candles
         let req_candles = Request {
