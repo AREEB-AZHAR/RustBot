@@ -382,7 +382,13 @@ pub fn run(
                     thread::spawn(move || {
                         let _permit = permit;
                         if let Err(error) = handle_connection(stream, &state) {
-                            eprintln!("Request failed: {error}");
+                            let err_str = error.to_string();
+                            if !err_str.contains("os error 10053") 
+                                && !err_str.contains("WSAECONNABORTED") 
+                                && !err_str.contains("Connection reset by peer") 
+                                && !err_str.contains("os error 10054") {
+                                eprintln!("Request failed: {err_str}");
+                            }
                         }
                     });
                 } else {

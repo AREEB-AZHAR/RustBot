@@ -26,7 +26,7 @@ const solanaBotState = {
   isRunning: false,
   loopTimer: null,
   tickCount: 0,
-  tickIntervalMs: 500, // Ultra-fast HFT tick cadence (~500ms)
+  tickIntervalMs: 2000, // Deliberate 2-second tick cadence (sniper mode, not spray-and-pray)
   scannedTokens: [],
   selectedToken: null,
   currentCandles: [],
@@ -86,8 +86,10 @@ const solanaBotState = {
   currentUser: null,
   dynamicMarginPct: 6.67,
   maxConcurrentPositions: 15,
-  confluenceStopLossPct: -2.0,
-  trailingRunnerTriggerPct: 3.5,
+  confluenceStopLossPct: -4.5, // Widened from -2.0% to give trades room to breathe through noise
+  trailingRunnerTriggerPct: 3.0, // Lowered TP1 from 3.5% to 3.0% for more achievable, frequent wins
+  consecutiveLosses: 0, // Track consecutive losses for cooldown logic
+  lossCooldownUntil: 0, // Timestamp when cooldown expires
   tokenCooldownMap: new Map(),
   lastAiAuditTimestamp: 0,
   tradesSinceLastAudit: 0,
@@ -1716,9 +1718,9 @@ async function runSolanaAutonomousTick() {
       pos.unrealizedReturnPct = (netPnlUsd / pos.marginUsd) * 100;
 
       // QUANTITATIVE ASYMMETRIC SCALE-OUT EXIT SYSTEM:
-      // In live spot trading, targets must be wide enough to overcome round-trip DEX slippage (~1-2%)
-      const runnerTrigger = solanaBotState.trailingRunnerTriggerPct || 4.5;
-      const stopLossPct = solanaBotState.confluenceStopLossPct || -3.0;
+      // Widened stops + achievable TP = higher win rate (target 80%+)
+      const runnerTrigger = solanaBotState.trailingRunnerTriggerPct || 3.0;
+      const stopLossPct = solanaBotState.confluenceStopLossPct || -4.5;
 
       // Pending Live Sell Retry Defense: If a previous live sell encountered network delay, retry automatically
       if (pos._sellPending) {
@@ -1734,9 +1736,9 @@ async function runSolanaAutonomousTick() {
         } else if (pos.unrealizedReturnPct <= stopLossPct) {
           // Defensive Confluence Stop-Loss (-3.0% Risk Guard)
           closePosition(pos, `STOP_LOSS (${stopLossPct.toFixed(1)}% Defense: ${pos.unrealizedReturnPct.toFixed(2)}%)`, false);
-        } else if (!pos.isLive && pos.barsHeld >= 120 && Math.abs(pos.unrealizedReturnPct) < 0.8) {
-          // Paper Trading Stale Margin Rebalance (NEVER force-dump real money trades after 60s!)
-          closePosition(pos, "Paper Stale Margin Rebalance", false);
+        } else if (!pos.isLive && pos.barsHeld >= 600 && Math.abs(pos.unrealizedReturnPct) < 1.5) {
+          // Paper Trading Stale Margin Rebalance: 600 ticks × 2s = 20 minutes of no movement
+          closePosition(pos, "Paper Stale Margin Rebalance (20min timeout)", false);
         }
       } else {
         // Stage 2: Managing the Remaining 50% Runner (Adaptive Volatility Trailing)
@@ -1800,10 +1802,37 @@ async function runSolanaAutonomousTick() {
     // Base slot size = Total current equity divided by maxSlots
     const baseSlotEquityUsd = (solanaBotState.wallet.currentEquity / MAX_CONCURRENT_POSITIONS);
 
-    // CONFLUENCE METRIC 1: Benchmark Macro Regime Filter
+    // CONFLUENCE METRIC 1: Benchmark Macro Regime Filter (STRICT: require bullish SOL for ALL entries)
     const solBenchmark = candidatePool.find((c) => c.symbol === "SOL") || { price_change_5m: 0.5, price_change_1h: 2.0 };
-    const isMacroDumping = (solBenchmark.price_change_5m || 0) < -2.2 || (solBenchmark.price_change_1h || 0) < -5.0;
-    const isSolBullish = (solBenchmark.price_change_1h || 0) > 0.0 && (solBenchmark.price_change_5m || 0) > -0.8;
+    const isMacroDumping = (solBenchmark.price_change_5m || 0) < -1.5 || (solBenchmark.price_change_1h || 0) < -3.0;
+    const isSolBullish = (solBenchmark.price_change_1h || 0) > 0.5 && (solBenchmark.price_change_5m || 0) > -0.5;
+
+    // GLOBAL GATE: If SOL macro is not bullish, don't open ANY new positions
+    if (!isSolBullish) {
+      // Skip all entry logic this tick — only manage existing positions
+      processThreeStageLearningEngine();
+      updateSolanaWalletHUD();
+      renderMultiPositionsTable();
+      renderSolanaJournal();
+      renderLearningLedger();
+      if (solanaBotState.isRunning) {
+        solanaBotState.loopTimer = setTimeout(runSolanaAutonomousTick, solanaBotState.tickIntervalMs);
+      }
+      return;
+    }
+
+    // CONSECUTIVE LOSS COOLDOWN: After 3 consecutive losses, pause new entries for 10 minutes
+    if (solanaBotState.lossCooldownUntil && Date.now() < solanaBotState.lossCooldownUntil) {
+      processThreeStageLearningEngine();
+      updateSolanaWalletHUD();
+      renderMultiPositionsTable();
+      renderSolanaJournal();
+      renderLearningLedger();
+      if (solanaBotState.isRunning) {
+        solanaBotState.loopTimer = setTimeout(runSolanaAutonomousTick, solanaBotState.tickIntervalMs);
+      }
+      return;
+    }
 
     // TimesFM Foundation Model Ecosystem Insight
     const timesfmInsight = solanaBotState.latestTimesfmResult ? {
@@ -1833,8 +1862,8 @@ async function runSolanaAutonomousTick() {
         continue;
       }
 
-      // CONFLUENCE METRIC 1: Block altcoin longs during macro flush
-      if (isMacroDumping && candidate.symbol !== "SOL") {
+      // CONFLUENCE METRIC 1: Block ALL entries during macro flush (already handled globally above)
+      if (isMacroDumping) {
         continue;
       }
 
@@ -1875,16 +1904,21 @@ async function runSolanaAutonomousTick() {
       const ch5m = candidate.price_change_5m || 0;
       const ch1h = candidate.price_change_1h || 0;
       const volScore = candidate.volatility_score || 80;
-      // High-volatility meme coins (volatility >= 92) get a stricter +4.5% 5m wick cap to avoid buying local tops
-      const max5mPump = volScore >= 92 ? 4.5 : 9.0;
-      if (ch5m > max5mPump || ch1h > 45.0) {
+      // Strict anti-FOMO: cap 5m pump at 3.5% for memes, 6% for established tokens
+      const max5mPump = volScore >= 90 ? 3.5 : 6.0;
+      if (ch5m > max5mPump || ch1h > 25.0) {
         continue; // Overbought wick exhaustion
       }
 
-      // CONFLUENCE METRIC 5: Valid Retest / Momentum Confluence (Rejects falling knives)
-      // High-volatility tokens dropping faster than -2.5% in 5m are flagged as falling knives
-      const min5mDrop = volScore >= 92 ? -2.5 : -3.5;
-      const isQualityConfluence = ch5m >= min5mDrop && ch5m <= 6.0 && volScore >= 50;
+      // CONFLUENCE METRIC 5: Dual-Timeframe Trend Confirmation (BOTH must be positive)
+      // This is the single biggest win-rate improvement: only buy when both 5m AND 1h momentum are aligned upward
+      if (ch1h <= 0.0) {
+        continue; // 1h trend must be positive — never fight the hourly candle
+      }
+
+      // CONFLUENCE METRIC 5b: Falling Knife Protection (Tightened from -2.5% to -1.5%)
+      const min5mDrop = volScore >= 90 ? -1.5 : -2.0;
+      const isQualityConfluence = ch5m >= min5mDrop && ch5m <= 5.0 && volScore >= 50;
       if (!isQualityConfluence) {
         continue;
       }
@@ -1894,8 +1928,8 @@ async function runSolanaAutonomousTick() {
         continue; // Only veto the specific analyzed token when TimesFM predicts breakdown
       }
 
-      // CONFLUENCE METRIC 7: Setup Grade Gate (Must be at least Grade B / Score >= 45)
-      if (score < 45) {
+      // CONFLUENCE METRIC 7: Setup Grade Gate (Raised to >= 65 for sniper-mode win rate)
+      if (score < 65) {
         continue;
       }
 
@@ -2394,9 +2428,19 @@ function finalizeClosedPosition(pos, exitPrice, exitReason, isLiveTrade, txSig) 
   const isWin = netPnlUsd > 0 || Boolean(pos.tp1Triggered);
   if (isWin) {
     solanaBotState.wallet.tradesWon++;
+    solanaBotState.consecutiveLosses = 0; // Reset consecutive loss counter on any win
   } else {
     solanaBotState.wallet.tradesLost++;
-    let failurePattern = "Defensive Stop-Loss (-2.0%)";
+    solanaBotState.consecutiveLosses++;
+    
+    // CONSECUTIVE LOSS COOLDOWN: After 3 consecutive losses, pause entries for 10 minutes
+    if (solanaBotState.consecutiveLosses >= 3) {
+      solanaBotState.lossCooldownUntil = Date.now() + (10 * 60 * 1000); // 10 minutes
+      showToast(`⏸️ [LOSS COOLDOWN] ${solanaBotState.consecutiveLosses} consecutive losses → pausing entries for 10 minutes`);
+      console.warn(`[Loss Cooldown] ${solanaBotState.consecutiveLosses} consecutive losses. Pausing until ${new Date(solanaBotState.lossCooldownUntil).toLocaleTimeString()}`);
+    }
+    
+    let failurePattern = "Defensive Stop-Loss (-4.5%)";
     if ((pos.token.price_change_5m || 0) > 3.5) {
       failurePattern = "FOMO Overbought Exhaustion";
     } else if ((pos.token.volatility_score || 0) > 92) {
